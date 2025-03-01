@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Account Linking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white flex justify-center items-center h-screen">
+
+    <div id="authContainer" class="w-96 p-6 bg-gray-800 rounded-lg shadow-lg text-center">
+        <!-- Register Form -->
+        <div id="registerSection">
+            <h1 class="text-2xl font-bold text-purple-400">Register</h1>
+            <form id="registerForm" class="mt-4 space-y-2">
+                <input type="text" id="username" placeholder="Username" required class="w-full p-2 text-black rounded-md">
+                <input type="password" id="password" placeholder="Password" required class="w-full p-2 text-black rounded-md">
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-purple-400 text-white py-2 px-4 rounded-md hover:opacity-80 transition">Register</button>
+            </form>
+        </div>
+
+        <!-- Login Form -->
+        <div id="loginSection" class="mt-6">
+            <h1 class="text-2xl font-bold text-purple-400">Login</h1>
+            <form id="loginForm" class="mt-4 space-y-2">
+                <input type="text" id="loginUsername" placeholder="Username" required class="w-full p-2 text-black rounded-md">
+                <input type="password" id="loginPassword" placeholder="Password" required class="w-full p-2 text-black rounded-md">
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-purple-400 text-white py-2 px-4 rounded-md hover:opacity-80 transition">Login</button>
+            </form>
+        </div>
+
+        <!-- Minecraft Linking -->
+        <div id="linkSection" class="mt-6 hidden">
+            <h1 class="text-2xl font-bold text-purple-400">Link Minecraft Account</h1>
+            <form id="linkForm" class="mt-4 space-y-2">
+                <input type="text" id="mcUsername" placeholder="Minecraft Username" required class="w-full p-2 text-black rounded-md">
+                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-purple-400 text-white py-2 px-4 rounded-md hover:opacity-80 transition">Link Account</button>
+            </form>
+            <p class="text-green-400 mt-2 hidden" id="linkCodeMessage"></p>
+        </div>
+
+        <!-- User Info -->
+        <div id="userInfo" class="mt-6 hidden">
+            <h1 class="text-2xl font-bold text-green-400">Welcome, <span id="userDisplay"></span>!</h1>
+            <p class="mt-2">Your Minecraft Account: <span id="mcStatus" class="text-yellow-400">Not Linked</span></p>
+            <button id="logoutBtn" class="w-full mt-4 bg-red-500 text-white py-2 px-4 rounded-md hover:opacity-80 transition">Logout</button>
+        </div>
+
+        <p id="message" class="mt-2 text-red-400"></p>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const storedUsername = localStorage.getItem("username");
+            if (storedUsername) {
+                document.getElementById("userDisplay").textContent = storedUsername;
+                document.getElementById("registerSection").classList.add("hidden");
+                document.getElementById("loginSection").classList.add("hidden");
+                document.getElementById("userInfo").classList.remove("hidden");
+                document.getElementById("linkSection").classList.remove("hidden");
+            }
+        });
+
+        document.getElementById("registerForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            let username = document.getElementById("username").value;
+            let password = document.getElementById("password").value;
+
+            let response = await fetch("/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+
+            let result = await response.json();
+            document.getElementById("message").textContent = result.message || result.error;
+        });
+
+        document.getElementById("loginForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            let username = document.getElementById("loginUsername").value;
+            let password = document.getElementById("loginPassword").value;
+
+            let response = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+
+            let result = await response.json();
+            if (result.token) {
+                localStorage.setItem("username", username);
+                document.getElementById("userDisplay").textContent = username;
+                document.getElementById("registerSection").classList.add("hidden");
+                document.getElementById("loginSection").classList.add("hidden");
+                document.getElementById("userInfo").classList.remove("hidden");
+                document.getElementById("linkSection").classList.remove("hidden");
+                document.getElementById("message").textContent = "Login successful!";
+            } else {
+                document.getElementById("message").textContent = result.error;
+            }
+        });
+
+        document.getElementById("linkForm").addEventListener("submit", async function(event) {
+        event.preventDefault();
+        let mcUsername = document.getElementById("mcUsername").value;
+        let storedUsername = localStorage.getItem("username");
+
+        let response = await fetch("/link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: storedUsername, mcUsername })
+        });
+
+        let result = await response.json();
+        if (result.linkCode) {
+            document.getElementById("linkCodeMessage").textContent = `Use /link ${result.linkCode} in Minecraft!`;
+            document.getElementById("linkCodeMessage").classList.remove("hidden");
+            localStorage.setItem("linkCode", result.linkCode);
+        } else {
+            document.getElementById("message").textContent = result.error;
+        }
+    });
+
+        document.getElementById("logoutBtn").addEventListener("click", function() {
+            localStorage.removeItem("username");
+            location.reload();
+        });
+    </script>
+
+</body>
+</html>

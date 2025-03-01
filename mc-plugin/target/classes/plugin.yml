@@ -1,0 +1,9 @@
+name: BizzyLink
+version: 1.0
+main: com.bizzynation.LinkPlugin
+author: BizzyNation
+commands:
+  link:
+    description: Link your Minecraft account
+    usage: /link <code>
+    permission: bizzylink.use
