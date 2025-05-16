@@ -201,29 +201,18 @@
 - **✅ DO:** Add the following header to all source code files:
   ```
   /**
-   * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-   *  _____     _                   _   _         _   _                 
-   * | __  |___|_|___ ___ _ _      | \ |_|___ ___| |_|_|___ ___        
-   * | __ -| -_| |_ -|_ -| | |     |   | |   |_ -|  _| | . |   |       
-   * |_____|___|_|___|___|_  |_____|_|_|_|_|_|___|_| |_|___|_|_|       
-   *                     |___|                                         
-   *                                                         
-   *         [::::::][::::::][::::::][::::::][::::::][:::::::]
-   *                      DO NOT STEAL OUR DIAMONDS               
-   *         [::::::][::::::][::::::][::::::][::::::][:::::::]
-   *
+   * +-------------------------------------------------+
+   * |                 BIZZY NATION                    |
+   * |          <> with <> by BIZZY [year]             |
+   * +-------------------------------------------------+
+   * 
    * @file [filename]
    * @description [brief description of the file]
-   * 
    * @copyright © Bizzy Nation - All Rights Reserved
-   * @license ARRR! This be proprietary treasure of Bizzy Nation
+   * @license Proprietary - Not for distribution
    * 
-   * WARNING: This file is protected by powerful enchantments.
-   * Unauthorized copying, modification, or distribution will result in
-   * inventory clearing and may summon creepers to your location.
-   * 
-   * Designed by Bizzy | Built with ♦ | [current year]
-   * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+   * This file is protected intellectual property of Bizzy Nation.
+   * Unauthorized use, copying, or distribution is prohibited.
    */
   ```
 - **❌ DON'T:** Omit copyright information from any source files
