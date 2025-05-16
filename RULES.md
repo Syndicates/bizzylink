@@ -156,4 +156,41 @@
 - **✅ DO:** Regularly pull changes from main branches to avoid large merge conflicts
 - **✅ DO:** Use `git rebase` to maintain a clean commit history when appropriate
 - **❌ DON'T:** Commit credentials, API keys, or sensitive configuration
-- **WHY:** Clean repositories improve performance and security 
+- **WHY:** Clean repositories improve performance and security
+
+## Code Comments & Documentation Best Practices
+
+### 1. When to Comment
+- **✅ DO:** Comment complex algorithms and business logic
+- **✅ DO:** Add context for workarounds and unusual approaches
+- **✅ DO:** Document function parameters, return values, and exceptions
+- **❌ DON'T:** Comment obvious code (e.g., `// increment counter`)
+- **WHY:** Comments should explain "why" not "what" when the code is unclear
+
+### 2. Comment Structure
+- **✅ DO:** Begin with a clear summary of what the code accomplishes
+- **✅ DO:** Include examples for non-trivial usage
+- **✅ DO:** Structure JSDoc/similar comments with tags for parameters, returns, etc.
+- **❌ DON'T:** Write long, unstructured paragraphs
+- **WHY:** Well-structured comments are easier to read and maintain
+
+### 3. Debugging Information
+- **✅ DO:** Include details on potential edge cases and failure points
+- **✅ DO:** Document assumptions the code makes about inputs/state
+- **✅ DO:** Add references to relevant issue tickets or documentation
+- **❌ DON'T:** Remove comments about tricky bugs once fixed
+- **WHY:** Debugging comments help prevent regressions and aid troubleshooting
+
+### 4. Comment Maintenance
+- **✅ DO:** Update comments when code changes
+- **✅ DO:** Remove comments that no longer apply
+- **✅ DO:** Clarify any `TODO` comments with ticket numbers or specific context
+- **❌ DON'T:** Leave outdated comments in the codebase
+- **WHY:** Incorrect comments are worse than no comments at all
+
+### 5. Commenting Style
+- **✅ DO:** Use consistent verb tense (usually present tense)
+- **✅ DO:** Write in complete sentences with proper punctuation
+- **✅ DO:** Keep a professional, clear tone
+- **❌ DON'T:** Include jokes, non-professional language, or blame
+- **WHY:** Comments should remain professional and helpful to all team members 
