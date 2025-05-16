@@ -118,4 +118,42 @@
 
 5. **Not Invented Here syndrome**
    - Use established libraries for common problems
-   - Focus development time on unique value-add for your application 
+   - Focus development time on unique value-add for your application
+
+## Git Workflow & Best Practices
+
+### 1. Branch Management
+- **✅ DO:** Create feature branches for all new work (`feature/feature-name`)
+- **✅ DO:** Keep `main` branch always deployable
+- **✅ DO:** Use `Version2` for active development and `original_build` as historical reference
+- **❌ DON'T:** Commit directly to protected branches (main, Version2)
+- **WHY:** Clean branch structure enables parallel work and clear release management
+
+### 2. Commit Practices
+- **✅ DO:** Commit small, logical chunks of work
+- **✅ DO:** Write descriptive commit messages (use present tense: "Add feature" not "Added feature")
+- **✅ DO:** Include ticket/issue numbers in commit messages when applicable
+- **❌ DON'T:** Commit broken code or incomplete features to shared branches
+- **WHY:** Clear commit history improves debugging and knowledge sharing
+
+### 3. Pull Request & Code Review
+- **✅ DO:** Create pull requests with clear descriptions of changes
+- **✅ DO:** Ensure CI tests pass before merging
+- **✅ DO:** Address all review comments before merging
+- **❌ DON'T:** Merge your own pull requests without review
+- **WHY:** Peer review improves code quality and knowledge sharing
+
+### 4. When to Commit
+- **✅ DO:** Commit after implementing a complete feature or logical portion
+- **✅ DO:** Commit after fixing bugs or performance issues
+- **✅ DO:** Commit after refactoring code sections
+- **✅ DO:** Run tests before committing to ensure functionality
+- **❌ DON'T:** Wait too long between commits (risk of losing work)
+- **WHY:** Regular commits provide checkpoint recovery and clearer history
+
+### 5. Git Hygiene
+- **✅ DO:** Keep .gitignore updated to exclude unnecessary files
+- **✅ DO:** Regularly pull changes from main branches to avoid large merge conflicts
+- **✅ DO:** Use `git rebase` to maintain a clean commit history when appropriate
+- **❌ DON'T:** Commit credentials, API keys, or sensitive configuration
+- **WHY:** Clean repositories improve performance and security 
