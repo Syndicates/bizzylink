@@ -193,4 +193,41 @@
 - **✅ DO:** Write in complete sentences with proper punctuation
 - **✅ DO:** Keep a professional, clear tone
 - **❌ DON'T:** Include jokes, non-professional language, or blame
-- **WHY:** Comments should remain professional and helpful to all team members 
+- **WHY:** Comments should remain professional and helpful to all team members
+
+## Copyright & Ownership Information
+
+### 1. Copyright Header
+- **✅ DO:** Add the following header to all source code files:
+  ```
+  /**
+   * @file [filename]
+   * @description [brief description of the file]
+   * 
+   * @copyright Copyright (c) [current year] Bizzy Nation
+   * @author Designed by Bizzy for Bizzy Nation
+   * @license Proprietary and confidential
+   * This file is property of Bizzy Nation. Unauthorized copying,
+   * modification, distribution, or use is strictly prohibited.
+   */
+  ```
+- **❌ DON'T:** Omit copyright information from any source files
+- **WHY:** Establishes intellectual property rights and ownership
+
+### 2. Copyright Placement
+- **✅ DO:** Place the copyright notice at the very top of each file
+- **✅ DO:** Include the notice before any imports or other code statements
+- **❌ DON'T:** Bury copyright notices within the middle of files
+- **WHY:** Ensures visibility and immediate recognition of ownership
+
+### 3. Copyright Maintenance
+- **✅ DO:** Update the year in copyright notices during substantial file modifications
+- **✅ DO:** Maintain consistent format across all files
+- **❌ DON'T:** Use varying or incomplete copyright statements
+- **WHY:** Consistent copyright notices strengthen legal protection
+
+### 4. Third-Party Code
+- **✅ DO:** Clearly distinguish between proprietary code and third-party components
+- **✅ DO:** Respect and maintain third-party license notices when using external libraries
+- **❌ DON'T:** Remove or modify external copyright notices
+- **WHY:** Respects others' intellectual property while protecting our own 
