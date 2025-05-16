@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <defs>
+    <pattern id="habbo-pattern" patternUnits="userSpaceOnUse" width="20" height="20">
+      <rect width="20" height="20" fill="#17A2B8" opacity="0.1"/>
+      <path d="M0,10 L20,10 M10,0 L10,20" stroke="#FFFFFF" stroke-width="0.5" stroke-opacity="0.2"/>
+      <circle cx="10" cy="10" r="2" fill="#FFFFFF" opacity="0.2"/>
+    </pattern>
+  </defs>
+  <rect width="100" height="100" fill="url(#habbo-pattern)"/>
+</svg> 

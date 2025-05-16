@@ -1,0 +1,13 @@
+@echo off
+echo Stopping all servers...
+
+echo Stopping Node.js processes...
+taskkill /F /IM node.exe /T
+
+echo Stopping MongoDB...
+taskkill /F /IM mongod.exe /T
+
+echo Stopping Java (Minecraft server)...
+taskkill /F /IM java.exe /T
+
+echo All servers stopped successfully! 

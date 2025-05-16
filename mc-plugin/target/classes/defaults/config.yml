@@ -1,0 +1,22 @@
+# Default BizzyLink Configuration
+
+# API Settings
+api:
+  # The URL of your BizzyLink web API
+  url: "http://localhost:3000"
+  
+  # API endpoints
+  endpoints:
+    verify: "/verify"
+
+# Website URL (shown to players)
+website-url: "http://localhost:3000"
+
+# Notification Settings
+join-notification: true
+show-website-on-join: true
+
+# Reminder Settings
+reminder:
+  enabled: true
+  interval: 15  # minutes between reminders

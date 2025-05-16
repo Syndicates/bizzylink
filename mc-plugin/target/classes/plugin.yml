@@ -1,9 +1,112 @@
 name: BizzyLink
-version: 1.0
+version: 1.0-SNAPSHOT
 main: com.bizzynation.LinkPlugin
-author: BizzyNation
+api-version: 1.13
+authors: [BizzyNation]
+description: Link Minecraft accounts with the BizzyLink web platform
+website: https://bizzynation.co.uk
+softdepend: [LuckPerms, Vault, Essentials, PlaceholderAPI]
+
 commands:
   link:
-    description: Link your Minecraft account
-    usage: /link <code>
+    description: Link your Minecraft account with the BizzyNation website
+    usage: |-
+      §6BizzyLink Commands:
+      §6/link <code> §7- Link your account with a verification code
+      §6/link status §7- Check your account linking status
+      §6/link sync §7- Manually sync your data with the website
+      §6/link unlink §7- Unlink your account (if necessary)
+      §6/link help §7- Show help message
+      §6/link reload §7- Reload plugin configuration (admin only)
+    aliases: [bizzylink, accounts, account]
     permission: bizzylink.use
+    
+  friend:
+    description: Manage your friends on BizzyLink
+    usage: |-
+      §dBizzyLink Friend Commands:
+      §d/friend list §7- View your friends list
+      §d/friend requests §7- View pending friend requests
+      §d/friend add <player> §7- Send a friend request
+      §d/friend accept <player> §7- Accept a friend request
+      §d/friend reject <player> §7- Reject a friend request
+      §d/friend remove <player> §7- Remove a friend
+      §d/friend help §7- Show help message
+    aliases: [friends, buddy, buddies, pal]
+    permission: bizzylink.friends.use
+
+permissions:
+  bizzylink.use:
+    description: Allows using the link command
+    default: true
+    
+  bizzylink.unlink:
+    description: Allows unlinking accounts
+    default: true
+    
+  bizzylink.sync:
+    description: Allows manual sync with the website
+    default: true
+    
+  bizzylink.status:
+    description: Allows checking account status
+    default: true
+  
+  bizzylink.admin:
+    description: Allows using admin commands (reload)
+    default: op
+    children:
+      bizzylink.use: true
+      bizzylink.unlink: true
+      bizzylink.sync: true
+      bizzylink.status: true
+      bizzylink.friends.admin: true
+      
+  bizzylink.rewards:
+    description: Allows receiving rewards for linking
+    default: true
+    
+  bizzylink.notify:
+    description: Receive notifications about account linking
+    default: true
+    
+  # Friend system permissions
+  bizzylink.friends.use:
+    description: Allows using the friend commands
+    default: true
+    
+  bizzylink.friends.add:
+    description: Allows sending friend requests
+    default: true
+    
+  bizzylink.friends.accept:
+    description: Allows accepting friend requests
+    default: true
+    
+  bizzylink.friends.reject:
+    description: Allows rejecting friend requests
+    default: true
+    
+  bizzylink.friends.remove:
+    description: Allows removing friends
+    default: true
+    
+  bizzylink.friends.list:
+    description: Allows listing friends
+    default: true
+    
+  bizzylink.friends.requests:
+    description: Allows viewing friend requests
+    default: true
+    
+  bizzylink.friends.admin:
+    description: Allows administrative access to the friend system
+    default: op
+    children:
+      bizzylink.friends.use: true
+      bizzylink.friends.add: true
+      bizzylink.friends.accept: true
+      bizzylink.friends.reject: true
+      bizzylink.friends.remove: true
+      bizzylink.friends.list: true
+      bizzylink.friends.requests: true

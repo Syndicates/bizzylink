@@ -1,0 +1,92 @@
+.friend-button-wrapper {
+  display: inline-block;
+  position: relative;
+}
+
+.friend-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  padding: 6px 16px;
+}
+
+.friend-button.small {
+  padding: 4px 8px;
+  font-size: 0.875rem;
+}
+
+.friend-button.medium {
+  padding: 6px 16px;
+  font-size: 1rem;
+}
+
+.friend-button.large {
+  padding: 8px 24px;
+  font-size: 1.125rem;
+}
+
+.friend-button.primary {
+  background-color: #1976d2;
+  color: white;
+}
+
+.friend-button.primary:hover {
+  background-color: #1565c0;
+}
+
+.friend-button.error {
+  background-color: #d32f2f;
+  color: white;
+}
+
+.friend-button.error:hover {
+  background-color: #c62828;
+}
+
+.friend-button.warning {
+  background-color: #ed6c02;
+  color: white;
+}
+
+.friend-button.warning:hover {
+  background-color: #e65100;
+}
+
+.friend-button.success {
+  background-color: #2e7d32;
+  color: white;
+}
+
+.friend-button.success:hover {
+  background-color: #1b5e20;
+}
+
+.friend-button:disabled {
+  background-color: #e0e0e0;
+  color: #9e9e9e;
+  cursor: not-allowed;
+}
+
+.friend-button.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.friend-button .icon {
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.friend-button.small .icon {
+  font-size: 1em;
+}
+
+.friend-button .text {
+  line-height: 1.2;
+} 

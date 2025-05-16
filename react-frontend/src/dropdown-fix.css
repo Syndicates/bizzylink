@@ -1,0 +1,81 @@
+/* Dropdown fix styles */
+
+/* Ensure dropdowns have higher z-index than fixed headers */
+.profile-dropdown-container .group:hover > div,
+.more-dropdown-container .group:hover > div,
+.notification-dropdown-container > div {
+  z-index: 9999 !important;
+  position: absolute !important;
+  display: block !important;
+}
+
+/* Ensure the dropdown containers don't clip their children */
+.profile-dropdown-container,
+.more-dropdown-container,
+.notification-dropdown-container {
+  position: relative !important;
+  overflow: visible !important;
+}
+
+/* Ensure navbar has correct stacking order - above content but below dropdowns */
+nav {
+  z-index: 50 !important;
+}
+
+/* BizzyLink header should be below dropdown but above main content */
+.bizzylink-header {
+  z-index: 30 !important;
+  top: 3.5rem !important; /* Position it under the main navbar with less gap */
+}
+
+/* Make dropdown content more visible */
+.profile-dropdown-container .group > div,
+.more-dropdown-container .group > div {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  background-color: #1e2124 !important;
+  border: 1px solid rgba(74, 204, 74, 0.3) !important;
+  animation: dropdown-appear 0.15s ease-out !important;
+  position: absolute !important;
+}
+
+/* Notification panel should always be on top */
+.notification-dropdown-container [ref="panelRef"] {
+  z-index: 9999 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(74, 204, 74, 0.3) !important;
+}
+
+/* Fix dropdown positions */
+.more-dropdown-container .group > div {
+  left: 0 !important;
+  margin-top: 0.25rem !important;
+  transform: none !important;
+}
+
+/* Fix dropdown positions for profile menu */
+.profile-dropdown-container .group > div {
+  right: 0 !important;
+  margin-top: 0.25rem !important;
+  transform: none !important;
+}
+
+/* Add a nice animation for dropdown appearance */
+@keyframes dropdown-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Add a subtle hover effect on dropdown items */
+.profile-dropdown-container .group > div a:hover,
+.more-dropdown-container .group > div a:hover,
+.profile-dropdown-container .group > div button:hover,
+.more-dropdown-container .group > div button:hover {
+  background-color: rgba(74, 204, 74, 0.1) !important;
+  transition: all 0.2s ease !important;
+}

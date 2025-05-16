@@ -1,0 +1,113 @@
+/* Dashboard styles for BizzyLink */
+/* IMPORTANT: These styles are scoped to dashboard elements only and should not affect other parts of the site */
+
+/* Minecraft-inspired background patterns */
+.minecraft-texture {
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAADCUlEQVR4nO3dsW4TQRRGYTuIIiCBKHgCSt6Aio6CF8sbeG8iCigpKJHS0dJQUNCxu2RbQktHkYKXMCIJBZbs8dy5M3PvPb9vlS9jyWfXu+tZZW0MAAAAAAAAAAAAAACAW1pba03OeXe73d5tmubRMAyP+75/UVXVq7Zt3+R5/q7ruvc55w+llE9lWX4ZhuGb+M8Sm1LKl6Zpnozj+DwMw2OSdZ5/rbW6qqqXwzC8raqqmKtNxWKtVFX1uiiKJ1tLiYrVYhGUUj6tbdjNYhFUVfWaZA6LSFVVzxeRFJFl0/yoqvb39vaep6pqZ76Zx9J127afSXLG5vz8/LVpmodJLFe3CdZZZcP8PM8P12X+zPxP/mq7AUlWyrLMLi4uZoeKQRAk6bpuZ2rpnySCdqz/7MdxfD7/uWkcp/k8z9//r/lJErN5BW3bvpvG7vt+UlFbUgTz/tGHDx9+3c1P0mAOwzBmLf5OSaLt9w9yuYH7+/tt13V/Pd+TbR+0eNs0zeGfNxaJIGC+5JPvH9Tr9dkwDEeL20kiqNfrYzGvJFPmz5p5VVXnVVUdJxlRFMXHoii+L24niaDv+yPzSjJl/iTNZVm+PD09/T67YYpqURHL5qcSQT/uYlPmJ7HoAMWQjZ7NAAAAAAAAAAAAAADT34SWZXnUdd1+mqZ7eZ4/aJrmUVEUj7uu28/z/EFRFPuHh4f7ZVkeNU3z6PT0dL9pmsOiKJ7mef5wzjKCJD/nXJ0cH+9VdX1Q1/Vjkrppmie/q+qgruvDk+PjvfTr8RdZlh0dHR09S9O0l2XZgXKvZwdJfpHk+PRO09T7SWyn2b9PkltmKK+v2tP8kL0SrbXaWquttZYkSbI0KXd5dmbLlmbIXom/5qdF8yOStd9+e/oLMWDNr0TMOV+/rNX+1ORqXc7kzlj3KxH5NwLzI9H1C89ck5zJnWGtEUQhDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCeHwnIH3A97OA+AAAAAElFTkSuQmCC");
+  background-repeat: repeat;
+}
+
+.minecraft-grid-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23ffffff' fill-opacity='0.1' d='M0 0h4v4H0V0zm4 4h4v4H4V4zm4 0h4v4H8V4zm4 0h4v4h-4V4zm0 4h4v4h-4V8zM8 8h4v4H8V8zm-4 0h4v4H4V8zm-4 0h4v4H0V8zm0 4h4v4H0v-4zm4 0h4v4H4v-4zm8 0h4v4h-4v-4z'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+.minecraft-dirt-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23ffffff' fill-opacity='0.2' d='M3 13h1v1H3v-1zm8-8h1v1h-1V5zm0 8h1v1h-1v-1zm-8-4h1v1H3v-1zm4 0h1v1H7v-1zm4 0h1v1h-1v-1zM3 9h1v1H3V9zm4 0h1v1H7V9zm8 0h1v1h-1V9zm0-4h1v1h-1V5zm-4 4h1v1h-1V9zm0-4h1v1h-1V5zm-8 6h1v1H3v-1zm0-2h1v1H3V9zm0-2h1v1H3V7zm0-2h1v1H3V5zm0-2h1v1H3V3zm8 4h1v1h-1V7zm-4 0h1v1H7V7zm0-4h1v1H7V3zm4 0h1v1h-1V3zM3 1h1v1H3V1zm4 0h1v1H7V1zm4 0h1v1h-1V1z'/%3E%3C/svg%3E");
+}
+
+.minecraft-grass-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='%2354AA54' fill-opacity='0.2' d='M0 0h10v10H0V0zm10 10h10v10H10V10z'/%3E%3C/svg%3E");
+}
+
+.minecraft-stone-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='%23AAAAAA' fill-opacity='0.1' d='M10 0v10H0V0h10zm0 20H0V10h10v10zM20 0v10H10V0h10zm0 20H10V10h10v10z'/%3E%3C/svg%3E");
+}
+
+.minecraft-background {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='%239C92AC' fill-opacity='0.1'%3E%3Cpath fill-rule='evenodd' d='M0 0h4v4H0V0zm4 0h4v4H4V0zm4 0h4v4H8V0zm4 0h4v4h-4V0zm4 0h4v4h-4V0zm4 0h4v4h-4V0zM0 4h4v4H0V4zm4 0h4v4H4V4zm4 0h4v4H8V4zm4 0h4v4h-4V4zm4 0h4v4h-4V4zm4 0h4v4h-4V4zM0 8h4v4H0V8zm4 0h4v4H4V8zm4 0h4v4H8V8zm4 0h4v4h-4V8zm4 0h4v4h-4V8zm4 0h4v4h-4V8zM0 12h4v4H0v-4zm4 0h4v4H4v-4zm4 0h4v4H8v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4zM0 16h4v4H0v-4zm4 0h4v4H4v-4zm4 0h4v4H8v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4zM0 20h4v4H0v-4zm4 0h4v4H4v-4zm4 0h4v4H8v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4zm4 0h4v4h-4v-4z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Minecraft-inspired UI elements */
+.dashboard .btn-minecraft-primary {
+  background-image: linear-gradient(to bottom right, #54AA54, #458945);
+  color: white;
+  font-weight: 500;
+  display: inline-block;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.dashboard .btn-minecraft-primary:hover {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.dashboard .btn-minecraft-primary:active {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  transform: translateY(1px);
+}
+
+.dashboard .btn-minecraft-secondary {
+  background-image: linear-gradient(to bottom right, #9C44DC, #7d35b0);
+  color: white;
+  font-weight: 500;
+  display: inline-block;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.dashboard .btn-minecraft-secondary:hover {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.dashboard .btn-minecraft-secondary:active {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  transform: translateY(1px);
+}
+
+/* Dashboard-specific animations */
+.dashboard .animate-bounce-slight {
+  animation: bounce-slight 3s ease-in-out infinite;
+}
+
+@keyframes bounce-slight {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Minecraft-inspired typography - only applied to elements with this class in the dashboard */
+.dashboard .font-minecraft {
+  /* Using system font as backup */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  letter-spacing: 0.5px;
+}
+
+/* Rounded corners styled after Habbo UI */
+.dashboard .rounded-habbo {
+  border-radius: 8px;
+}
+
+/* Define custom Minecraft theme colors (can be adjusted to match your brand) */
+:root {
+  --minecraft-green: #54AA54;
+  --minecraft-purple: #9C44DC;
+  --minecraft-blue: #3D99F5;
+  --minecraft-yellow: #FDDF6E;
+  --minecraft-red: #E43F5A;
+  --minecraft-navy: #1A1C23;
+  --minecraft-navy-dark: #12141a;
+  --minecraft-habbo-yellow: #FDDF6E;
+  --minecraft-habbo-blue: #3D99F5;
+  --minecraft-habbo-red: #E43F5A;
+  --minecraft-habbo-green: #54AA54;
+  --minecraft-habbo-purple: #9C44DC;
+}
