@@ -201,18 +201,33 @@
 - **✅ DO:** Add the following header to all source code files:
   ```
   /**
+   * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+   *  _____     _                   _   _         _   _                 
+   * | __  |___|_|___ ___ _ _      | \ |_|___ ___| |_|_|___ ___        
+   * | __ -| -_| |_ -|_ -| | |     |   | |   |_ -|  _| | . |   |       
+   * |_____|___|_|___|___|_  |_____|_|_|_|_|_|___|_| |_|___|_|_|       
+   *                     |___|                                         
+   *                                                         
+   *         [::::::][::::::][::::::][::::::][::::::][:::::::]
+   *                      DO NOT STEAL OUR DIAMONDS               
+   *         [::::::][::::::][::::::][::::::][::::::][:::::::]
+   *
    * @file [filename]
    * @description [brief description of the file]
    * 
-   * @copyright Copyright (c) [current year] Bizzy Nation
-   * @author Designed by Bizzy for Bizzy Nation
-   * @license Proprietary and confidential
-   * This file is property of Bizzy Nation. Unauthorized copying,
-   * modification, distribution, or use is strictly prohibited.
+   * @copyright © Bizzy Nation - All Rights Reserved
+   * @license ARRR! This be proprietary treasure of Bizzy Nation
+   * 
+   * WARNING: This file is protected by powerful enchantments.
+   * Unauthorized copying, modification, or distribution will result in
+   * inventory clearing and may summon creepers to your location.
+   * 
+   * Designed by Bizzy | Built with ♦ | [current year]
+   * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
    */
   ```
 - **❌ DON'T:** Omit copyright information from any source files
-- **WHY:** Establishes intellectual property rights and ownership
+- **WHY:** Establishes intellectual property rights and ownership with memorable visual impact
 
 ### 2. Copyright Placement
 - **✅ DO:** Place the copyright notice at the very top of each file
