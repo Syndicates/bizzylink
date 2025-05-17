@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file AuthContext.js
- * @description 
+ * @description Authentication context provider for user authentication state management
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -19,7 +19,10 @@ import { AuthService, clearApiCache } from '../services/api';
 import api from '../services/api';
 import Notification from '../components/Notification';
 import { toast } from 'react-toastify';
-import mockUsers from '../data/mockUsers';
+// Import from the new utility instead of using a circular dependency
+import TokenStorage from '../utils/tokenStorage';
+// Remove mock users import
+// import mockUsers from '../data/mockUsers';
 
 // Create context
 const AuthContext = createContext();
@@ -33,117 +36,8 @@ export const useAuth = () => {
   return context;
 };
 
-// Create a robust token storage solution that uses multiple storage mechanisms
-export const TokenStorage = {
-  // Set token in all available storage mechanisms
-  setToken: (token) => {
-    // Try localStorage first
-    try {
-      localStorage.setItem('token', token);
-      // Don't log token info to console in production
-    } catch (err) {
-      // Silent error handling for localStorage
-    }
-    
-    // Backup to sessionStorage
-    try {
-      sessionStorage.setItem('token', token);
-    } catch (err) {
-      // Silent error handling for sessionStorage
-    }
-    
-    // Set a cookie as last resort (30 days expiry)
-    try {
-      const date = new Date();
-      date.setTime(date.getTime() + (30 * 24 * 60 * 60 * 1000));
-      document.cookie = `token=${token}; expires=${date.toUTCString()}; path=/; SameSite=Strict`;
-    } catch (err) {
-      // Silent error handling for cookies
-    }
-  },
-  
-  // Get token from any available storage mechanism
-  getToken: () => {
-    let token = null;
-    
-    // Try localStorage first
-    try {
-      token = localStorage.getItem('token');
-      if (token) {
-        return token;
-      }
-    } catch (err) {
-      // Silent error handling for localStorage
-    }
-    
-    // Try sessionStorage next
-    try {
-      token = sessionStorage.getItem('token');
-      if (token) {
-        // Also save it back to localStorage if possible
-        try { localStorage.setItem('token', token); } catch (e) {}
-        return token;
-      }
-    } catch (err) {
-      // Silent error handling for sessionStorage
-    }
-    
-    // Try cookies as last resort
-    try {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.startsWith('token=')) {
-          token = cookie.substring('token='.length);
-          // Save it back to other storage mechanisms if possible
-          try { localStorage.setItem('token', token); } catch (e) {}
-          try { sessionStorage.setItem('token', token); } catch (e) {}
-          return token;
-        }
-      }
-    } catch (err) {
-      // Silent error handling for cookies
-    }
-    
-    return null;
-  },
-  
-  // Remove token from all storage mechanisms
-  removeToken: () => {
-    let removed = false;
-    
-    // Remove from localStorage
-    try {
-      localStorage.removeItem('token');
-      removed = true;
-    } catch (err) {
-      // Silent error handling for localStorage
-    }
-    
-    // Remove from sessionStorage
-    try {
-      sessionStorage.removeItem('token');
-      removed = true;
-    } catch (err) {
-      // Silent error handling for sessionStorage
-    }
-    
-    // Remove from cookies
-    try {
-      document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict';
-      removed = true;
-    } catch (err) {
-      // Silent error handling for cookies
-    }
-    
-    return removed;
-  },
-  
-  // Check if token exists in any storage mechanism
-  hasToken: () => {
-    return TokenStorage.getToken() !== null;
-  }
-};
+// Export TokenStorage so api.js can use it directly via import
+export { TokenStorage };
 
 // Debug flag - can be disabled in production
 const DEBUG = true;
@@ -167,12 +61,13 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   // Function to update user with proper ID normalization
   const updateUser = useCallback((userData) => {
     if (!userData) {
       setUser(null);
-      return;
+      return null;
     }
     
     // Normalize IDs to ensure both id and _id are present
@@ -208,24 +103,25 @@ export const AuthProvider = ({ children }) => {
       };
     }
     
-    console.log('Setting normalized user:', normalizedUser);
+    debug('Setting normalized user', normalizedUser);
     setUser(normalizedUser);
     return normalizedUser;
   }, []);
 
-  // Improved initialization with our TokenStorage
+  // Improved initialization with retries
   const initAuth = useCallback(async () => {
-    console.log('Initializing authentication state...');
+    debug('Initializing authentication state...');
     setLoading(true);
     
     try {
       // Check if we have a forced logout flag
       const forcedLogout = localStorage.getItem('FORCE_LOGGED_OUT') === 'true';
       if (forcedLogout) {
-        console.log('Found forced logout flag - ignoring any existing tokens');
+        debug('Found forced logout flag - ignoring any existing tokens');
         setIsAuthenticated(false);
         setUser(null);
         setLoading(false);
+        setAuthInitialized(true);
         return;
       }
       
@@ -233,90 +129,132 @@ export const AuthProvider = ({ children }) => {
       const token = TokenStorage.getToken();
       
       if (!token) {
-        console.log('No authentication token found, user is not authenticated');
+        debug('No authentication token found, user is not authenticated');
         setIsAuthenticated(false);
         setUser(null);
         setLoading(false);
+        setAuthInitialized(true);
         return;
       }
       
-      console.log('Token found, fetching complete user data from server...');
+      debug('Token found, fetching complete user data from server...');
       
-      // Use the improved getCurrentUser function that fetches from the server
-      try {
-        const userData = await AuthService.getCurrentUser();
-        if (userData) {
-          console.log('Successfully loaded complete user data', userData);
-          setIsAuthenticated(true);
-          updateUser(userData);
-          setError(null);
-          setLoading(false);
-          return;
+      // Add retry mechanism for more reliable initialization
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+      
+      const fetchUserData = async () => {
+        try {
+          debug(`Attempt ${retryCount + 1} to fetch user data...`);
+          const userData = await AuthService.getCurrentUser();
+          
+          if (userData) {
+            debug('Successfully loaded complete user data', userData);
+            setIsAuthenticated(true);
+            const normalizedUser = updateUser(userData);
+            setError(null);
+            setLoading(false);
+            setAuthInitialized(true);
+            
+            if (!normalizedUser) {
+              throw new Error("User data normalization failed");
+            }
+            
+            return true;
+          }
+          throw new Error("No user data returned from API");
+        } catch (fetchErr) {
+          debug('Error fetching complete user data:', fetchErr);
+          
+          // If we get a 401 error, the token is invalid
+          if (fetchErr.response && fetchErr.response.status === 401) {
+            debug('Token is invalid - removing and logging out');
+            TokenStorage.removeToken();
+            setIsAuthenticated(false);
+            setUser(null);
+            setLoading(false);
+            setAuthInitialized(true);
+            return true; // No need to retry on 401
+          }
+          
+          // Retry logic
+          retryCount++;
+          if (retryCount < MAX_RETRIES) {
+            debug(`Retrying fetch... (${retryCount}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+            return false; // Continue retrying
+          }
+          
+          return false; // Failed after retries
         }
-      } catch (fetchErr) {
-        console.error('Error fetching complete user data:', fetchErr);
+      };
+      
+      // Try to fetch user data with retries
+      let fetchSuccess = await fetchUserData();
+      
+      while (!fetchSuccess && retryCount < MAX_RETRIES) {
+        fetchSuccess = await fetchUserData();
+      }
+      
+      // If we failed after all retries, fall back to JWT data extraction
+      if (!fetchSuccess) {
+        debug('All fetch attempts failed, falling back to JWT payload extraction');
         
-        // If we get a 401 error, the token is invalid
-        if (fetchErr.response && fetchErr.response.status === 401) {
-          console.log('Token is invalid - removing and logging out');
-          TokenStorage.removeToken();
+        try {
+          // Parse the token payload (JWT format: header.payload.signature)
+          const base64Url = token.split('.')[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+          }).join(''));
+
+          const payload = JSON.parse(jsonPayload);
+          
+          if (payload && payload.user) {
+            debug('Using token payload user data as fallback');
+            // Set authenticated state with token-extracted user data
+            setIsAuthenticated(true);
+            updateUser(payload.user);
+            setError(null);
+          } else {
+            debug('No user data found in token payload');
+            setIsAuthenticated(false);
+            setUser(null);
+          }
+        } catch (tokenErr) {
+          debug('Error extracting user data from token:', tokenErr);
+          // Unable to authenticate user properly
           setIsAuthenticated(false);
           setUser(null);
-          setLoading(false);
-          return;
         }
-      }
-      
-      // Fallback: Try to extract user data from the JWT token directly
-      try {
-        // Parse the token payload (JWT format: header.payload.signature)
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
-
-        const payload = JSON.parse(jsonPayload);
-        
-        if (payload && payload.user) {
-          console.log('Using token payload user data as fallback');
-          // Set authenticated state with token-extracted user data
-          setIsAuthenticated(true);
-          updateUser(payload.user);
-          setError(null);
-        }
-      } catch (tokenErr) {
-        console.error('Error extracting user data from token:', tokenErr);
-        // Unable to authenticate user properly
-        setIsAuthenticated(false);
-        setUser(null);
       }
     } catch (err) {
-      console.error('Authentication initialization error:', err);
+      debug('Authentication initialization error:', err);
       
       // Handle specific API errors
       if (err.response) {
-        console.log('API response error:', err.response.status, err.response.data);
+        debug('API response error:', err.response.status, err.response.data);
         
         if (err.response.status === 401) {
-          console.log('Token is invalid or expired, clearing authentication state');
+          debug('Token is invalid or expired, clearing authentication state');
           // Clear token if unauthorized
           TokenStorage.removeToken();
         }
       } else if (err.request) {
-        console.log('API request error (no response):', err.request);
+        debug('API request error (no response):', err.request);
       } else {
-        console.log('Authentication setup error:', err.message);
+        debug('Authentication setup error:', err.message);
       }
       
       setIsAuthenticated(false);
       setUser(null);
       setError(err.message || 'Authentication failed');
     } finally {
-      console.log('Authentication initialization completed');
+      debug('Authentication initialization completed');
       setLoading(false);
+      setAuthInitialized(true);
     }
-  }, []);
+  }, [updateUser]);
   
   // Run once when the component mounts
   useEffect(() => {
@@ -325,52 +263,32 @@ export const AuthProvider = ({ children }) => {
     // Check for token and validate it
     initAuth();
     
-    // Set up periodic token validation (every minute)
+    // Set up periodic token validation (every 30 seconds)
     const interval = setInterval(() => {
+      // Only do checks after initial auth is complete
+      if (!authInitialized) return;
+      
       const hasToken = TokenStorage.hasToken();
       
       // Fix any inconsistencies between token existence and auth state
       if (hasToken && !isAuthenticated) {
         console.warn('Token exists but user not authenticated - fixing inconsistency');
-        setIsAuthenticated(true);
-        initAuth();
+        if (!user) {
+          // Need to fetch user data
+          initAuth();
+        } else {
+          // We have user data already, just set auth state
+          setIsAuthenticated(true);
+        }
       } else if (!hasToken && isAuthenticated) {
         console.warn('User authenticated but no token exists - fixing inconsistency');
         setIsAuthenticated(false);
         setUser(null);
       }
-    }, 60000);
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, [initAuth]);
-  
-  // This effect ensures auth state is always in sync with token existence
-  useEffect(() => {
-    const checkAuthConsistency = () => {
-      // Skip if we're actively logging out
-      if (window.__LOGGING_OUT) {
-        console.log('Skipping auth check during logout process');
-        return;
-      }
-      
-      const hasToken = TokenStorage.hasToken();
-      
-      if (hasToken !== isAuthenticated) {
-        console.warn(`Auth state (${isAuthenticated}) doesn't match token existence (${hasToken}) - fixing`);
-        setIsAuthenticated(hasToken);
-        if (!hasToken) {
-          setUser(null);
-        }
-      }
-    };
-    
-    // Check immediately
-    checkAuthConsistency();
-    
-    // And check periodically
-    const interval = setInterval(checkAuthConsistency, 30000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [initAuth, authInitialized, isAuthenticated, user]);
   
   // Enhanced login function with TokenStorage
   const login = async (username, password) => {

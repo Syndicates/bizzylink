@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file api.js
- * @description 
+ * @description API services for communicating with the backend
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -14,19 +14,10 @@
  */
 
 import axios from 'axios';
+// Import TokenStorage directly from utility instead of from AuthContext
+import TokenStorage from '../utils/tokenStorage';
 
-// Import our TokenStorage helper
-// Using a safe import pattern in case it's not defined yet
-let TokenStorage = null;
-try {
-  // This is a dynamic import that will be resolved at runtime
-  const contextModule = require('../contexts/AuthContext');
-  TokenStorage = contextModule.TokenStorage || null;
-} catch (err) {
-  console.warn('Could not import TokenStorage, falling back to direct localStorage access');
-}
-
-// Safe token getter function that uses TokenStorage if available
+// Safe token getter function that uses TokenStorage
 const getToken = () => {
   // If we're logging out, return null to prevent auto re-auth
   if (window.__LOGGING_OUT) {
@@ -34,61 +25,17 @@ const getToken = () => {
     return null;
   }
   
-  if (TokenStorage) {
-    return TokenStorage.getToken();
-  }
-  
-  // Fallback to direct localStorage access
-  try {
-    return localStorage.getItem('token');
-  } catch (err) {
-    console.warn('Error accessing localStorage:', err);
-    return null;
-  }
+  return TokenStorage.getToken();
 };
 
-// Safe token setter function that uses TokenStorage if available
+// Safe token setter function using TokenStorage
 const setAuthToken = (token) => {
-  if (TokenStorage) {
-    TokenStorage.setToken(token);
-    return;
-  }
-  
-  // Fallback to direct localStorage access with safety
-  try {
-    localStorage.setItem('token', token);
-  } catch (err) {
-    console.error('Error setting token in localStorage:', err);
-    
-    // Try sessionStorage as backup
-    try {
-      sessionStorage.setItem('token', token);
-    } catch (err2) {
-      console.error('Error setting token in sessionStorage:', err2);
-    }
-  }
+  TokenStorage.setToken(token);
 };
 
-// Safe token remover function that uses TokenStorage if available
+// Safe token remover function using TokenStorage
 const removeAuthToken = () => {
-  if (TokenStorage) {
-    TokenStorage.removeToken();
-    return;
-  }
-  
-  // Fallback to direct localStorage access with safety
-  try {
-    localStorage.removeItem('token');
-  } catch (err) {
-    console.error('Error removing token from localStorage:', err);
-  }
-  
-  // Try sessionStorage as backup
-  try {
-    sessionStorage.removeItem('token');
-  } catch (err) {
-    console.error('Error removing token from sessionStorage:', err);
-  }
+  TokenStorage.removeToken();
 };
 
 // In-memory cache for API responses
