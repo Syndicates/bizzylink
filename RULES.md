@@ -266,6 +266,64 @@
 - **❌ DON'T:** Use abandoned or poorly maintained libraries for critical functionality
 - **WHY:** Supply chain attacks are increasingly common
 
+## User Authentication & Registration Best Practices
+
+### 1. Registration Flow
+- **✅ DO:** Implement email verification to confirm user identity
+- **✅ DO:** Use CAPTCHA or similar mechanisms to prevent automated registrations
+- **✅ DO:** Clearly communicate password requirements during registration
+- **✅ DO:** Validate all user inputs with both frontend and backend checks
+- **❌ DON'T:** Store unverified accounts with the same privileges as verified ones
+- **WHY:** A secure registration flow prevents account fraud and protects your platform
+
+### 2. Password Management
+- **✅ DO:** Enforce strong password policies (minimum length, complexity)
+- **✅ DO:** Hash passwords using strong algorithms (bcrypt, Argon2) with proper salt
+- **✅ DO:** Support password managers (avoid custom security questions)
+- **✅ DO:** Implement maximum failed login attempts with temporary lockouts
+- **❌ DON'T:** Store plaintext passwords or use weak hashing algorithms (MD5, SHA1)
+- **WHY:** Password security is the first line of defense for user accounts
+
+### 3. Authentication Tokens
+- **✅ DO:** Use short-lived JWTs or similar tokens for authentication
+- **✅ DO:** Implement token refresh mechanisms for longer sessions
+- **✅ DO:** Include essential claims and proper expiration times
+- **✅ DO:** Store tokens securely (HttpOnly cookies for web applications)
+- **❌ DON'T:** Store sensitive user data in client-accessible tokens
+- **WHY:** Secure token management prevents session hijacking and related attacks
+
+### 4. Multi-Factor Authentication
+- **✅ DO:** Offer MFA as an option for all users (strongly encouraged)
+- **✅ DO:** Support industry-standard TOTP (Time-based One-Time Password)
+- **✅ DO:** Provide backup codes for account recovery
+- **✅ DO:** Require MFA for privileged accounts (admins, moderators)
+- **❌ DON'T:** Use SMS as the only MFA option due to SIM swapping vulnerabilities
+- **WHY:** MFA dramatically reduces account takeover risk even if passwords are compromised
+
+### 5. Session Management
+- **✅ DO:** Regenerate session IDs after login, privilege changes, or security events
+- **✅ DO:** Implement proper session timeouts for inactivity
+- **✅ DO:** Provide "Remember Me" functionality with appropriate security measures
+- **✅ DO:** Enable users to view and terminate active sessions
+- **❌ DON'T:** Store session data solely on the client side
+- **WHY:** Proper session management prevents session fixation and related attacks
+
+### 6. Account Recovery
+- **✅ DO:** Implement secure password reset mechanisms with time-limited tokens
+- **✅ DO:** Send password reset links to verified email addresses only
+- **✅ DO:** Log and notify users of account recovery attempts
+- **✅ DO:** Require identity verification before password changes
+- **❌ DON'T:** Reveal account existence through recovery processes
+- **WHY:** Insecure account recovery can bypass all other security measures
+
+### 7. Login Events & Security Notifications
+- **✅ DO:** Log all authentication events securely (success, failure, lockout)
+- **✅ DO:** Notify users of important security events (password change, unusual login location)
+- **✅ DO:** Include relevant information in notifications (time, IP address, device)
+- **✅ DO:** Provide actionable security recommendations
+- **❌ DON'T:** Include sensitive information in notification emails
+- **WHY:** Security awareness helps users identify and respond to account threats
+
 ## Accessibility Standards
 
 ### 1. Basic Requirements
