@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Minecraft Grass Block -->
+  <g transform="translate(8, 8)">
+    <!-- Top Face (Grass) -->
+    <polygon points="24,0 48,12 24,24 0,12" fill="#7BBA4C" />
+    
+    <!-- Right Face (Dirt with Grass) -->
+    <polygon points="48,12 48,36 24,48 24,24" fill="#8C6344">
+      <!-- Grass Overlay -->
+      <animate attributeName="fill" values="#8C6344; #8C6344; #7BBA4C; #8C6344" dur="0.5s" begin="0s" repeatCount="1" />
+    </polygon>
+    
+    <!-- Left Face (Dirt with Grass) -->
+    <polygon points="0,12 24,24 24,48 0,36" fill="#9E7153">
+      <!-- Grass Overlay -->
+      <animate attributeName="fill" values="#9E7153; #9E7153; #7BBA4C; #9E7153" dur="0.5s" begin="0s" repeatCount="1" />
+    </polygon>
+    
+    <!-- Dirt Texture Details -->
+    <circle cx="12" cy="18" r="2" fill="#8C6344" opacity="0.5" />
+    <circle cx="36" cy="18" r="2" fill="#8C6344" opacity="0.5" />
+    <circle cx="12" cy="36" r="2" fill="#8C6344" opacity="0.5" />
+    <circle cx="36" cy="36" r="2" fill="#8C6344" opacity="0.5" />
+    
+    <!-- Grass Details -->
+    <line x1="8" y1="8" x2="12" y2="6" stroke="#5D9E38" stroke-width="1" />
+    <line x1="36" y1="8" x2="40" y2="6" stroke="#5D9E38" stroke-width="1" />
+    <line x1="24" y1="4" x2="24" y2="0" stroke="#5D9E38" stroke-width="1" />
+  </g>
+</svg> 

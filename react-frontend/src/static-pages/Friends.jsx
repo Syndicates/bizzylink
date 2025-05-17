@@ -1,3 +1,18 @@
+/**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file Friends.jsx
+ * @description 
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
 // src/static-pages/Friends.jsx - Super-simplified version with no external dependencies
 import React, { useState } from 'react';
 

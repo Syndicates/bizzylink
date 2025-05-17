@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Minecraft Diamond Pickaxe -->
+  <g transform="translate(8, 8) rotate(45, 24, 24)">
+    <!-- Pickaxe Head Left -->
+    <polygon points="12,8 20,8 20,16 12,24" fill="#5CCCEA" />
+    <polygon points="14,10 18,10 18,16 14,22" fill="#7FDDFA" />
+    
+    <!-- Pickaxe Head Right -->
+    <polygon points="28,8 36,8 36,24 28,16" fill="#5CCCEA" />
+    <polygon points="30,10 34,10 34,22 30,16" fill="#7FDDFA" />
+    
+    <!-- Pickaxe Handle -->
+    <rect x="22" y="12" width="4" height="32" fill="#8B5A2B" />
+    <rect x="23" y="12" width="2" height="32" fill="#A67C52" />
+  </g>
+</svg> 

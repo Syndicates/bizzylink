@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60" viewBox="0 0 300 60">
+  <defs>
+    <!-- Minecraft-style pixelated filter -->
+    <filter id="pixelate" x="0" y="0" width="100%" height="100%">
+      <feFlood x="4" y="4" height="2" width="2"/>
+      <feComposite width="10" height="10"/>
+      <feTile result="a"/>
+      <feComposite in="SourceGraphic" in2="a" operator="in"/>
+      <feMorphology operator="dilate" radius="1"/>
+    </filter>
+    
+    <!-- Gradient for the BIZZY text -->
+    <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#54AA54" />
+      <stop offset="100%" stop-color="#65CC65" />
+    </linearGradient>
+    
+    <!-- Background gradient -->
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect x="0" y="0" width="300" height="60" fill="url(#bg-gradient)" rx="4" ry="4" />
+  
+  <!-- Minecraft-style border -->
+  <rect x="4" y="4" width="292" height="52" fill="none" stroke="#54AA54" stroke-width="3" rx="2" ry="2" />
+  <rect x="8" y="8" width="284" height="44" fill="none" stroke="#65CC65" stroke-width="2" rx="1" ry="1" stroke-dasharray="4 2" />
+  
+  <!-- Main Text with 3D effect -->
+  <!-- Shadow layer -->
+  <text x="13" y="43" font-family="'Press Start 2P', monospace" font-size="28" fill="#2D5F2D" filter="url(#pixelate)" font-weight="bold">
+    BIZZY
+  </text>
+  <text x="123" y="43" font-family="'Press Start 2P', monospace" font-size="28" fill="#333333" filter="url(#pixelate)" font-weight="bold">
+    NATION
+  </text>
+  
+  <!-- Main text layer -->
+  <text x="10" y="40" font-family="'Press Start 2P', monospace" font-size="28" fill="url(#logo-gradient)" filter="url(#pixelate)" font-weight="bold">
+    BIZZY
+  </text>
+  <text x="120" y="40" font-family="'Press Start 2P', monospace" font-size="28" fill="#FFFFFF" filter="url(#pixelate)" font-weight="bold">
+    NATION
+  </text>
+  
+  <!-- TM Symbol with glow -->
+  <text x="267" y="22" font-family="'Press Start 2P', monospace" font-size="10" fill="#333333" filter="url(#pixelate)">
+    TM
+  </text>
+  <text x="265" y="20" font-family="'Press Start 2P', monospace" font-size="10" fill="#FFFFFF" filter="url(#pixelate)">
+    TM
+  </text>
+  
+  <!-- Decorative elements -->
+  <rect x="10" y="48" width="280" height="2" fill="#54AA54" opacity="0.5" />
+  <rect x="10" y="10" width="280" height="2" fill="#54AA54" opacity="0.5" />
+</svg> 

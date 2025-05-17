@@ -1,0 +1,273 @@
+# BizzyLink Configuration - Updated by Claude
+# BizzyLink Configuration
+
+# API Settings
+api:
+  # API URL without trailing slash
+  url: http://localhost:8090
+  
+  # Endpoints
+  endpoints:
+    verify: /api/linkcode/validate # Current endpoint that matches backend
+    # verify: "/api/link/verify"        # Legacy endpoint
+    # verify: "/api/verify"             # Alternative 1
+    # verify: "/api/verify-link"        # Alternative 2
+    # verify: "/api/test-verify"        # Test endpoint that should always work
+    
+    # Endpoint for unlinking accounts
+    unlink: /api/minecraft/unlink # Updated to match our custom minecraft unlink endpoint
+    
+    # Other API endpoints
+    player_data: /api/player/%uuid%
+    update_player: /api/player/update
+    group_sync: /api/ranks/sync
+
+  # Whether to use HTTP or HTTPS for API calls
+  use_https: false
+  
+  # Optional authentication for API calls
+  auth:
+    enabled: false
+    # username: "mc-server"
+    # password: "your-password-here"
+
+  # Real-time updates via webhook
+  webhook:
+    enabled: true
+    url: http://localhost:8090 # Without trailing slash
+    update_webhook: /api/minecraft/notify # Path for real-time notification webhook
+  
+  # Connection timeouts (milliseconds)
+  connect_timeout: 10000 # 10 seconds to establish connection (increased)
+  read_timeout: 15000 # 15 seconds to read data (increased)
+  sync_timeout: 20000 # 20 seconds max for sync operations (increased)
+  
+  # Real-time updates
+  realtime_updates: true # Enable instant website updates (ENABLED)
+  realtime_sync_interval: 30 # Seconds between real-time sync checks (FASTER)
+  
+  # Auto-sync settings (for instant updates)
+  auto_sync: true # Enable automatic syncing on data changes
+  economy_sync: true # Send updates when player economy changes
+  rank_sync: true # Send updates when player rank/permissions change
+  stats_sync: true # Send updates when player statistics change
+  
+  # Debug settings
+  debug: true # Enable debugging to troubleshoot API communication
+
+# Website URL (shown to players)
+website-url: https://bizzynation.co.uk
+
+# Dependency Settings
+dependencies:
+  # Vault integration settings (economy, permissions)
+  use_vault: true
+  
+  # LuckPerms integration settings (advanced permissions)
+  use_luckperms: true
+  
+  # Essentials integration settings
+  use_essentials: true
+  
+  # Apply website ranks in-game
+  apply_website_ranks: true
+  
+  # Auto-sync website ranks with LuckPerms
+  sync_website_ranks: true
+
+# Plugin integrations
+integrations:
+  # Enable/disable specific integrations
+  mcmmo: true
+  jobs: true
+  towny: true
+  factions: true
+  placeholderapi: true
+  griefprevention: true
+  worldedit: true
+  worldguard: true
+  plotsquared: true
+  dynmap: true
+  discordsrv: true
+  
+  # Report to website when players join/leave Discord
+  discord_activity: true
+  
+  # Sync player locations to Dynmap (if enabled)
+  dynmap_locations: true
+  
+  # Sync player plot data (if PlotSquared is available)
+  plots_data: true
+  
+  # Sync player claim data (if GriefPrevention is available)
+  claims_data: true
+
+# Notification Settings
+join-notification: true
+show-website-on-join: true
+
+# Reminder Settings
+reminder:
+  enabled: true
+  interval: 15 # minutes between reminders
+
+# Execute commands when a player links their account
+execute-commands-on-link: true
+on-link-commands:
+- say %player% just linked their account!
+- give %player% diamond 1
+
+# Data synchronization
+data:
+  # Enable syncing player data to website
+  sync_enabled: true
+  
+  # How often to sync player data to the API (in seconds)
+  sync_interval_seconds: 60 # REDUCED to 60 seconds for more frequent updates
+  # Legacy interval in minutes (kept for compatibility)
+  sync_interval: 1 # REDUCED to 1 minute for compatibility
+  
+  # Player data to track and sync
+  track_playtime: true
+  track_economy: true
+  track_permissions: true
+  track_luckperms: true
+  track_essentials: true
+  track_inventory: true # Collect detailed inventory data
+  track_advancements: true # Collect advancements/achievements
+  track_locations: true # Collect player location data
+  track_statistics: true # Collect detailed player statistics
+  debug_sync: true # ENABLE FULL SYNC DEBUGGING
+  
+  # Sync player data on specific events
+  sync_on_join: true
+  sync_on_quit: true
+  sync_on_world_change: false
+  sync_on_gamemode_change: false
+  sync_on_achievement: false
+  sync_on_level_up: false
+  sync_on_death: false
+  sync_on_transaction: false # Sync when player's economy balance changes
+  sync_on_rank_change: true # Sync when player's group/rank changes
+  
+  # Economy sync thresholds
+  sync_economy_threshold: 10.0 # Sync when balance changes by this amount (detect significant changes)
+  sync_economy_minimum_delay: 60 # Minimum seconds between economy syncs
+  
+  # Real-time sync settings - for immediate data updates
+  real_time_sync: true # ENABLE real-time syncing for critical data
+  real_time_economy: true # ENABLE real-time sync for economy data
+  real_time_ranks: true # ENABLE real-time sync for rank changes
+  
+  # Additional sync triggers
+  max_sync_cooldown: 10 # Maximum cooldown in minutes between syncs
+  sync_distance_moved: 2000 # Sync when player moves x blocks since last sync
+  sync_threshold_level: 5 # Sync when player gains this many levels
+  track_mcmmo: true
+
+# Economy and Rewards
+economy:
+  # Give rewards for linking account
+  link_reward_enabled: true
+  link_reward_amount: 1000
+  
+  # Automatically give daily rewards to linked accounts
+  daily_rewards_enabled: true
+  daily_reward_amount: 100
+  
+  # VIP multipliers for website ranks
+  rank_multipliers:
+    vip: 1.5
+    vip_plus: 2.0
+    mvp: 2.5
+    mvp_plus: 3.0
+
+# Website Rank Mapping
+# Maps website ranks to in-game groups
+rank_mapping:
+  member:
+    group: default
+    prefix: '&7'
+    suffix: ''
+    permissions: []
+  
+  vip:
+    group: vip
+    prefix: '&a[VIP] '
+    suffix: ''
+    permissions:
+    - essentials.kit.vip
+    - essentials.warps.vip
+  
+  vip_plus:
+    group: vip+
+    prefix: '&a[VIP&6+&a] '
+    suffix: ''
+    permissions:
+    - essentials.kit.vipplus
+    - essentials.warps.vipplus
+  
+  mvp:
+    group: mvp
+    prefix: '&b[MVP] '
+    suffix: ''
+    permissions:
+    - essentials.kit.mvp
+    - essentials.warps.mvp
+  
+  mvp_plus:
+    group: mvp+
+    prefix: '&b[MVP&c+&b] '
+    suffix: ''
+    permissions:
+    - essentials.kit.mvpplus
+    - essentials.warps.mvpplus
+
+# Messages
+messages:
+  # Command Messages
+  no-permission: '&c[BizzyLink] You don''t have permission to use this command.'
+  already-linked: '&6[BizzyLink] &aYour account is already linked!'
+  invalid-code: '&6[BizzyLink] &cInvalid verification code. Codes are 6 characters
+    (letters and numbers).'
+  verifying: '&6[BizzyLink] &eVerifying your account, please wait...'
+  link-success: '&6[BizzyLink] &aYour Minecraft account has been successfully linked!'
+  link-failed: '&6[BizzyLink] &cVerification failed. Make sure your code is correct
+    and not expired.'
+  link-error: '&6[BizzyLink] &cAn error occurred while linking your account. Please
+    try again later.'
+  
+  # Status Messages
+  status-linked: '&6[BizzyLink] &aYour Minecraft account is linked to the website!'
+  status-not-linked: '&6[BizzyLink] &eYour account is not linked. Visit the website
+    to get a link code.'
+  status-details: '&6[BizzyLink] &fLinked to website account: &e%account%'
+  status-rank: '&6[BizzyLink] &fWebsite Rank: &e%rank%'
+  
+  # Unlink Messages
+  unlink-confirm: '&6[BizzyLink] &eAre you sure you want to unlink your account? Type
+    &6/link unlink confirm &eto confirm.'
+  unlink-success: '&6[BizzyLink] &aYour account has been unlinked from the website.'
+  unlink-error: '&6[BizzyLink] &cError unlinking your account. Please try again later.'
+  
+  # Join/Reminder Messages
+  join-reminder: '&6[BizzyLink] &eYour account is not linked! Visit our website to
+    link your account.'
+  reminder: '&6[BizzyLink] &eYour account is not linked! Use &6/link &eto connect
+    your account.'
+  website-url: '&6Website: &b%s'
+  
+  # Pending Link Code Messages
+  pending-link: '&6[BizzyLink] &eA link code has been generated for you: &6%s'
+  verify-instructions: '&6[BizzyLink] &eType &6/link %s &eto verify your account!'
+  auto-link-notification: '&6[BizzyLink] &aA link request was found for your username.
+    Type &6/link %s &ato connect your account!'
+  
+  # Economy Messages
+  link-reward: '&6[BizzyLink] &aYou received &e%amount% &afor linking your account!'
+  daily-reward: '&6[BizzyLink] &aYou received your daily reward of &e%amount%&a!'
+  
+  # Rank Messages
+  rank-applied: '&6[BizzyLink] &aYour website rank &e%rank% &ahas been applied in-game!'
+mcmmo:
+  debug: false

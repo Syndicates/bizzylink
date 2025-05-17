@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Minecraft Diamond Sword -->
+  <g transform="translate(8, 4) rotate(45, 24, 28)">
+    <!-- Sword Blade -->
+    <rect x="20" y="4" width="8" height="32" fill="#5CCCEA" />
+    <rect x="22" y="4" width="4" height="32" fill="#7FDDFA" />
+    
+    <!-- Sword Tip -->
+    <polygon points="20,0 28,0 28,4 20,4" fill="#5CCCEA" />
+    <polygon points="22,0 26,0 26,4 22,4" fill="#7FDDFA" />
+    
+    <!-- Sword Guard -->
+    <rect x="16" y="36" width="16" height="4" fill="#8B5A2B" />
+    
+    <!-- Sword Handle -->
+    <rect x="20" y="40" width="8" height="12" fill="#6D4C41" />
+    <rect x="22" y="40" width="4" height="12" fill="#8D6E63" />
+  </g>
+</svg> 

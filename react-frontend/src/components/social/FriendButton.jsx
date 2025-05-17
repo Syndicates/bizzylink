@@ -1,3 +1,18 @@
+/**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file FriendButton.jsx
+ * @description 
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
 // src/components/social/FriendButton.jsx
 import React, { useState, useCallback } from 'react';
 import { useSocial } from '../../contexts/SocialContext';

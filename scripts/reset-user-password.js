@@ -1,4 +1,19 @@
 /**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file reset-user-password.js
+ * @description 
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
+/**
  * Reset User Password Script
  * 
  * This script updates a user's password in the database

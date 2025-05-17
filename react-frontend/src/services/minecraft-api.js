@@ -1,4 +1,19 @@
 /**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file minecraft-api.js
+ * @description 
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
+/**
  * Minecraft API Service
  * This service handles fetching Minecraft item images and player information from various APIs
  */

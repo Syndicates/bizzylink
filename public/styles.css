@@ -1,3 +1,226 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* BizzyLink Custom Styles */
+
+/* Custom Minecraft-inspired font - Self-hosted version */
+@font-face {
+  font-family: 'MinecraftTen';
+  src: url('fonts/minecraft-ten.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Minecraft-inspired styles */
+.minecraft-font {
+  font-family: 'MinecraftTen', 'Minecraft', monospace;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+  letter-spacing: 0.5px;
+}
+
+.pixel-border {
+  border-style: solid;
+  border-width: 4px;
+  image-rendering: pixelated;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+}
+
+.minecraft-btn {
+  background-color: #54AA54;
+  color: #fff;
+  font-weight: bold;
+  border: 3px solid #323232;
+  box-shadow: 3px 3px 0px #323232;
+  transition: all 0.1s ease-in-out;
+  transform: translateY(0);
+  text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.3);
+}
+
+.minecraft-btn:hover {
+  background-color: #65CC65;
+  transform: translateY(-2px);
+  box-shadow: 3px 5px 0px #323232;
+}
+
+.minecraft-btn:active {
+  background-color: #4A994A;
+  box-shadow: 1px 1px 0px #323232;
+  transform: translateY(1px);
+}
+
+/* Purple variant */
+.minecraft-btn-purple {
+  background-color: #9C44DC;
+  color: #fff;
+  font-weight: bold;
+  border: 3px solid #323232;
+  box-shadow: 3px 3px 0px #323232;
+  transition: all 0.1s ease-in-out;
+}
+
+.minecraft-btn-purple:hover {
+  background-color: #B355F7;
+  transform: translateY(-2px);
+  box-shadow: 3px 5px 0px #323232;
+}
+
+.minecraft-btn-purple:active {
+  background-color: #8038BA;
+  box-shadow: 1px 1px 0px #323232;
+  transform: translateY(1px);
+}
+
+/* Form elements */
+.form-control {
+  border: 2px solid #323232;
+  background-color: #F0F0F0;
+  color: #323232;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.form-control:focus {
+  border-color: #54AA54;
+  outline: none;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(84, 170, 84, 0.3);
+}
+
+/* Card styles */
+.minecraft-card {
+  background-color: #303030;
+  border: 4px solid #121212;
+  border-radius: 4px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Pixel art animation */
+@keyframes pixelate {
+  0% {
+    background-size: 100% 100%;
+  }
+  50% {
+    background-size: 102% 102%;
+  }
+  100% {
+    background-size: 100% 100%;
+  }
+}
+
+.pixel-animation {
+  animation: pixelate 3s infinite ease-in-out;
+  image-rendering: pixelated;
+}
+
+/* Habbo-inspired elements */
+.habbo-card {
+  background-color: #f7f7f7;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #54AA54;
+}
+
+.habbo-title {
+  font-family: 'MinecraftTen', 'Minecraft', monospace;
+  color: #54AA54;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+/* Status indicators */
+.status-online {
+  background-color: #54AA54;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 5px;
+  box-shadow: 0 0 8px rgba(84, 170, 84, 0.6);
+}
+
+.status-offline {
+  background-color: #AA5454;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 5px;
+}
+
+/* Page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.page-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-exit-active {
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: opacity 300ms, transform 300ms;
+}
+
+/* Apple-style smooth scrolling and animations */
+html {
+  scroll-behavior: smooth;
+}
+
+.smooth-transition {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-scale {
+  transition: transform 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.03);
+}
+
+/* Grass block animation */
+.grass-top {
+  background-color: #54AA54;
+  position: relative;
+  overflow: hidden;
+}
+
+.grass-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAJElEQVQYlWNgIBn8ZyAFMJGkgIkUBUwMJALi/UeSgv+kKAAAObYHB7WUx9IAAAAASUVORK5CYII=");
+  background-repeat: repeat;
+  opacity: 0.5;
+  image-rendering: pixelated;
+}
+
+.dirt-side {
+  background-color: #8B4513;
+  position: relative;
+}
+
+.dirt-side::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAH0lEQVQYlWNgQAX/GYgATCQrYCJVwX9SFJCkgGgFAESEBCE4iAJnAAAAAElFTkSuQmCC");
+  background-repeat: repeat;
+  opacity: 0.7;
+  image-rendering: pixelated;
+}

@@ -1,0 +1,14 @@
+{
+  "username": "admin",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRjZTQyZDA4ZDRiMzU5YjkwY2Q1IiwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImZvcnVtX3JhbmsiOiJhZG1pbiIsInBlcm1pc3Npb25zIjp7ImNhbkFjY2Vzc0FkbWluIjp0cnVlLCJjYW5Nb2RlcmF0ZUZvcnVtcyI6dHJ1ZSwiY2FuTWFuYWdlVXNlcnMiOnRydWUsImNhbkVkaXRTZXJ2ZXIiOnRydWV9fSwiaWF0IjoxNzQxMTE4NjAzLCJleHAiOjE3NDEyMDUwMDN9.pCikVeB8_DrNKDFgLHM7CYY_rYURY6BqgDWk5c9ofyI",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0Y2U0MmQwOGQ0YjM1OWI5MGNkNSIsImlhdCI6MTc0MTExODYwMywiZXhwIjoxNzQzNzEwNjAzfQ.Y0HxESQbjq4wiZkvMeoHFBbb-mtw0iD2A70tHdokyAI",
+  "instructions": [
+    "To login to BizzyLink:",
+    "1. Open your browser's developer console (F12)",
+    "2. Run this code:",
+    "localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRjZTQyZDA4ZDRiMzU5YjkwY2Q1IiwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImZvcnVtX3JhbmsiOiJhZG1pbiIsInBlcm1pc3Npb25zIjp7ImNhbkFjY2Vzc0FkbWluIjp0cnVlLCJjYW5Nb2RlcmF0ZUZvcnVtcyI6dHJ1ZSwiY2FuTWFuYWdlVXNlcnMiOnRydWUsImNhbkVkaXRTZXJ2ZXIiOnRydWV9fSwiaWF0IjoxNzQxMTE4NjAzLCJleHAiOjE3NDEyMDUwMDN9.pCikVeB8_DrNKDFgLHM7CYY_rYURY6BqgDWk5c9ofyI');",
+    "localStorage.setItem('refreshToken', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0Y2U0MmQwOGQ0YjM1OWI5MGNkNSIsImlhdCI6MTc0MTExODYwMywiZXhwIjoxNzQzNzEwNjAzfQ.Y0HxESQbjq4wiZkvMeoHFBbb-mtw0iD2A70tHdokyAI');",
+    "3. Refresh the page - you should be logged in!",
+    "4. If that doesn't work, you can also restart the server using: node server.js"
+  ]
+}

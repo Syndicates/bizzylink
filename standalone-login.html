@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BizzyLink Login</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #1A1C23;
+      color: #E2E8F0;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      background-color: #2D3748;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+      width: 100%;
+    }
+    h1 {
+      color: #54AA54;
+      margin-top: 0;
+      text-align: center;
+    }
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    button {
+      background-color: #54AA54;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #458A45;
+    }
+    button.admin {
+      background-color: #9C44DC;
+    }
+    button.admin:hover {
+      background-color: #8035B8;
+    }
+    button.logout {
+      background-color: #E53E3E;
+    }
+    button.logout:hover {
+      background-color: #C53030;
+    }
+    .status {
+      background-color: #424557;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+    .success {
+      color: #54AA54;
+    }
+    .error {
+      color: #E53E3E;
+    }
+    .token-info {
+      margin-top: 20px;
+      font-size: 14px;
+      overflow-wrap: break-word;
+    }
+    .manual-section {
+      margin-top: 30px;
+      border-top: 1px solid #4A5568;
+      padding-top: 20px;
+    }
+    textarea {
+      width: 100%;
+      background-color: #1A1C23;
+      color: #E2E8F0;
+      border: 1px solid #4A5568;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      margin-top: 10px;
+      height: 100px;
+    }
+    .copy-btn {
+      background-color: #4A5568;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-top: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .copy-btn:hover {
+      background-color: #2D3748;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BizzyLink Login</h1>
+    <p>This standalone page will help you login to BizzyLink. Click one of the buttons below to generate login tokens.</p>
+    
+    <div class="button-container">
+      <button class="admin" onclick="generateAdminToken()">Generate Admin Token</button>
+      <button onclick="generateUserToken()">Generate User Token</button>
+      <button class="logout" onclick="clearTokens()">Clear Tokens</button>
+    </div>
+    
+    <div class="status" id="status">
+      <div id="token-status">Status: <span id="status-text">No tokens generated yet</span></div>
+    </div>
+    
+    <div class="token-info" id="token-info"></div>
+    
+    <div class="manual-section">
+      <h2>Manual Login</h2>
+      <p>Copy and paste these commands into your browser console when on the BizzyLink site:</p>
+      
+      <h3>Admin Login:</h3>
+      <textarea id="admin-commands" readonly>
+localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRjZTQyZDA4ZDRiMzU5YjkwY2Q1IiwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImZvcnVtX3JhbmsiOiJhZG1pbiIsInBlcm1pc3Npb25zIjp7ImNhbkFjY2Vzc0FkbWluIjp0cnVlLCJjYW5Nb2RlcmF0ZUZvcnVtcyI6dHJ1ZSwiY2FuTWFuYWdlVXNlcnMiOnRydWUsImNhbkVkaXRTZXJ2ZXIiOnRydWV9fSwiaWF0IjoxNzQxMTE4NjAzLCJleHAiOjE3NDEyMDUwMDN9.pCikVeB8_DrNKDFgLHM7CYY_rYURY6BqgDWk5c9ofyI');
+localStorage.setItem('refreshToken', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0Y2U0MmQwOGQ0YjM1OWI5MGNkNSIsImlhdCI6MTc0MTExODYwMywiZXhwIjoxNzQzNzEwNjAzfQ.Y0HxESQbjq4wiZkvMeoHFBbb-mtw0iD2A70tHdokyAI');
+console.log('✅ Admin login successful - refresh the page');
+      </textarea>
+      <button class="copy-btn" onclick="copyText('admin-commands')">Copy Admin Login</button>
+      
+      <h3>User Login:</h3>
+      <textarea id="user-commands" readonly>
+localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRiNzBmNTIzMzJmYTk2Mjk1ZDc5IiwidXNlcm5hbWUiOiJ0ZXN0dXNlciIsInJvbGUiOiJ1c2VyIiwiZm9ydW1fcmFuayI6InVzZXIiLCJwZXJtaXNzaW9ucyI6eyJjYW5BY2Nlc3NBZG1pbiI6ZmFsc2UsImNhbk1vZGVyYXRlRm9ydW1zIjpmYWxzZSwiY2FuTWFuYWdlVXNlcnMiOmZhbHNlLCJjYW5FZGl0U2VydmVyIjpmYWxzZX19LCJpYXQiOjE3NDExMTg2MTYsImV4cCI6MTc0MTIwNTAxNn0.NJW9ve3MkXWKf4xJm-WA76CXtptvfAx_VN0VAUQp74k');
+localStorage.setItem('refreshToken', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0YjcwZjUyMzMyZmE5NjI5NWQ3OSIsImlhdCI6MTc0MTExODYxNiwiZXhwIjoxNzQzNzEwNjE2fQ.k-putMb3F4M-FS0nLQYQPmrvyjFNVT32mTZjnIkanx8');
+console.log('✅ User login successful - refresh the page');
+      </textarea>
+      <button class="copy-btn" onclick="copyText('user-commands')">Copy User Login</button>
+      
+      <h3>Logout:</h3>
+      <textarea id="logout-commands" readonly>
+localStorage.removeItem('token');
+localStorage.removeItem('refreshToken');
+console.log('✅ Logged out - refresh the page');
+      </textarea>
+      <button class="copy-btn" onclick="copyText('logout-commands')">Copy Logout Commands</button>
+    </div>
+    
+    <div class="manual-section">
+      <h2>Instructions</h2>
+      <ol>
+        <li>Open the BizzyLink React frontend (typically at http://localhost:3000)</li>
+        <li>Press F12 to open developer tools</li>
+        <li>Go to the Console tab</li>
+        <li>Copy and paste the login commands above</li>
+        <li>Refresh the page - you should now be logged in!</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    // Token data
+    const adminToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRjZTQyZDA4ZDRiMzU5YjkwY2Q1IiwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImZvcnVtX3JhbmsiOiJhZG1pbiIsInBlcm1pc3Npb25zIjp7ImNhbkFjY2Vzc0FkbWluIjp0cnVlLCJjYW5Nb2RlcmF0ZUZvcnVtcyI6dHJ1ZSwiY2FuTWFuYWdlVXNlcnMiOnRydWUsImNhbkVkaXRTZXJ2ZXIiOnRydWV9fSwiaWF0IjoxNzQxMTE4NjAzLCJleHAiOjE3NDEyMDUwMDN9.pCikVeB8_DrNKDFgLHM7CYY_rYURY6BqgDWk5c9ofyI";
+    const adminRefreshToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0Y2U0MmQwOGQ0YjM1OWI5MGNkNSIsImlhdCI6MTc0MTExODYwMywiZXhwIjoxNzQzNzEwNjAzfQ.Y0HxESQbjq4wiZkvMeoHFBbb-mtw0iD2A70tHdokyAI";
+    
+    const userToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRiNzBmNTIzMzJmYTk2Mjk1ZDc5IiwidXNlcm5hbWUiOiJ0ZXN0dXNlciIsInJvbGUiOiJ1c2VyIiwiZm9ydW1fcmFuayI6InVzZXIiLCJwZXJtaXNzaW9ucyI6eyJjYW5BY2Nlc3NBZG1pbiI6ZmFsc2UsImNhbk1vZGVyYXRlRm9ydW1zIjpmYWxzZSwiY2FuTWFuYWdlVXNlcnMiOmZhbHNlLCJjYW5FZGl0U2VydmVyIjpmYWxzZX19LCJpYXQiOjE3NDExMTg2MTYsImV4cCI6MTc0MTIwNTAxNn0.NJW9ve3MkXWKf4xJm-WA76CXtptvfAx_VN0VAUQp74k";
+    const userRefreshToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0YjcwZjUyMzMyZmE5NjI5NWQ3OSIsImlhdCI6MTc0MTExODYxNiwiZXhwIjoxNzQzNzEwNjE2fQ.k-putMb3F4M-FS0nLQYQPmrvyjFNVT32mTZjnIkanx8";
+    
+    // Generate token functions
+    function generateAdminToken() {
+      localStorage.setItem('token', adminToken);
+      localStorage.setItem('refreshToken', adminRefreshToken);
+      
+      document.getElementById('status-text').innerHTML = '<span class="success">Admin tokens generated</span>';
+      document.getElementById('token-info').innerHTML = `
+        <h3>Admin Token:</h3>
+        <div>${adminToken}</div>
+        <h3>Admin Refresh Token:</h3>
+        <div>${adminRefreshToken}</div>
+        <p class="success">✅ Tokens are now stored in your localStorage!</p>
+      `;
+    }
+    
+    function generateUserToken() {
+      localStorage.setItem('token', userToken);
+      localStorage.setItem('refreshToken', userRefreshToken);
+      
+      document.getElementById('status-text').innerHTML = '<span class="success">User tokens generated</span>';
+      document.getElementById('token-info').innerHTML = `
+        <h3>User Token:</h3>
+        <div>${userToken}</div>
+        <h3>User Refresh Token:</h3>
+        <div>${userRefreshToken}</div>
+        <p class="success">✅ Tokens are now stored in your localStorage!</p>
+      `;
+    }
+    
+    function clearTokens() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      
+      document.getElementById('status-text').innerHTML = '<span class="error">Tokens cleared</span>';
+      document.getElementById('token-info').innerHTML = '';
+    }
+    
+    // Copy text function
+    function copyText(elementId) {
+      const textarea = document.getElementById(elementId);
+      textarea.select();
+      document.execCommand('copy');
+      
+      // Show feedback
+      const button = event.target;
+      const originalText = button.textContent;
+      button.textContent = 'Copied!';
+      
+      setTimeout(() => {
+        button.textContent = originalText;
+      }, 2000);
+    }
+    
+    // Check if we already have tokens
+    window.onload = function() {
+      const token = localStorage.getItem('token');
+      
+      if (token) {
+        try {
+          // Parse the token
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            
+            if (payload && payload.user) {
+              const user = payload.user;
+              
+              if (user.role === 'admin') {
+                document.getElementById('status-text').innerHTML = 
+                  '<span class="success">Admin tokens already present</span>';
+              } else {
+                document.getElementById('status-text').innerHTML = 
+                  '<span class="success">User tokens already present</span>';
+              }
+              
+              document.getElementById('token-info').innerHTML = `
+                <p>You already have a token for <strong>${user.username}</strong> with role <strong>${user.role}</strong></p>
+              `;
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing token:', e);
+        }
+      }
+    };
+  </script>
+</body>
+</html>

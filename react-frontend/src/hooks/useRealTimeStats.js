@@ -1,3 +1,18 @@
+/**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file useRealTimeStats.js
+ * @description 
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useEventSource } from '../contexts/EventSourceContext';

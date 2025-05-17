@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BizzyLink - Quick Login</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #1A1C23;
+      color: #E2E8F0;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      background-color: #2D3748;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+      width: 100%;
+    }
+    h1 {
+      color: #54AA54;
+      margin-top: 0;
+      text-align: center;
+    }
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    button {
+      background-color: #54AA54;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #458A45;
+    }
+    button.admin {
+      background-color: #9C44DC;
+    }
+    button.admin:hover {
+      background-color: #8035B8;
+    }
+    button.logout {
+      background-color: #E53E3E;
+    }
+    button.logout:hover {
+      background-color: #C53030;
+    }
+    .status {
+      background-color: #424557;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+    .success {
+      color: #54AA54;
+    }
+    .error {
+      color: #E53E3E;
+    }
+    .token-info {
+      margin-top: 20px;
+      font-size: 14px;
+      overflow-wrap: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BizzyLink Quick Login</h1>
+    <p>This page provides one-click login to BizzyLink. Click one of the buttons below to login with pre-generated tokens.</p>
+    
+    <div class="button-container">
+      <button onclick="loginAsAdmin()">Login as Admin</button>
+      <button onclick="loginAsUser()">Login as Regular User</button>
+      <button class="logout" onclick="logout()">Logout</button>
+    </div>
+    
+    <div class="status" id="status">
+      <div id="login-status">Login status: <span id="status-text">Checking...</span></div>
+      <div id="user-info"></div>
+    </div>
+    
+    <div class="token-info" id="token-info"></div>
+  </div>
+
+  <script>
+    // Admin and user tokens
+    const adminToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRjZTQyZDA4ZDRiMzU5YjkwY2Q1IiwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImZvcnVtX3JhbmsiOiJhZG1pbiIsInBlcm1pc3Npb25zIjp7ImNhbkFjY2Vzc0FkbWluIjp0cnVlLCJjYW5Nb2RlcmF0ZUZvcnVtcyI6dHJ1ZSwiY2FuTWFuYWdlVXNlcnMiOnRydWUsImNhbkVkaXRTZXJ2ZXIiOnRydWV9fSwiaWF0IjoxNzQxMTE4NjAzLCJleHAiOjE3NDEyMDUwMDN9.pCikVeB8_DrNKDFgLHM7CYY_rYURY6BqgDWk5c9ofyI";
+    const adminRefreshToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0Y2U0MmQwOGQ0YjM1OWI5MGNkNSIsImlhdCI6MTc0MTExODYwMywiZXhwIjoxNzQzNzEwNjAzfQ.Y0HxESQbjq4wiZkvMeoHFBbb-mtw0iD2A70tHdokyAI";
+    
+    const userToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoiNjdjNzRiNzBmNTIzMzJmYTk2Mjk1ZDc5IiwidXNlcm5hbWUiOiJ0ZXN0dXNlciIsInJvbGUiOiJ1c2VyIiwiZm9ydW1fcmFuayI6InVzZXIiLCJwZXJtaXNzaW9ucyI6eyJjYW5BY2Nlc3NBZG1pbiI6ZmFsc2UsImNhbk1vZGVyYXRlRm9ydW1zIjpmYWxzZSwiY2FuTWFuYWdlVXNlcnMiOmZhbHNlLCJjYW5FZGl0U2VydmVyIjpmYWxzZX19LCJpYXQiOjE3NDExMTg2MTYsImV4cCI6MTc0MTIwNTAxNn0.NJW9ve3MkXWKf4xJm-WA76CXtptvfAx_VN0VAUQp74k";
+    const userRefreshToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Yzc0YjcwZjUyMzMyZmE5NjI5NWQ3OSIsImlhdCI6MTc0MTExODYxNiwiZXhwIjoxNzQzNzEwNjE2fQ.k-putMb3F4M-FS0nLQYQPmrvyjFNVT32mTZjnIkanx8";
+    
+    // Login functions
+    function loginAsAdmin() {
+      localStorage.setItem('token', adminToken);
+      localStorage.setItem('refreshToken', adminRefreshToken);
+      
+      document.getElementById('status-text').innerHTML = '<span class="success">Logged in as admin</span>';
+      
+      // Decode and display token info
+      const payload = parseJwt(adminToken);
+      updateUserInfo(payload);
+      
+      // Display full token info
+      document.getElementById('token-info').innerHTML = `
+        <strong>Admin Token:</strong><br>
+        ${adminToken}<br><br>
+        <strong>Admin Refresh Token:</strong><br>
+        ${adminRefreshToken}
+      `;
+    }
+    
+    function loginAsUser() {
+      localStorage.setItem('token', userToken);
+      localStorage.setItem('refreshToken', userRefreshToken);
+      
+      document.getElementById('status-text').innerHTML = '<span class="success">Logged in as regular user</span>';
+      
+      // Decode and display token info
+      const payload = parseJwt(userToken);
+      updateUserInfo(payload);
+      
+      // Display full token info
+      document.getElementById('token-info').innerHTML = `
+        <strong>User Token:</strong><br>
+        ${userToken}<br><br>
+        <strong>User Refresh Token:</strong><br>
+        ${userRefreshToken}
+      `;
+    }
+    
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      
+      document.getElementById('status-text').innerHTML = '<span class="error">Logged out</span>';
+      document.getElementById('user-info').innerHTML = '';
+      document.getElementById('token-info').innerHTML = '';
+    }
+    
+    // Helper function to parse JWT token
+    function parseJwt(token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        
+        return JSON.parse(jsonPayload);
+      } catch (e) {
+        console.error('Error parsing token:', e);
+        return null;
+      }
+    }
+    
+    // Update user info display
+    function updateUserInfo(payload) {
+      if (!payload || !payload.user) {
+        document.getElementById('user-info').innerHTML = '<span class="error">Error parsing token</span>';
+        return;
+      }
+      
+      const user = payload.user;
+      const expiryDate = new Date(payload.exp * 1000).toLocaleString();
+      
+      document.getElementById('user-info').innerHTML = `
+        <strong>Username:</strong> ${user.username}<br>
+        <strong>Role:</strong> ${user.role}<br>
+        <strong>Forum Rank:</strong> ${user.forum_rank}<br>
+        <strong>Token expires:</strong> ${expiryDate}
+      `;
+    }
+    
+    // Check login status on page load
+    function checkLoginStatus() {
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        document.getElementById('status-text').innerHTML = '<span class="error">Not logged in</span>';
+        return;
+      }
+      
+      // Try to parse the token
+      const payload = parseJwt(token);
+      
+      if (!payload || !payload.user) {
+        document.getElementById('status-text').innerHTML = '<span class="error">Invalid token</span>';
+        return;
+      }
+      
+      // Check if token is expired
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp < now) {
+        document.getElementById('status-text').innerHTML = '<span class="error">Token expired</span>';
+        return;
+      }
+      
+      // Token is valid
+      document.getElementById('status-text').innerHTML = 
+        `<span class="success">Logged in as ${payload.user.username}</span>`;
+      
+      // Update user info
+      updateUserInfo(payload);
+    }
+    
+    // Run on page load
+    window.onload = checkLoginStatus;
+  </script>
+</body>
+</html>

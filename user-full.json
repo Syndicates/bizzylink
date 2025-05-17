@@ -1,0 +1,460 @@
+{
+  "_id": "67c766cb9790428577f3f613",
+  "username": "bizzy",
+  "email": "dfssdfsdf@gmail.com",
+  "password": "$2a$10$FhhxVZlCOJQ0vSKuNXoX1O5pVRQoiN79GmyukxxbtC9MIoBgriZsW",
+  "role": "user",
+  "forum_rank": "user",
+  "luckperms_group": "default",
+  "permissions": {
+    "canAccessAdmin": false,
+    "canModerateForums": false,
+    "canManageUsers": false,
+    "canEditServer": false
+  },
+  "avatar": "/images/default-avatar.png",
+  "linked": false,
+  "verified": false,
+  "registrationIp": "::1",
+  "lastLoginIp": "::1",
+  "accountStatus": "active",
+  "failedLoginAttempts": {
+    "count": 0,
+    "lockUntil": null
+  },
+  "friends": [],
+  "following": [],
+  "followers": [],
+  "postCount": 0,
+  "threadCount": 0,
+  "reputation": 0,
+  "vouches": 0,
+  "balance": 0,
+  "settings": {
+    "notifications": {
+      "friendRequests": true,
+      "newFollowers": true,
+      "friendActivity": true,
+      "inGame": true,
+      "reputation": true,
+      "vouches": true,
+      "donations": true
+    },
+    "privacy": {
+      "profileVisibility": "public",
+      "allowFriendRequests": true,
+      "allowFollowers": true,
+      "showReputation": true,
+      "showVouches": true,
+      "showBalance": true
+    }
+  },
+  "createdAt": "2025-03-04T20:47:07.459Z",
+  "lastActive": "2025-03-04T20:47:07.459Z",
+  "reputationFrom": [],
+  "vouchesFrom": [],
+  "transactions": [],
+  "__v": 0,
+  "lastLogin": "2025-03-05T01:31:16.614Z",
+  "mcStats": {},
+  "mcUUID": null,
+  "mcUsername": null,
+  "linkCode": null,
+  "linkCodeExpiry": null,
+  "minecraft": {
+    "linked": false,
+    "mcUsername": "n0t_awake",
+    "mcUUID": "14dbb8de-5d20-4648-a175-70f38526edae",
+    "lastLinked": "2025-03-05T16:09:11.176Z",
+    "lastSeen": "2025-03-05T16:09:11.162Z",
+    "stats": {
+      "achievements": 45,
+      "raids_won_updated": 1741192620330,
+      "jumps": 154,
+      "playtime": "7h 15m",
+      "experience": 85,
+      "uuid": "14dbb8de-5d20-4648-a175-70f38526edae",
+      "gamemode": "CREATIVE",
+      "distance_traveled": 1092,
+      "deaths_updated": 1741192620330,
+      "player_kills": 0,
+      "deaths": 0,
+      "group": "default",
+      "blocks_mined_updated": 1741192620330,
+      "last_updated": {
+        "items_crafted": 1741192620425,
+        "fish_caught": 1741192620425,
+        "animals_bred": 1741192620425,
+        "health": 1741192620329,
+        "jumps": 1741192620425,
+        "economy": 1741192620329,
+        "inventory": 1741192620329,
+        "experience": 1741192620329,
+        "time_played": 1741192620425,
+        "distance_traveled": 1741192620425,
+        "advancements": 1741192620329,
+        "player_kills": 1741192620425,
+        "location": 1741192620329,
+        "blocks_mined": 1741192620425,
+        "mobs_killed": 1741192620425,
+        "deaths": 1741192620425,
+        "statistics": 1741192620329
+      },
+      "level": 0,
+      "ip": "127.0.0.1",
+      "fish_caught": 0,
+      "sync_timestamp": 1741192620329,
+      "damage_taken": 0,
+      "lastSeen": 1741192620,
+      "mobs_killed_updated": 1741192620330,
+      "luckperms_groups": {
+        "default": "default"
+      },
+      "damage_dealt": 32,
+      "activity": {
+        "swimming": false,
+        "gliding": false,
+        "sprinting": false,
+        "last_activity": {
+          "activity": "idle",
+          "location": "world at 220, 64, 124",
+          "timestamp": 1741192620329
+        },
+        "blocking": false,
+        "avg_swim_speed": 0,
+        "flying": false,
+        "avg_walk_speed": 49.594406076158656,
+        "sneaking": false,
+        "avg_fly_speed": 145.18942068672536
+      },
+      "jumps_updated": 1741192620330,
+      "animals_bred": 0,
+      "mcmmo_data": {
+        "skills": {
+          "repair": 0,
+          "herbalism": 0,
+          "fishing": 0,
+          "swords": 0,
+          "axes": 0,
+          "alchemy": 0,
+          "mining": 0,
+          "acrobatics": 0,
+          "woodcutting": 0,
+          "excavation": 0,
+          "unarmed": 0,
+          "archery": 0,
+          "taming": 0
+        },
+        "power_level": 0
+      },
+      "exp_to_level": 7,
+      "player_kills_updated": 1741192620330,
+      "distance_traveled_updated": 1741192620330,
+      "inventory": {
+        "main_inventory": [
+          {
+            "slot": 9,
+            "empty": true
+          },
+          {
+            "slot": 10,
+            "empty": true
+          },
+          {
+            "slot": 11,
+            "empty": true
+          },
+          {
+            "slot": 12,
+            "empty": true
+          },
+          {
+            "slot": 13,
+            "empty": true
+          },
+          {
+            "slot": 14,
+            "empty": true
+          },
+          {
+            "slot": 15,
+            "empty": true
+          },
+          {
+            "slot": 16,
+            "empty": true
+          },
+          {
+            "slot": 17,
+            "empty": true
+          },
+          {
+            "slot": 18,
+            "empty": true
+          },
+          {
+            "slot": 19,
+            "empty": true
+          },
+          {
+            "slot": 20,
+            "empty": true
+          },
+          {
+            "slot": 21,
+            "empty": true
+          },
+          {
+            "slot": 22,
+            "empty": true
+          },
+          {
+            "slot": 23,
+            "empty": true
+          },
+          {
+            "slot": 24,
+            "empty": true
+          },
+          {
+            "slot": 25,
+            "empty": true
+          },
+          {
+            "slot": 26,
+            "empty": true
+          },
+          {
+            "slot": 27,
+            "empty": true
+          },
+          {
+            "slot": 28,
+            "empty": true
+          },
+          {
+            "slot": 29,
+            "empty": true
+          },
+          {
+            "slot": 30,
+            "empty": true
+          },
+          {
+            "slot": 31,
+            "empty": true
+          },
+          {
+            "slot": 32,
+            "empty": true
+          },
+          {
+            "slot": 33,
+            "empty": true
+          },
+          {
+            "slot": 34,
+            "empty": true
+          },
+          {
+            "slot": 35,
+            "empty": true
+          }
+        ],
+        "armor": {},
+        "hotbar": [
+          {
+            "amount": 5,
+            "slot": 0,
+            "type": "MUTTON",
+            "material_key": "minecraft:mutton",
+            "empty": false
+          },
+          {
+            "amount": 3,
+            "slot": 1,
+            "type": "WHITE_WOOL",
+            "material_key": "minecraft:white_wool",
+            "empty": false
+          },
+          {
+            "amount": 29,
+            "slot": 2,
+            "type": "DIAMOND",
+            "material_key": "minecraft:diamond",
+            "empty": false
+          },
+          {
+            "amount": 1,
+            "slot": 3,
+            "type": "BROWN_WOOL",
+            "material_key": "minecraft:brown_wool",
+            "empty": false
+          },
+          {
+            "amount": 1,
+            "slot": 4,
+            "type": "OAK_PLANKS",
+            "material_key": "minecraft:oak_planks",
+            "empty": false
+          },
+          {
+            "slot": 5,
+            "empty": true
+          },
+          {
+            "slot": 6,
+            "empty": true
+          },
+          {
+            "slot": 7,
+            "empty": true
+          },
+          {
+            "slot": 8,
+            "empty": true
+          }
+        ],
+        "estimated_value": 232,
+        "valuables": {
+          "tools": 0,
+          "total_items": 39,
+          "food": 5,
+          "netherite": 0,
+          "gold": 0,
+          "diamond": 29,
+          "enchanted_items": 0,
+          "iron": 0,
+          "coal": 0,
+          "lapis": 0,
+          "weapons": 0,
+          "emerald": 0,
+          "redstone": 0
+        }
+      },
+      "currentSession": 4109,
+      "playtime_minutes": 435,
+      "world": "world",
+      "advancements": [
+        "minecraft:recipes/transportation/mangrove_boat",
+        "minecraft:recipes/decorations/brown_banner",
+        "minecraft:recipes/combat/diamond_leggings",
+        "minecraft:recipes/decorations/brown_bed",
+        "minecraft:recipes/food/cooked_mutton_from_smoking",
+        "minecraft:recipes/building_blocks/oak_slab",
+        "minecraft:recipes/decorations/oak_sign",
+        "minecraft:recipes/redstone/oak_trapdoor",
+        "minecraft:recipes/decorations/brown_carpet",
+        "minecraft:recipes/food/cooked_mutton",
+        "minecraft:recipes/combat/diamond_sword",
+        "minecraft:recipes/decorations/jukebox",
+        "minecraft:recipes/decorations/white_banner",
+        "minecraft:recipes/redstone/oak_fence_gate",
+        "minecraft:recipes/combat/diamond_chestplate",
+        "minecraft:recipes/combat/diamond_helmet",
+        "minecraft:recipes/decorations/painting",
+        "minecraft:recipes/redstone/oak_pressure_plate",
+        "minecraft:recipes/redstone/oak_door",
+        "minecraft:recipes/food/cooked_mutton_from_campfire_cooking",
+        "minecraft:recipes/decorations/crafting_table",
+        "minecraft:recipes/misc/stick",
+        "minecraft:recipes/building_blocks/oak_stairs",
+        "minecraft:recipes/transportation/acacia_boat",
+        "minecraft:recipes/transportation/cherry_boat",
+        "minecraft:adventure/root",
+        "minecraft:recipes/tools/diamond_pickaxe",
+        "minecraft:recipes/decorations/oak_fence",
+        "minecraft:recipes/transportation/pale_oak_boat",
+        "minecraft:recipes/transportation/bamboo_raft",
+        "minecraft:recipes/decorations/barrel",
+        "minecraft:recipes/building_blocks/diamond_block",
+        "minecraft:recipes/decorations/white_bed",
+        "minecraft:recipes/transportation/spruce_boat",
+        "minecraft:recipes/transportation/birch_boat",
+        "minecraft:recipes/tools/diamond_hoe",
+        "minecraft:recipes/tools/diamond_shovel",
+        "minecraft:recipes/decorations/white_carpet",
+        "minecraft:story/mine_diamond",
+        "minecraft:recipes/transportation/oak_boat",
+        "minecraft:recipes/tools/diamond_axe",
+        "minecraft:recipes/redstone/oak_button",
+        "minecraft:recipes/transportation/jungle_boat",
+        "minecraft:recipes/transportation/dark_oak_boat",
+        "minecraft:recipes/combat/diamond_boots"
+      ],
+      "achievement_percentage": 3,
+      "time_played_updated": 1741192620330,
+      "change_ids": {
+        "damage_dealt": "-504387471",
+        "items_crafted": "46107504",
+        "fish_caught": "46107504",
+        "animals_bred": "46107504",
+        "health": "-1451287688",
+        "jumps": "2105154000",
+        "sprint_distance": "1374049934",
+        "inventory": "380536280",
+        "experience": "-1396560228",
+        "damage_taken": "46107504",
+        "time_played": "655862974",
+        "distance_traveled": "348603505",
+        "fly_distance": "-757327031",
+        "swim_distance": "-889480135",
+        "walk_distance": "323188320",
+        "player_kills": "46107504",
+        "location": "1130759465",
+        "blocks_mined": "46107504",
+        "mobs_killed": "49801588",
+        "deaths": "46107504"
+      },
+      "blocks_mined": 0,
+      "mobs_killed": 4,
+      "animals_bred_updated": 1741192620330,
+      "raids_won": 0,
+      "op": true,
+      "items_crafted": 0,
+      "damage_dealt_updated": 1741192620330,
+      "exp_level": 0,
+      "health": 20,
+      "time_played": 435,
+      "food": 20,
+      "items_crafted_updated": 1741192620330,
+      "online": true,
+      "location": {
+        "world": "world",
+        "block_type": "AIR",
+        "light_level": 7,
+        "biome": "FOREST",
+        "x": 220.70359314384578,
+        "y": 64,
+        "z": 124.02653748617517,
+        "pitch": 33.012383,
+        "dimension": "OVERWORLD",
+        "yaw": 102.01309,
+        "direction": "W"
+      },
+      "fish_caught_updated": 1741192620330,
+      "damage_taken_updated": 1741192620330,
+      "username": "n0t_awake"
+    },
+    "linkedAt": "2025-03-05T16:09:11.162Z",
+    "username": "n0t_awake",
+    "uuid": "14dbb8de-5d20-4648-a175-70f38526edae",
+    "linkCode": "43480D",
+    "linkCodeExpires": "2025-03-05T17:30:40.299Z"
+  },
+  "bio": "",
+  "isVerified": false,
+  "personal": {
+    "displayName": "",
+    "location": "",
+    "website": ""
+  },
+  "preferences": {
+    "emailNotifications": true,
+    "language": "en",
+    "theme": "system"
+  },
+  "registeredAt": "2025-03-05T14:16:51.808Z",
+  "updatedAt": "2025-03-05T14:16:51.808Z",
+  "isLinked": false
+}

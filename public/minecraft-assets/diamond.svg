@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Diamond -->
+  <g transform="translate(8, 8)">
+    <!-- Outer Shape -->
+    <polygon points="24,0 48,24 24,48 0,24" fill="#5CCCEA" />
+    
+    <!-- Inner Highlights -->
+    <polygon points="24,8 40,24 24,40 8,24" fill="#7FDDFA" />
+    
+    <!-- Sparkle -->
+    <polygon points="24,16 32,24 24,32 16,24" fill="#FFFFFF" opacity="0.5" />
+    
+    <!-- Edges -->
+    <polygon points="24,0 48,24 40,24 24,8" fill="#4AA8C5" />
+    <polygon points="0,24 24,48 24,40 8,24" fill="#4AA8C5" />
+    <polygon points="24,8 40,24 24,40 24,32 32,24 24,16" fill="#4AA8C5" opacity="0.3" />
+  </g>
+</svg> 

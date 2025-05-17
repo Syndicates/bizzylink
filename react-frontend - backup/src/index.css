@@ -1,0 +1,670 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+body {
+  margin: 0;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0F172A;
+  color: white;
+  overflow-x: hidden;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+  
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  /* Selection color */
+  ::selection {
+    @apply bg-minecraft-green/30 text-white;
+  }
+}
+
+@layer components {
+  /* Minecraft inspired button styles */
+  .minecraft-btn {
+    @apply bg-minecraft-green text-white font-bold border-[3px] border-black shadow-minecraft transition-all duration-150;
+  }
+
+  .minecraft-btn:hover {
+    @apply bg-minecraft-green-light -translate-y-0.5;
+  }
+
+  .minecraft-btn:active {
+    @apply bg-minecraft-green-dark shadow-none translate-y-0.5;
+  }
+
+  /* Habbo style button */
+  .habbo-btn {
+    @apply bg-minecraft-habbo-blue text-white font-bold py-2 px-4 rounded-habbo shadow-habbo transition-all duration-150 border-2 border-white/20;
+  }
+
+  .habbo-btn:hover {
+    @apply -translate-y-0.5 shadow-habbo-intense;
+  }
+
+  .habbo-btn:active {
+    @apply shadow-none translate-y-0.5;
+  }
+  
+  /* Outline button */
+  .outline-btn {
+    @apply bg-transparent border-2 border-minecraft-green text-minecraft-green font-bold py-2 px-4 rounded-md transition-all duration-150;
+  }
+  
+  .outline-btn:hover {
+    @apply bg-minecraft-green/10 -translate-y-0.5;
+  }
+  
+  .outline-btn:active {
+    @apply bg-minecraft-green/20 translate-y-0.5;
+  }
+
+  /* Status badges */
+  .status-badge {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-online {
+    @apply bg-green-600 text-white;
+  }
+
+  .status-offline {
+    @apply bg-gray-600 text-white;
+  }
+
+  /* Card styles */
+  .habbo-card {
+    @apply bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-habbo shadow-card transition-all duration-300;
+  }
+
+  .habbo-card:hover {
+    @apply shadow-card-hover -translate-y-1;
+  }
+
+  /* Auction item card */
+  .auction-item {
+    @apply bg-white/10 backdrop-blur-md border-2 border-minecraft-gold/20 rounded-habbo shadow-card transition-all duration-300;
+  }
+
+  .auction-item:hover {
+    @apply shadow-card-hover -translate-y-1 border-minecraft-gold/40;
+  }
+
+  /* Featured item */
+  .featured-item {
+    @apply border-2 border-minecraft-gold animate-pulse-glow;
+  }
+
+  /* Tabs */
+  .dashboard-tab {
+    @apply px-4 py-2 font-medium text-gray-300 border-b-2 border-transparent transition-all duration-200;
+  }
+  
+  .dashboard-tab.active {
+    @apply text-white border-minecraft-habbo-blue;
+  }
+  
+  .dashboard-tab:hover:not(.active) {
+    @apply text-white border-gray-500;
+  }
+  
+  /* Minecraft style heading */
+  .minecraft-heading {
+    @apply font-minecraft text-minecraft-green;
+  }
+  
+  /* Habbo style heading */
+  .habbo-heading {
+    @apply font-habbo text-minecraft-habbo-blue;
+  }
+  
+  /* Pixel border */
+  .pixel-border {
+    @apply border-2 border-black shadow-minecraft;
+  }
+  
+  /* Minecraft item frame */
+  .item-frame {
+    @apply bg-gray-800 border-4 border-gray-700 p-2 inline-flex items-center justify-center;
+  }
+  
+  /* Animations for Server Info section */
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  .animate-pulse-slower {
+    animation: pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  .animate-float-slow1 {
+    animation: float1 8s ease-in-out infinite;
+  }
+  
+  .animate-float-slow2 {
+    animation: float2 12s ease-in-out infinite;
+  }
+  
+  .animate-float-slow3 {
+    animation: float3 10s ease-in-out infinite;
+  }
+  
+  .animate-count {
+    animation: countPulse 2s ease-in-out infinite;
+  }
+  
+  .drop-shadow-glow-green {
+    filter: drop-shadow(0 0 10px rgba(84, 170, 84, 0.5));
+  }
+  
+  .address-glow {
+    text-shadow: 0 0 5px rgba(84, 170, 84, 0.7);
+    letter-spacing: 0.5px;
+    background: linear-gradient(to right, #4ade80, #a3e635, #4ade80);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradientShift 8s ease infinite;
+  }
+  
+  @keyframes gradientShift {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  
+  .glass-panel-dark {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+  }
+  
+  .glass-panel-navy {
+    background: rgba(26, 28, 35, 0.6);
+    backdrop-filter: blur(3px);
+  }
+  
+  .glass-button-green {
+    background: rgba(10, 30, 10, 0.7);
+    backdrop-filter: blur(3px);
+    border: 1px solid rgba(84, 170, 84, 0.4);
+  }
+  
+  @keyframes float1 {
+    0%, 100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-20px) rotate(5deg);
+    }
+  }
+  
+  @keyframes float2 {
+    0%, 100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-15px) rotate(-5deg);
+    }
+  }
+  
+  @keyframes float3 {
+    0%, 100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-10px) rotate(8deg);
+    }
+  }
+  
+  @keyframes countPulse {
+    0%, 100% {
+      transform: scale(1);
+      color: rgb(84, 170, 84);
+    }
+    50% {
+      transform: scale(1.1);
+      color: rgb(122, 224, 122);
+    }
+  }
+  
+  /* Add a pixel-like animation for notifications progress bar */
+  .pixel-progress {
+    animation: pixelProgress 5s steps(20) forwards;
+  }
+  
+  @keyframes pixelProgress {
+    from { width: 100%; }
+    to { width: 0%; }
+  }
+  
+  /* Minecraft inventory slot */
+  .inventory-slot {
+    @apply bg-gray-800/50 border-2 border-gray-700 p-2 flex items-center justify-center transition-all hover:bg-gray-700/50;
+  }
+  
+  /* Minecraft textures */
+  .minecraft-dirt-bg {
+    background-image: url('/src/assets/images/minecraft/dirt-texture.svg');
+    background-repeat: repeat;
+  }
+  
+  .minecraft-stone-bg {
+    background-image: url('/src/assets/images/minecraft/stone-texture.svg');
+    background-repeat: repeat;
+  }
+  
+  .minecraft-grass-bg {
+    background-image: url('/src/assets/images/minecraft/grass-texture.svg');
+    background-repeat: repeat;
+  }
+  
+  .minecraft-wood-bg {
+    background-image: url('/src/assets/images/minecraft/wood-texture.svg');
+    background-repeat: repeat;
+  }
+  
+  /* Habbo pattern */
+  .habbo-pattern-bg {
+    background-image: url('/src/assets/images/habbo-pattern.svg');
+    background-repeat: repeat;
+  }
+}
+
+/* Animated background grid */
+.minecraft-grid-bg {
+  background-size: 64px 64px;
+  background-image: url('/src/assets/images/minecraft-grid.svg');
+}
+
+/* Glass panel effect */
+.glass-panel {
+  @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-lg shadow-lg;
+}
+
+/* Minecraft style progress bar */
+.mc-progress-bar {
+  @apply h-4 bg-gray-800 border-2 border-gray-900 rounded-sm overflow-hidden;
+}
+
+.mc-progress-bar > div {
+  @apply h-full bg-minecraft-green transition-all duration-300;
+}
+
+/* Habbo-styled progress bar */
+.habbo-progress-bar {
+  @apply h-4 bg-gray-800 border border-gray-700 rounded-habbo overflow-hidden;
+}
+
+.habbo-progress-bar > div {
+  @apply h-full bg-minecraft-habbo-blue transition-all duration-300;
+}
+
+/* Habbo-styled input */
+.habbo-input {
+  @apply bg-white/10 border-2 border-white/20 rounded-habbo px-3 py-2 text-white placeholder-gray-400 
+  focus:outline-none focus:ring-2 focus:ring-minecraft-habbo-blue focus:border-transparent;
+}
+
+/* Minecraft-styled input */
+.minecraft-input {
+  @apply bg-gray-800 border-2 border-gray-900 rounded-sm px-3 py-2 text-white placeholder-gray-400 
+  focus:outline-none focus:ring-2 focus:ring-minecraft-green focus:border-transparent;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-minecraft-navy-dark;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-minecraft-habbo-blue rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-minecraft-habbo-purple;
+}
+
+/* Minecraft tooltip */
+.minecraft-tooltip {
+  @apply absolute z-50 p-2 bg-gray-900/90 border border-gray-700 text-white text-sm rounded shadow-lg max-w-xs;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  margin-top: -8px;
+}
+
+.minecraft-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid rgba(17, 24, 39, 0.9);
+}
+
+/* Pixel animations */
+@keyframes pixel-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.pixel-float {
+  animation: pixel-float 3s ease-in-out infinite;
+}
+
+/* Minecraft block hover effect */
+.block-hover {
+  transition: all 0.2s ease;
+}
+
+.block-hover:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Minecraft dig effect */
+.dig-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.dig-effect::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-conic-gradient(rgba(0, 0, 0, 0) 0% 25%, rgba(255, 255, 255, 0.03) 0% 50%);
+  background-size: 8px 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.dig-effect:hover::before {
+  opacity: 1;
+}
+
+/* Minecraft text shadow */
+.minecraft-text-shadow {
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+}
+
+/* Habbo text shadow */
+.habbo-text-shadow {
+  text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.5);
+}
+
+/* Pixel art filter */
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Minecraft font */
+.font-minecraft {
+  font-family: 'Press Start 2P', monospace;
+  letter-spacing: -0.05em;
+  line-height: 1.4;
+}
+
+/* Habbo font */
+.font-habbo {
+  font-family: 'VT323', monospace;
+  letter-spacing: 0.05em;
+}
+
+/* Hero section with waves */
+.hero-waves {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-waves::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100px;
+  background-image: url('/src/assets/images/minecraft-hero.svg');
+  background-size: cover;
+  background-position: bottom;
+  z-index: 1;
+}
+
+/* Minecraft button 3D effect */
+.btn-3d {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-3d::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  bottom: -4px;
+  left: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  transform: translateZ(-1px);
+  border-radius: inherit;
+}
+
+.btn-3d:hover {
+  transform: translateY(-2px);
+}
+
+.btn-3d:active {
+  transform: translateY(0);
+}
+
+/* Minecraft inventory grid */
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 4px;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 8px;
+  border: 2px solid #555;
+}
+
+/* Hotbar slot */
+.hotbar-slot {
+  @apply bg-gray-800/70 border-2 border-gray-700 aspect-square flex items-center justify-center transition-all;
+}
+
+.hotbar-slot.active {
+  @apply border-white;
+}
+
+/* Minecraft crafting table */
+.crafting-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 8px;
+  border: 2px solid #555;
+}
+
+/* Minecraft item hover */
+.item-hover {
+  transition: all 0.2s ease;
+}
+
+.item-hover:hover {
+  transform: scale(1.05);
+  filter: brightness(1.2);
+}
+
+/* Matrix background for BizzyLink page */
+.matrix-bg {
+  background-color: #000;
+  position: relative;
+  overflow: hidden;
+}
+
+.matrix-bg::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(rgba(0, 255, 0, 0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(0, 255, 0, 0.03) 1px, transparent 1px);
+  background-size: 15px 15px;
+  opacity: 0.5;
+  animation: matrixMove 20s linear infinite;
+}
+
+@keyframes matrixMove {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 100px 100px;
+  }
+}
+
+/* Terminal typing animation */
+@keyframes typing {
+  from { width: 0 }
+  to { width: 100% }
+}
+
+@keyframes cursor-blink {
+  0% { opacity: 0; }
+  49% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+.animate-cursor {
+  animation: cursor-blink 1s infinite;
+}
+
+.animate-typing {
+  overflow: hidden;
+  white-space: nowrap;
+  margin-bottom: 4px;
+  animation: typing 2s steps(40, end);
+}
+
+/* Glitch effect */
+@keyframes glitch {
+  0% {
+    text-shadow: 0.05em 0 0 rgba(255, 0, 0, 0.75),
+               -0.025em -0.05em 0 rgba(0, 255, 0, 0.75),
+               0.025em 0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  14% {
+    text-shadow: 0.05em 0 0 rgba(255, 0, 0, 0.75),
+               -0.025em -0.05em 0 rgba(0, 255, 0, 0.75),
+               0.025em 0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  15% {
+    text-shadow: -0.05em -0.025em 0 rgba(255, 0, 0, 0.75),
+               0.025em 0.025em 0 rgba(0, 255, 0, 0.75),
+               -0.05em -0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  49% {
+    text-shadow: -0.05em -0.025em 0 rgba(255, 0, 0, 0.75),
+               0.025em 0.025em 0 rgba(0, 255, 0, 0.75),
+               -0.05em -0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  50% {
+    text-shadow: 0.025em 0.05em 0 rgba(255, 0, 0, 0.75),
+               0.05em 0 0 rgba(0, 255, 0, 0.75),
+               0 -0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  99% {
+    text-shadow: 0.025em 0.05em 0 rgba(255, 0, 0, 0.75),
+               0.05em 0 0 rgba(0, 255, 0, 0.75),
+               0 -0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+  100% {
+    text-shadow: -0.025em 0 0 rgba(255, 0, 0, 0.75),
+               -0.025em -0.025em 0 rgba(0, 255, 0, 0.75),
+               -0.025em -0.05em 0 rgba(0, 0, 255, 0.75);
+  }
+}
+
+.glitch-text:hover {
+  animation: glitch 1s linear infinite;
+}
+
+/* Terminal window styling */
+.terminal-window {
+  background-color: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 4px;
+  font-family: monospace;
+  color: #4CAF50;
+}
+
+.terminal-header {
+  background-color: rgba(0, 0, 0, 0.8);
+  padding: 8px;
+  border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+  display: flex;
+  align-items: center;
+}
+
+.terminal-body {
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.terminal-line {
+  margin-bottom: 4px;
+}
+
+.terminal-prompt {
+  color: #4CAF50;
+  margin-right: 8px;
+}
+
+.terminal-command {
+  color: white;
+}
+
+.terminal-output {
+  color: #BBBBBB;
+  margin-top: 4px;
+}
