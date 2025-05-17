@@ -37,7 +37,7 @@ app.use(cors({
 app.use(bodyParser.json());
 
 // JWT Secret
-const JWT_SECRET = 'bizzylink-secure-jwt-key-for-authentication';
+const JWT_SECRET = process.env.JWT_SECRET || 'bizzylink-secure-jwt-key-for-authentication';
 
 // MongoDB Connection
 let db;
@@ -141,8 +141,12 @@ app.post('/api/login', async (req, res) => {
       });
     }
     
+    console.log(`User found: ${user.username}, has password: ${!!user.password}`);
+    
     // Verify password
+    console.log('Attempting password verification with bcrypt...');
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log(`Password verification result: ${isMatch ? 'Match' : 'No match'}`);
     
     if (!isMatch) {
       console.log(`Login failed: Password mismatch for user '${username}'`);
@@ -487,6 +491,80 @@ app.post('/api/player/update', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Server error. Please try again later.'
+    });
+  }
+});
+
+// Add a test user creation endpoint for debugging purposes
+app.get('/api/debug/create-test-user', async (req, res) => {
+  try {
+    // This should only be available in non-production environments
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+    
+    const usersCollection = db.collection('users');
+    
+    // Check if test user exists
+    const existingUser = await usersCollection.findOne({ username: 'testuser' });
+    
+    // Create a hashed password
+    const hashedPassword = await bcrypt.hash('password123', 10);
+    
+    let result;
+    if (existingUser) {
+      // Update the user if exists
+      result = await usersCollection.updateOne(
+        { username: 'testuser' },
+        { 
+          $set: { 
+            password: hashedPassword,
+            role: 'user',
+            forum_rank: 'user',
+            permissions: {
+              canAccessAdmin: false,
+              canModerateForums: false,
+              canManageUsers: false,
+              canEditServer: false
+            }
+          } 
+        }
+      );
+      
+      console.log('Test user updated with new password');
+    } else {
+      // Create a new user
+      result = await usersCollection.insertOne({
+        username: 'testuser',
+        password: hashedPassword,
+        role: 'user',
+        forum_rank: 'user',
+        permissions: {
+          canAccessAdmin: false,
+          canModerateForums: false,
+          canManageUsers: false,
+          canEditServer: false
+        },
+        created_at: new Date()
+      });
+      
+      console.log('Test user created');
+    }
+    
+    return res.status(200).json({ 
+      success: true, 
+      message: existingUser ? 'Test user updated' : 'Test user created',
+      credentials: {
+        username: 'testuser',
+        password: 'password123'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error creating test user:', error);
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Server error creating test user' 
     });
   }
 });

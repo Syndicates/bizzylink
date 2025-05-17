@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file AuthDebugger.js
- * @description 
+ * @description Debug component for displaying authentication state
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -13,210 +13,152 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import TokenStorage from '../utils/tokenStorage';
+import { createLogger } from '../utils/debugLogger';
 
-/**
- * Authentication Debugger Component
- * This component provides real-time debugging information for the authentication state.
- * It can be included in the development build and toggled with a key combination (CTRL+SHIFT+D)
- */
+// Create a logger for this component
+const logger = createLogger('AuthDebugger');
+
 const AuthDebugger = () => {
-  const [visible, setVisible] = useState(false);
+  const auth = useAuth();
+  const { user, isAuthenticated } = auth || { user: null, isAuthenticated: false };
   const [expanded, setExpanded] = useState(false);
-  const { isAuthenticated, user, TokenStorage } = useAuth();
-  const [tokenInfo, setTokenInfo] = useState({ exists: false, content: null });
-  const [storageStatus, setStorageStatus] = useState({
-    localStorage: { available: false, token: null },
-    sessionStorage: { available: false, token: null },
-    cookies: { available: false, token: null }
-  });
-
-  // Toggle visibility with keyboard shortcut (Ctrl+Shift+D)
+  const [tokenExists, setTokenExists] = useState(false);
+  
+  // Use a ref to track component mount state
+  const isMountedRef = useRef(true);
+  
+  // Check token existence with clean error handling
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        setVisible(prev => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Update token info when auth state changes and debugger is visible
-  useEffect(() => {
-    if (!visible) return;
-    
-    // Check token in different storages
-    const checkStorage = () => {
+    const checkToken = () => {
       try {
-        const localToken = localStorage.getItem('token');
-        const sessionToken = sessionStorage.getItem('token');
-        
-        // Simple function to check cookie existence
-        const getCookie = (name) => {
-          const value = `; ${document.cookie}`;
-          const parts = value.split(`; ${name}=`);
-          if (parts.length === 2) return parts.pop().split(';').shift();
-          return null;
-        };
-        
-        const cookieToken = getCookie('token');
-        
-        setStorageStatus({
-          localStorage: { 
-            available: true, 
-            token: localToken ? localToken.substring(0, 10) + '...' : null 
-          },
-          sessionStorage: { 
-            available: true, 
-            token: sessionToken ? sessionToken.substring(0, 10) + '...' : null 
-          },
-          cookies: { 
-            available: true, 
-            token: cookieToken ? cookieToken.substring(0, 10) + '...' : null 
-          }
-        });
-
-        // Get token from TokenStorage if available
-        if (TokenStorage) {
-          const token = TokenStorage.getToken();
-          if (token) {
-            try {
-              // Decode JWT to show expiration and payload
-              const parts = token.split('.');
-              if (parts.length === 3) {
-                const payload = JSON.parse(atob(parts[1]));
-                setTokenInfo({
-                  exists: true,
-                  content: {
-                    exp: new Date(payload.exp * 1000).toLocaleString(),
-                    userId: payload.user?.id || 'Not found',
-                    iat: new Date(payload.iat * 1000).toLocaleString()
-                  }
-                });
-              } else {
-                setTokenInfo({ exists: true, content: 'Invalid JWT format' });
-              }
-            } catch (e) {
-              setTokenInfo({ exists: true, content: 'Error decoding token' });
-            }
-          } else {
-            setTokenInfo({ exists: false, content: null });
-          }
+        const hasToken = TokenStorage.hasToken();
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setTokenExists(hasToken);
         }
-      } catch (error) {
-        console.error('Error accessing storage:', error);
-        setStorageStatus({
-          localStorage: { available: false, token: null },
-          sessionStorage: { available: false, token: null },
-          cookies: { available: false, token: null }
-        });
+      } catch (err) {
+        logger('Error checking token existence', err);
+        // Don't update state on error
       }
     };
-
-    checkStorage();
-    // Check every 5 seconds while visible
-    const interval = setInterval(checkStorage, 5000);
-    return () => clearInterval(interval);
-  }, [visible, isAuthenticated, user, TokenStorage]);
-
-  if (!visible) {
-    // Only show a small indicator in the corner when not fully visible
-    return (
-      <div 
-        className="fixed bottom-1 right-1 bg-gray-800 text-white text-xs p-1 rounded-full opacity-50 hover:opacity-100 cursor-pointer z-50"
-        onClick={() => setVisible(true)}
-        title="Auth Debugger (Ctrl+Shift+D)"
-      >
-        🔐
-      </div>
-    );
-  }
-
+    
+    // Check immediately
+    checkToken();
+    
+    // Set up interval to check every 5 seconds
+    const interval = setInterval(checkToken, 5000);
+    
+    // Clean up on unmount
+    return () => {
+      clearInterval(interval);
+      isMountedRef.current = false;
+    };
+  }, []);
+  
+  // Safely close the debugger
+  const handleClose = () => {
+    const container = document.getElementById('auth-debugger-container');
+    if (container) {
+      try {
+        container.style.display = 'none';
+      } catch (err) {
+        logger('Error hiding debugger container', err);
+      }
+    }
+  };
+  
   return (
-    <div 
-      className="fixed bottom-0 right-0 z-50 bg-gray-800 text-white p-3 rounded-tl-lg shadow-lg max-w-md" 
-      style={{ opacity: 0.9, fontSize: '12px' }}
-    >
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="font-bold">🔐 Auth Debugger</h3>
+    <div id="auth-debugger-container" style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      backgroundColor: '#1e2124',
+      color: 'white',
+      padding: '10px',
+      borderRadius: '0 0 5px 0',
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      zIndex: 9999,
+      border: '1px solid #444',
+      boxShadow: '0 0 10px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span role="img" aria-label="Auth">🔐</span>
+          <span style={{ fontWeight: 'bold' }}>Auth Debugger</span>
+        </div>
         <div>
           <button 
-            onClick={() => setExpanded(!expanded)} 
-            className="px-2 py-1 bg-gray-700 rounded mr-1 hover:bg-gray-600"
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              backgroundColor: '#2c2f33',
+              color: 'white',
+              border: '1px solid #444',
+              borderRadius: '3px',
+              padding: '2px 8px',
+              marginRight: '5px',
+              cursor: 'pointer'
+            }}
           >
             {expanded ? 'Collapse' : 'Expand'}
           </button>
           <button 
-            onClick={() => setVisible(false)} 
-            className="px-2 py-1 bg-red-700 rounded hover:bg-red-600"
+            onClick={handleClose}
+            style={{
+              backgroundColor: '#c6262e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              padding: '2px 8px',
+              cursor: 'pointer'
+            }}
           >
             Close
           </button>
         </div>
       </div>
       
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <div className="bg-gray-700 p-2 rounded">
-          <div>isAuthenticated: <span className={isAuthenticated ? "text-green-400" : "text-red-400"}>
-            {isAuthenticated ? "true" : "false"}
-          </span></div>
-          <div>User: {user ? `${user.username} (${user._id?.substring(0, 8)}...)` : "null"}</div>
+      <div style={{ 
+        marginTop: '10px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '5px'
+      }}>
+        <div style={{ 
+          backgroundColor: '#2c2f33',
+          padding: '5px',
+          borderRadius: '3px',
+          border: '1px solid #444'
+        }}>
+          <div>isAuthenticated: <span style={{ color: isAuthenticated ? '#43b581' : '#f04747' }}>{String(isAuthenticated)}</span></div>
+          <div>User: <span style={{ color: user ? '#43b581' : '#f04747' }}>{user ? (user.username || user.id || JSON.stringify(user).substring(0, 20) + '...') : '(none)'}</span></div>
         </div>
-        <div className="bg-gray-700 p-2 rounded">
-          <div>Token exists: <span className={tokenInfo.exists ? "text-green-400" : "text-red-400"}>
-            {tokenInfo.exists ? "yes" : "no"}
-          </span></div>
-          {expanded && tokenInfo.exists && tokenInfo.content && (
-            <div className="mt-1 text-xs">
-              <div>Expires: {tokenInfo.content.exp}</div>
-              <div>User ID: {tokenInfo.content.userId}</div>
-              <div>Issued: {tokenInfo.content.iat}</div>
-            </div>
-          )}
+        
+        <div style={{ 
+          backgroundColor: '#2c2f33',
+          padding: '5px',
+          borderRadius: '3px',
+          border: '1px solid #444'
+        }}>
+          <div>Token exists: <span style={{ color: tokenExists ? '#43b581' : '#f04747' }}>{tokenExists ? 'yes' : 'no'}</span></div>
         </div>
       </div>
-
-      {expanded && (
-        <>
-          <h4 className="font-bold mt-2 mb-1">Storage Status:</h4>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-gray-700 p-2 rounded">
-              <div className="font-semibold">localStorage</div>
-              <div className={storageStatus.localStorage.available ? "text-green-400" : "text-red-400"}>
-                {storageStatus.localStorage.available ? "Available" : "Unavailable"}
-              </div>
-              {storageStatus.localStorage.token && (
-                <div className="text-xs mt-1">Token: {storageStatus.localStorage.token}</div>
-              )}
-            </div>
-            <div className="bg-gray-700 p-2 rounded">
-              <div className="font-semibold">sessionStorage</div>
-              <div className={storageStatus.sessionStorage.available ? "text-green-400" : "text-red-400"}>
-                {storageStatus.sessionStorage.available ? "Available" : "Unavailable"}
-              </div>
-              {storageStatus.sessionStorage.token && (
-                <div className="text-xs mt-1">Token: {storageStatus.sessionStorage.token}</div>
-              )}
-            </div>
-            <div className="bg-gray-700 p-2 rounded">
-              <div className="font-semibold">cookies</div>
-              <div className={storageStatus.cookies.available ? "text-green-400" : "text-red-400"}>
-                {storageStatus.cookies.available ? "Available" : "Unavailable"}
-              </div>
-              {storageStatus.cookies.token && (
-                <div className="text-xs mt-1">Token: {storageStatus.cookies.token}</div>
-              )}
-            </div>
-          </div>
-
-          <div className="text-xs mt-2 italic">
-            Pro tip: You can toggle this debugger with Ctrl+Shift+D
-          </div>
-        </>
+      
+      {expanded && user && (
+        <div style={{ 
+          marginTop: '10px',
+          backgroundColor: '#2c2f33',
+          padding: '5px',
+          borderRadius: '3px',
+          border: '1px solid #444',
+          maxHeight: '200px',
+          overflow: 'auto'
+        }}>
+          <pre style={{ margin: 0 }}>{JSON.stringify(user, null, 2)}</pre>
+        </div>
       )}
     </div>
   );

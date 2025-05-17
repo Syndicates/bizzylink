@@ -80,7 +80,8 @@ const MinecraftAvatar = ({
   
   // Handle image errors with consistent fallbacks
   const handleError = (e) => {
-    console.log('Failed to load avatar from primary source, trying fallbacks');
+    // Remove console spam
+    // console.log('Failed to load avatar from primary source, trying fallbacks');
     setHasError(true);
     
     // Directly use Steve skin as main fallback - much more reliable than random usernames
@@ -102,15 +103,15 @@ const MinecraftAvatar = ({
     
     // Try alternative services in sequence with consistent username
     if (e.target.src.includes('mc-heads.net')) {
-      console.log('Trying minotar fallback');
+      // console.log('Trying minotar fallback');
       e.target.src = `https://minotar.net/avatar/${fallbackUsername}/${size}.png`;
       
       e.target.onerror = (e2) => {
-        console.log('Trying crafatar fallback');
+        // console.log('Trying crafatar fallback');
         e2.target.src = `https://crafatar.com/avatars/${fallbackUsername}?size=${size}&overlay=true`;
         
         e2.target.onerror = (e3) => {
-          console.log('Using final skin fallback');
+          // console.log('Using final skin fallback');
           // Use the default Steve skin as final fallback - most reliable option
           e3.target.src = `https://minotar.net/helm/${DEFAULT_SKIN}/${size}.png`;
         };

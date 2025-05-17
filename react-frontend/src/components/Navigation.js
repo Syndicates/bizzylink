@@ -57,15 +57,16 @@ const Navigation = () => {
 
   // Debug auth state in Navigation
   useEffect(() => {
-    console.group('🧭 Navigation Auth State');
-    console.log('isAuthenticated:', isAuthenticated);
-    console.log('User:', user ? {
-      id: user._id || user.id,
-      username: user.username,
-      role: user.role
-    } : 'null');
-    console.log('Current path:', location.pathname);
-    console.groupEnd();
+    // DISABLED: Remove console spam
+    // console.group('🧭 Navigation Auth State');
+    // console.log('isAuthenticated:', isAuthenticated);
+    // console.log('User:', user ? {
+    //   id: user._id || user.id,
+    //   username: user.username,
+    //   role: user.role
+    // } : 'null');
+    // console.log('Current path:', location.pathname);
+    // console.groupEnd();
   }, [isAuthenticated, user, location.pathname]);
 
   // Handle scroll effect

@@ -85,8 +85,8 @@ const MinecraftPlayerHead = ({ player, delay }) => {
   // State for Easter egg
   const [easterEggActivated, setEasterEggActivated] = useState(false);
   
-  // Log when component renders
-  console.log(`Rendering head for ${player.username} at position:`, player.position);
+  // Log when component renders - REMOVED to prevent console spam
+  // console.log(`Rendering head for ${player.username} at position:`, player.position);
   
   // Show speech bubble on hover for players other than n0t_awake
   useEffect(() => {
@@ -98,14 +98,14 @@ const MinecraftPlayerHead = ({ player, delay }) => {
   // Cycle through messages for n0t_awake
   useEffect(() => {
     if (player.username === 'n0t_awake' && player.messages) {
-      console.log(`Setting up message cycle for ${player.username}`);
+      // console.log(`Setting up message cycle for ${player.username}`);
       
       // Initialize with first message
       setCurrentMessage(player.messages[0]);
       setShowMessage(true);
       
       const messageInterval = setInterval(() => {
-        console.log(`Cycling message for ${player.username}`);
+        // console.log(`Cycling message for ${player.username}`);
         
         // Fade out current message
         setShowMessage(false);
@@ -126,7 +126,7 @@ const MinecraftPlayerHead = ({ player, delay }) => {
           } else {
             const randomIndex = Math.floor(Math.random() * player.messages.length);
             const newMessage = player.messages[randomIndex];
-            console.log(`New message: ${newMessage}`);
+            // console.log(`New message: ${newMessage}`);
             setCurrentMessage(newMessage);
           }
           
@@ -222,8 +222,8 @@ const MinecraftPlayerHead = ({ player, delay }) => {
   // For debugging - log message changes
   useEffect(() => {
     if (player.username === 'n0t_awake') {
-      console.log(`Current message for ${player.username}: ${currentMessage}`);
-      console.log(`Show message state: ${showMessage}`);
+      // console.log(`Current message for ${player.username}: ${currentMessage}`);
+      // console.log(`Show message state: ${showMessage}`);
     }
   }, [currentMessage, showMessage, player.username]);
   
@@ -268,11 +268,11 @@ const MinecraftPlayerHead = ({ player, delay }) => {
             backgroundColor: 'rgba(20, 20, 20, 0.3)'
           }}
           onLoad={() => {
-            console.log(`Image loaded for ${player.username}`);
+            // console.log(`Image loaded for ${player.username}`);
             setImageLoaded(true);
           }}
           onError={(e) => {
-            console.error(`Failed to load image for ${player.username}`, e);
+            // console.error(`Failed to load image for ${player.username}`, e);
             setImageError(true);
           }}
         />

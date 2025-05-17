@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file EventSourceContext.js
- * @description 
+ * @description Server-Sent Events (SSE) context provider for real-time updates
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -13,13 +13,18 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { createContext, useContext, useMemo, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
+import TokenStorage from '../utils/tokenStorage';
+import { createLogger, trackFunctionCall, trackRender } from '../utils/debugLogger';
+
+// Create logger for this module
+const logger = createLogger('EventSource');
 
 // Create context
 const EventSourceContext = createContext();
 
-// Custom hook for using the EventSource context
+// Custom hook to use the EventSource context
 export const useEventSource = () => {
   const context = useContext(EventSourceContext);
   if (!context) {
@@ -28,158 +33,73 @@ export const useEventSource = () => {
   return context;
 };
 
-export const EventSourceProvider = ({ children }) => {
-  const { user, isAuthenticated } = useAuth();
-  const [eventSource, setEventSource] = useState(null);
-  const [lastEvent, setLastEvent] = useState(null);
-  const [connected, setConnected] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [listeners, setListeners] = useState({});
+// Debug flag - disabled in production to reduce console logs
+const DEBUG = false;
 
-  // Create or destroy event source based on authentication state
-  useEffect(() => {
-    // Only create EventSource if user is authenticated
-    if (isAuthenticated && user) {
-      console.log('[EventSource] User is authenticated, setting up SSE connection');
-      
-      // Get the auth token - with detailed logging for debugging
-      let token;
-      try {
-        token = localStorage.getItem('token');
-        console.log('[EventSource] Token found:', token ? 'Token available' : 'No token in localStorage');
-      } catch (err) {
-        console.error('[EventSource] Error getting token:', err);
-        return; // Don't continue if we can't get the token
-      }
-      
-      if (!token) {
-        console.error('[EventSource] No token available for SSE connection');
-        return;
-      }
-      
-      // Ensure token is encoded properly for URL
-      const encodedToken = encodeURIComponent(token);
-      console.log('[EventSource] Creating EventSource with token parameter');
-      
-      // Create EventSource with token as query parameter
-      // Use absolute URL with port to ensure correct endpoint
-      const es = new EventSource(`http://localhost:8080/api/events?token=${encodedToken}`);
-      
-      es.onopen = () => {
-        console.log('[EventSource] Connection opened');
-        setConnected(true);
-      };
-      
-      es.onerror = (error) => {
-        console.error('[EventSource] Error:', error);
-        setConnected(false);
-      };
-      
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('[EventSource] Message received:', data);
-          
-          // Store the event in our history
-          setLastEvent(data);
-          setEvents(prevEvents => [...prevEvents.slice(-9), data]);
-          
-          // Trigger any registered listeners for this event type
-          if (data.type && listeners[data.type]) {
-            listeners[data.type].forEach(callback => {
-              try {
-                callback(data);
-              } catch (err) {
-                console.error(`[EventSource] Error in ${data.type} listener:`, err);
-              }
-            });
-          }
-          
-          // Also trigger any global listeners (listening to all events)
-          if (listeners['*']) {
-            listeners['*'].forEach(callback => {
-              try {
-                callback(data);
-              } catch (err) {
-                console.error('[EventSource] Error in global listener:', err);
-              }
-            });
-          }
-        } catch (err) {
-          console.error('[EventSource] Error parsing event data:', err);
-        }
-      };
-      
-      setEventSource(es);
-      
-      // Cleanup function
-      return () => {
-        console.log('[EventSource] Cleaning up SSE connection');
-        es.close();
-        setEventSource(null);
-        setConnected(false);
-      };
-    } else if (eventSource) {
-      console.log('[EventSource] User logged out, closing SSE connection');
-      eventSource.close();
-      setEventSource(null);
-      setConnected(false);
+// EMERGENCY FIX: Completely disable EventSource connections until fixed
+const DISABLE_EVENT_SOURCE = true;
+
+// Create a mock EventSource that can be used as a safe no-op implementation
+class MockEventSource {
+  constructor() {
+    this.listeners = {};
+    this.readyState = 0; // Connecting state by default
+  }
+  
+  addEventListener(event, callback) {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
     }
-  }, [isAuthenticated, user]);
+    this.listeners[event].push(callback);
+  }
   
-  // Reset state when user changes
-  useEffect(() => {
-    return () => {
-      setEvents([]);
-      setLastEvent(null);
-    };
-  }, [user]);
+  removeEventListener(event, callback) {
+    if (!this.listeners[event]) return;
+    this.listeners[event] = this.listeners[event].filter(cb => cb !== callback);
+  }
   
-  // Register event listener
-  const addEventListener = (eventType, callback) => {
-    setListeners(prevListeners => {
-      const newListeners = { ...prevListeners };
-      if (!newListeners[eventType]) {
-        newListeners[eventType] = [];
-      }
-      newListeners[eventType].push(callback);
-      return newListeners;
-    });
-    
-    // Return function to remove the listener
-    return () => {
-      setListeners(prevListeners => {
-        const newListeners = { ...prevListeners };
-        if (newListeners[eventType]) {
-          newListeners[eventType] = newListeners[eventType].filter(cb => cb !== callback);
+  close() {
+    this.readyState = 2; // Closed state
+    if (this.listeners.close) {
+      this.listeners.close.forEach(callback => {
+        try {
+          callback();
+        } catch (err) {
+          console.error('Error in EventSource mock close listener:', err);
         }
-        return newListeners;
       });
-    };
-  };
+    }
+  }
+}
+
+// EMERGENCY FIX LEVEL 2: Completely replace EventSourceProvider with a stub
+export const EventSourceProvider = ({ children }) => {
+  logger('EventSourceProvider rendered', { disabled: DISABLE_EVENT_SOURCE });
   
-  // Remove all listeners for a specific event type
-  const removeAllEventListeners = (eventType) => {
-    setListeners(prevListeners => {
-      const newListeners = { ...prevListeners };
-      if (eventType) {
-        delete newListeners[eventType];
-      } else {
-        // If no event type specified, remove all listeners
-        return {};
-      }
-      return newListeners;
-    });
-  };
+  // Track each render
+  useEffect(() => {
+    trackRender('EventSourceProvider');
+  });
   
-  // Create memoized context value
+  // Create a mock event source object
+  const mockEventSourceRef = useRef(new MockEventSource());
+  
+  // Create a proper implementation that handles events consistently
   const value = useMemo(() => ({
-    connected,
-    lastEvent,
-    events,
-    addEventListener,
-    removeAllEventListeners
-  }), [connected, lastEvent, events]);
+    eventSource: mockEventSourceRef.current,
+    isConnected: false,
+    lastEvent: null,
+    error: null,
+    reconnect: () => {
+      logger('Reconnect called but EventSource is completely disabled');
+    },
+    addEventListener: (event, callback) => {
+      logger(`Adding event listener for ${event} (mock implementation)`);
+      mockEventSourceRef.current.addEventListener(event, callback);
+      // Return a cleanup function
+      return () => mockEventSourceRef.current.removeEventListener(event, callback);
+    }
+  }), []);
   
   return (
     <EventSourceContext.Provider value={value}>

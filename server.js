@@ -352,66 +352,97 @@ app.use('/api/user', userRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/player', playerRouter);
 
-// Add SSE endpoint for real-time events
-app.get('/api/events', (req, res) => {
-  console.log('SSE connection attempt with token:', req.query.token ? 'Token provided' : 'No token');
+// SSE endpoint for real-time notifications
+app.get('/api/events', authenticateToken, (req, res) => {
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Prevent Nginx from buffering the response
   
-  const token = req.query.token;
-  if (!token) {
-    console.log('SSE connection rejected: No token provided');
-    return res.status(401).send('No token provided');
+  // Extract user ID from the authenticated request
+  const userId = req.user.id || req.user._id || req.user;
+  
+  if (!userId) {
+    console.error('SSE connection failed: No user ID in token');
+    return res.status(401).json({ error: 'Authentication failed' });
   }
   
-  // Verify the token manually since middleware doesn't work well with SSE
-  jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret', (err, decoded) => {
-    if (err) {
-      console.log('SSE connection rejected: Invalid token -', err.message);
-      return res.status(403).send('Invalid token');
-    }
-    
-    const userId = decoded.id || (decoded.user && decoded.user.id);
-    if (!userId) {
-      console.log('SSE connection rejected: No user ID in token');
-      return res.status(403).send('Invalid token: No user ID');
-    }
-    
-    console.log(`SSE connection established for user ${userId}`);
-    
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    // Send initial connection confirmation
-    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Connection established' })}\n\n`);
-    
-    // Create user-specific event listener
-    const listener = (eventData) => {
-      if (eventData.userId === userId) {
-        console.log(`Sending event to user ${userId}: ${eventData.event}`);
-        res.write(`data: ${JSON.stringify({ type: eventData.event, data: eventData.data })}\n\n`);
+  console.log(`SSE connection attempt with token:`, userId ? 'Token provided' : 'No token');
+  
+  // Check for existing connections for this user and limit to 3 max connections per user
+  const userConnections = Array.from(sseClients.values())
+    .filter(client => client.userId === userId);
+  
+  if (userConnections.length >= 3) {
+    console.log(`User ${userId} already has ${userConnections.length} SSE connections. Closing oldest.`);
+    // Find the oldest connection and close it
+    const oldestConnection = userConnections.sort((a, b) => a.connectedAt - b.connectedAt)[0];
+    if (oldestConnection) {
+      try {
+        // Send a close message to the client
+        oldestConnection.res.write('event: close\ndata: {"reason":"Too many connections"}\n\n');
+        oldestConnection.res.end();
+        sseClients.delete(oldestConnection.id);
+        console.log(`Closed oldest SSE connection for user ${userId}`);
+      } catch (err) {
+        console.error(`Error closing old SSE connection:`, err);
+        // Just remove from tracking if we can't close cleanly
+        sseClients.delete(oldestConnection.id);
       }
-    };
+    }
+  }
+  
+  // Generate a unique ID for this connection
+  const clientId = crypto.randomBytes(16).toString('hex');
+  
+  // Add client to the map
+  sseClients.set(clientId, {
+    id: clientId,
+    userId: userId,
+    res,
+    connectedAt: Date.now(),
+    lastActivity: Date.now()
+  });
+  
+  console.log(`SSE connection established for user ${userId}`);
+  
+  // Send initial connection confirmation
+  res.write(`data: ${JSON.stringify({ type: 'connected', connectionId: clientId })}\n\n`);
+  
+  // Send a heartbeat every 30 seconds to keep the connection alive
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(`:heartbeat ${Date.now()}\n\n`);
+      
+      // Update last activity timestamp
+      if (sseClients.has(clientId)) {
+        const client = sseClients.get(clientId);
+        client.lastActivity = Date.now();
+        sseClients.set(clientId, client);
+      }
+    } catch (error) {
+      // Connection might be closed
+      console.error(`Error sending heartbeat to client ${clientId}:`, error);
+      clearInterval(heartbeatInterval);
+      
+      // Clean up the client if not already removed
+      if (sseClients.has(clientId)) {
+        sseClients.delete(clientId);
+        console.log(`SSE connection removed due to heartbeat error: ${clientId}`);
+      }
+    }
+  }, 30000);
+  
+  // Handle connection close
+  req.on('close', () => {
+    clearInterval(heartbeatInterval);
     
-    // Register listener
-    eventEmitter.on('userEvent', listener);
-    
-    // Send a test event after 2 seconds
-    setTimeout(() => {
-      console.log(`Sending test event to user ${userId}`);
-      eventEmitter.emit('userEvent', { 
-        userId, 
-        event: 'test_event', 
-        data: { message: 'This is a test event to verify SSE is working' } 
-      });
-    }, 2000);
-    
-    // Handle client disconnect
-    req.on('close', () => {
+    // Remove client from the map
+    if (sseClients.has(clientId)) {
+      sseClients.delete(clientId);
       console.log(`SSE connection closed for user ${userId}`);
-      eventEmitter.removeListener('userEvent', listener);
-    });
+    }
   });
 });
 

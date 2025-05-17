@@ -225,27 +225,24 @@ const Login = () => {
           
           <form className="space-y-6 relative z-10" onSubmit={handleSubmit} style={{ pointerEvents: "auto" }}>
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-200 flex items-center mb-2 font-minecraft tracking-wide">
+              <label htmlFor="username" className="block text-sm font-medium text-gray-300 flex items-center">
                 <UserIcon className="h-4 w-4 mr-2 text-minecraft-green" />
-                USERNAME
+                Username
               </label>
               <div className="mt-1 relative">
                 <input
                   id="username"
                   name="username"
                   type="text"
+                  autoComplete="username"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  autoCapitalize="none"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   placeholder="Enter your username"
-                  className="habbo-input appearance-none block w-full px-4 py-3 border-2 border-white/20 rounded-md shadow-minecraft placeholder-gray-400 bg-minecraft-navy-dark/80 text-white focus:outline-none focus:ring-minecraft-green focus:border-minecraft-green/50 sm:text-sm transition-all duration-200"
-                  style={{ 
-                    userSelect: "auto",
-                    WebkitUserSelect: "auto",
-                    MozUserSelect: "auto",
-                    msUserSelect: "auto",
-                    pointerEvents: "auto"
-                  }}
+                  className="habbo-input appearance-none block w-full px-3 py-3 border-2 border-white/10 rounded-md shadow-minecraft placeholder-gray-500 bg-minecraft-navy-light text-white focus:outline-none focus:ring-minecraft-green focus:border-minecraft-green/50 sm:text-sm transition-all duration-200"
                 />
                 <AnimatePresence>
                   {username && (

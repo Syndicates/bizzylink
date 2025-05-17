@@ -31,6 +31,64 @@ app.use(bodyParser.json());
 // MongoDB client
 let db = null;
 
+// Add a simple in-memory cache
+const playerCache = {
+  cache: new Map(),
+  
+  // Set cache with expiration
+  set(identifier, data, ttlMs = 30000) { // 30 second cache by default
+    this.cache.set(identifier, {
+      data,
+      expiry: Date.now() + ttlMs
+    });
+    console.log(`Cached player stats for ${identifier}, expires in ${ttlMs/1000}s`);
+  },
+  
+  // Get from cache, returns undefined if expired or not found
+  get(identifier) {
+    const item = this.cache.get(identifier);
+    if (!item) return undefined;
+    
+    if (Date.now() > item.expiry) {
+      console.log(`Cache expired for ${identifier}`);
+      this.cache.delete(identifier);
+      return undefined;
+    }
+    
+    console.log(`Cache hit for ${identifier}`);
+    return item.data;
+  },
+  
+  // Clear cache
+  clear() {
+    this.cache.clear();
+    console.log('Player stats cache cleared');
+  },
+  
+  // Clear entry for specific player
+  clearPlayer(identifier) {
+    this.cache.delete(identifier);
+    console.log(`Cleared cache for player ${identifier}`);
+  }
+};
+
+// Add a debounce mechanism to prevent duplicate requests
+const requestTracker = {
+  activeRequests: new Map(),
+  
+  isActive(identifier) {
+    return this.activeRequests.has(identifier);
+  },
+  
+  startRequest(identifier) {
+    this.activeRequests.set(identifier, Date.now());
+  },
+  
+  endRequest(identifier) {
+    this.activeRequests.delete(identifier);
+  }
+};
+
 // Connect to MongoDB
 async function connectToMongo() {
   try {
@@ -63,6 +121,10 @@ app.post('/api/test/player-stats', async (req, res) => {
         error: 'Missing required fields: userId, mcUsername, and stats are required' 
       });
     }
+    
+    // Clear player from cache to force fresh data on next request
+    playerCache.clearPlayer(mcUsername);
+    playerCache.clearPlayer(userId);
     
     // Ensure we have a MongoDB connection
     if (!db) {
@@ -120,7 +182,15 @@ app.post('/api/test/player-stats', async (req, res) => {
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'Player stats server is running' });
+  console.log('Player stats server test endpoint accessed');
+  res.json({
+    success: true,
+    message: 'Player stats server is working',
+    cache: {
+      size: playerCache.cache.size,
+      status: 'active'
+    }
+  });
 });
 
 // GET endpoint to retrieve player stats by username or UUID
@@ -128,6 +198,25 @@ app.get('/api/player/:identifier', async (req, res) => {
   try {
     const { identifier } = req.params;
     console.log(`Fetching player stats for identifier: ${identifier}`);
+    
+    // Check cache first
+    const cachedData = playerCache.get(identifier);
+    if (cachedData) {
+      console.log(`Returning cached player data for ${identifier}`);
+      return res.json(cachedData);
+    }
+    
+    // Check if there's an active request for this identifier
+    if (requestTracker.isActive(identifier)) {
+      console.log(`Request already in progress for ${identifier}, sending 'please wait' response`);
+      return res.status(429).json({
+        success: false,
+        error: 'A request for this player is already in progress. Please wait a moment and try again.'
+      });
+    }
+    
+    // Mark this request as active
+    requestTracker.startRequest(identifier);
 
     // Ensure we have a MongoDB connection
     if (!db) {
@@ -161,6 +250,8 @@ app.get('/api/player/:identifier', async (req, res) => {
     
     if (!user) {
       console.log(`No player found with identifier: ${identifier}`);
+      // End the active request tracker
+      requestTracker.endRequest(identifier);
       return res.status(404).json({
         success: false,
         error: `Player not found: ${identifier}`
@@ -188,9 +279,15 @@ app.get('/api/player/:identifier', async (req, res) => {
       ...(user.minecraft && user.minecraft.stats ? user.minecraft.stats : {})
     };
     
-    console.log(`Found player data for ${identifier}:`, response);
-    return res.json(response);
+    // Cache the response for future requests
+    playerCache.set(identifier, response);
     
+    console.log(`Found player data for ${identifier}:`, response);
+    
+    // End the active request tracker
+    requestTracker.endRequest(identifier);
+    
+    return res.json(response);
   } catch (error) {
     console.error('Error fetching player stats:', error);
     return res.status(500).json({
@@ -198,6 +295,34 @@ app.get('/api/player/:identifier', async (req, res) => {
       error: `Server error: ${error.message}`
     });
   }
+});
+
+// Add a new endpoint to clear player cache
+app.delete('/api/player/:identifier/cache', (req, res) => {
+  const { identifier } = req.params;
+  playerCache.clearPlayer(identifier);
+  return res.json({ 
+    success: true, 
+    message: `Cache for player ${identifier} has been cleared` 
+  });
+});
+
+// Add request logging middleware to log all requests
+app.use((req, res, next) => {
+  const start = Date.now();
+  const requestId = Math.random().toString(36).substring(2, 10);
+  
+  console.log(`[${requestId}] ${req.method} ${req.originalUrl} - Request received`);
+  
+  // Override end method to log response details
+  const originalEnd = res.end;
+  res.end = function(chunk, encoding) {
+    const duration = Date.now() - start;
+    console.log(`[${requestId}] ${req.method} ${req.originalUrl} - Response sent: ${res.statusCode} (${duration}ms)`);
+    originalEnd.call(this, chunk, encoding);
+  };
+  
+  next();
 });
 
 // Start the server
