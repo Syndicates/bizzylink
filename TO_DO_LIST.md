@@ -19,6 +19,32 @@
 
 This document outlines tasks and improvements needed to bring BizzyLink fully in line with our [RULES.md](RULES.md) development standards. Each item includes a description of the issue, its potential impact, and the recommended solution.
 
+## Auth System Fixes (HIGH PRIORITY)
+
+### 1. Fix TokenStorage Import Cycle
+- **✅ DO:** Resolve circular dependency between AuthContext.js and api.js
+- **ISSUE:** "Could not import TokenStorage, falling back to direct localStorage access" in api.js
+- **IMPACT:** Inconsistent token handling causing authentication failures
+- **SOLUTION:** Extract TokenStorage into a separate utility module that both files can import
+
+### 2. Fix Auth Initialization Sequence
+- **✅ DO:** Correct the auth initialization flow in AuthContext.js
+- **ISSUE:** "Token exists but user object is null" repeatedly appears in console
+- **IMPACT:** User remains unauthenticated despite having a valid token
+- **SOLUTION:** Ensure user data is properly fetched and set during auth initialization, with proper error handling for failed fetches
+
+### 3. Fix Auth State Consistency
+- **✅ DO:** Make isAuthenticated state match token existence
+- **ISSUE:** "Auth state (false) doesn't match token existence (true)"
+- **IMPACT:** UI shows logged-out state while backend treats user as logged in
+- **SOLUTION:** Synchronize auth state with token existence and add validation checks
+
+### 4. Fix WebSocket Connection
+- **✅ DO:** Ensure WebSocket only attempts connection when authenticated
+- **ISSUE:** WebSocket connection failing because it's closed before established
+- **IMPACT:** Real-time updates not working
+- **SOLUTION:** Add auth state dependency to WebSocket connection initialization
+
 ## Mock Data Removal
 
 ### 1. AuthContext Mock Data Import
