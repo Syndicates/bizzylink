@@ -234,4 +234,103 @@
 - **✅ DO:** Clearly distinguish between proprietary code and third-party components
 - **✅ DO:** Respect and maintain third-party license notices when using external libraries
 - **❌ DON'T:** Remove or modify external copyright notices
-- **WHY:** Respects others' intellectual property while protecting our own 
+- **WHY:** Respects others' intellectual property while protecting our own
+
+## Security Best Practices
+
+### 1. Authentication & Authorization
+- **✅ DO:** Implement proper authentication checks for all protected routes
+- **✅ DO:** Use role-based access control with principle of least privilege
+- **✅ DO:** Verify permissions on both client and server sides
+- **❌ DON'T:** Rely solely on hiding UI elements for security
+- **WHY:** Security by obscurity is not real security
+
+### 2. Data Protection
+- **✅ DO:** Sanitize all user inputs to prevent injection attacks
+- **✅ DO:** Use parameterized queries when interacting with databases
+- **✅ DO:** Encrypt sensitive data both in transit and at rest
+- **❌ DON'T:** Store sensitive information (passwords, API keys) in client-side code
+- **WHY:** Data breaches can have catastrophic consequences
+
+### 3. API Security
+- **✅ DO:** Implement rate limiting to prevent abuse
+- **✅ DO:** Use proper HTTP status codes and error handling
+- **✅ DO:** Validate all API inputs with strong type checking
+- **❌ DON'T:** Expose detailed error messages to clients in production
+- **WHY:** Secure APIs protect both your data and your infrastructure
+
+### 4. Dependency Management
+- **✅ DO:** Regularly audit dependencies for security vulnerabilities
+- **✅ DO:** Keep dependencies updated to patched versions
+- **✅ DO:** Lock dependency versions in package files
+- **❌ DON'T:** Use abandoned or poorly maintained libraries for critical functionality
+- **WHY:** Supply chain attacks are increasingly common
+
+## Accessibility Standards
+
+### 1. Basic Requirements
+- **✅ DO:** Ensure proper heading hierarchy (h1 → h6)
+- **✅ DO:** Add descriptive alt text to all images
+- **✅ DO:** Maintain sufficient color contrast (WCAG AA minimum)
+- **❌ DON'T:** Rely solely on color to convey information
+- **WHY:** Accessible applications serve all users, including those with disabilities
+
+### 2. Interactive Elements
+- **✅ DO:** Ensure all interactive elements are keyboard accessible
+- **✅ DO:** Use appropriate ARIA roles and attributes when needed
+- **✅ DO:** Implement proper focus management and visible focus states
+- **❌ DON'T:** Use non-standard interaction patterns without clear instructions
+- **WHY:** Proper interaction design benefits all users, not just those with accessibility needs
+
+### 3. Forms and Validation
+- **✅ DO:** Associate labels with form inputs
+- **✅ DO:** Provide clear error messages for form validation
+- **✅ DO:** Group related form elements with fieldsets and legends
+- **❌ DON'T:** Remove browser-native focus indicators without replacement
+- **WHY:** Accessible forms improve completion rates for all users
+
+## Environment Configuration Management
+
+### 1. Environment Variables
+- **✅ DO:** Use environment variables for configuration that varies between environments
+- **✅ DO:** Include a template .env.example file with all required variables
+- **✅ DO:** Document the purpose of each environment variable
+- **❌ DON'T:** Hardcode environment-specific values in application code
+- **WHY:** Proper configuration management enables easy deployment across environments
+
+### 2. Secrets Management
+- **✅ DO:** Use a secure vault or environment variables for secrets
+- **✅ DO:** Implement different credentials for different environments
+- **✅ DO:** Rotate credentials regularly, especially after team member departures
+- **❌ DON'T:** Store secrets in version control, even in history
+- **WHY:** Exposed credentials are a primary vector for security breaches
+
+### 3. Feature Flags
+- **✅ DO:** Use feature flags for controlled feature rollouts
+- **✅ DO:** Create emergency kill switches for problematic features
+- **✅ DO:** Clean up unused feature flags when they're fully adopted
+- **❌ DON'T:** Allow feature flag logic to become permanent technical debt
+- **WHY:** Controlled rollouts reduce risk and enable easy rollbacks
+
+## Monitoring and Observability
+
+### 1. Logging Practices
+- **✅ DO:** Implement structured logging with consistent formats
+- **✅ DO:** Include context information (user ID, request ID) in logs
+- **✅ DO:** Use appropriate log levels (debug, info, warn, error)
+- **❌ DON'T:** Log sensitive user data or credentials
+- **WHY:** Proper logging is essential for troubleshooting and auditing
+
+### 2. Performance Monitoring
+- **✅ DO:** Monitor key application metrics (response time, error rates)
+- **✅ DO:** Set up alerts for critical performance thresholds
+- **✅ DO:** Track both frontend and backend performance metrics
+- **❌ DON'T:** Wait for user complaints to identify performance issues
+- **WHY:** Proactive monitoring prevents negative user experiences
+
+### 3. Error Tracking
+- **✅ DO:** Implement global error tracking and reporting
+- **✅ DO:** Capture stack traces and contextual information
+- **✅ DO:** Prioritize fixing frequently occurring errors
+- **❌ DON'T:** Ignore error reports or low-frequency errors
+- **WHY:** Systematic error tracking improves overall application quality 
