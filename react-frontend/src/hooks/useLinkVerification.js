@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file useLinkVerification.js
- * @description 
+ * @description Hook for handling Minecraft account link verification via SSE
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -13,63 +13,69 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { useEventSource } from '../contexts/EventSourceContext';
 import { useAuth } from '../contexts/AuthContext';
 
 /**
  * Custom hook for handling Minecraft account link verification via SSE
- * @returns {Object} - { verifying, verificationError }
+ * @returns {Object} - { verifying, verificationError, connected }
  */
 export default function useLinkVerification() {
   const [verifying, setVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState(null);
   const { user, forceDataRefresh } = useAuth();
   const { addEventListener, connected } = useEventSource();
-  const navigate = useNavigate();
-
-  // Set up listener for account_linked events
+  
+  // Use ref to track component mount state
+  const isMountedRef = useRef(true);
+  
+  // Setup effect for event listeners
   useEffect(() => {
+    // Only set up listener if we have a user
     if (!user) return;
     
-    console.log('[Link Verification] Setting up listener for account_linked events');
-    
+    // Function to handle account link events
     const handleAccountLinked = (data) => {
-      if (data.type === 'account_linked' && data.userId === user.id) {
-        console.log('[Link Verification] Account linked event received:', data);
-        setVerifying(true);
-        
-        // Show success toast
-        toast.success('🎮 Your Minecraft account has been linked successfully!');
-        
-        // Force refresh user data and UI
-        forceDataRefresh().catch(err => {
-          console.error('[Link Verification] Error refreshing user data:', err);
-        });
-        
-        // We no longer navigate to the success page since we'll show the celebration modal
-        // The celebration will be handled by the useVerificationCelebration hook
-        setTimeout(() => {
-          setVerifying(false);
-        }, 500);
+      if (!isMountedRef.current) return;
+      
+      if (data.type === 'account_linked' && data.userId === (user.id || user._id)) {
+        // Safe state update
+        if (isMountedRef.current) {
+          setVerifying(true);
+          
+          // Show success toast
+          toast.success('🎮 Your Minecraft account has been linked successfully!');
+          
+          // Force refresh user data
+          if (forceDataRefresh) {
+            forceDataRefresh().catch(() => {});
+          }
+          
+          // Reset verification state
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setVerifying(false);
+            }
+          }, 500);
+        }
       }
     };
     
-    // Register the event listener
-    const cleanup = addEventListener('account_linked', handleAccountLinked);
+    // Set up event listener
+    let cleanup = () => {};
+    if (typeof addEventListener === 'function') {
+      cleanup = addEventListener('account_linked', handleAccountLinked) || (() => {});
+    }
     
-    // Clean up the listener when component unmounts or user changes
-    return cleanup;
-  }, [user, addEventListener, navigate, forceDataRefresh]);
-
-  // Reset error when component unmounts or user changes
-  useEffect(() => {
+    // Return cleanup function
     return () => {
-      setVerificationError(null);
+      isMountedRef.current = false;
+      cleanup();
     };
-  }, [user]);
-
+  }, [user, addEventListener, forceDataRefresh]);
+  
+  // Return state
   return { verifying, verificationError, connected };
 }

@@ -13,7 +13,7 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, TokenStorage } from './contexts/AuthContext';
 import { SocialProvider } from './contexts/SocialContext';
@@ -43,102 +43,15 @@ import Community from './pages/Community';
 import TestRealTime from './pages/TestRealTime';
 import ProfilePage from './pages/ProfilePage';
 import LinkPage from './pages/LinkPage';
+import { motion } from 'framer-motion';
 
-// Protected route component
+// Modified ProtectedRoute component with protections against infinite loops
 const ProtectedRoute = ({ children }) => {
-  const auth = useAuth();
-  const [retryCount, setRetryCount] = React.useState(0);
-  const MAX_RETRIES = 3;
-  const [checkingAuth, setCheckingAuth] = React.useState(true);
+  const { isAuthenticated, user, loading } = useAuth();
+  const [checkingAuth, setCheckingAuth] = useState(false);
   
-  // Direct access to computed getter - with safety
-  const isAuthenticated = auth?.isAuthenticated || false;
-  const loading = auth?.loading || false;
-  const user = auth?.user || null;
-
-  // Enhanced debugging for protected routes
-  React.useEffect(() => {
-    const checkAuthentication = async () => {
-      try {
-        setCheckingAuth(true);
-        
-        console.group('🛡️ Protected Route Check');
-        console.log('Loading state:', loading);
-        console.log('isAuthenticated:', isAuthenticated);
-        console.log('User data:', user ? {
-          id: user.id || user._id,
-          _id: user._id || user.id,
-          username: user.username
-        } : 'null');
-        
-        // Check if token exists using TokenStorage if available
-        let tokenExists = false;
-        try {
-          if (typeof window !== 'undefined') {
-            // Try to safely import TokenStorage
-            const AuthContext = await import('./contexts/AuthContext');
-            if (AuthContext.TokenStorage) {
-              tokenExists = AuthContext.TokenStorage.hasToken();
-              console.log('TokenStorage available, token exists:', tokenExists);
-            } else {
-              // Fallback to direct token check
-              try {
-                tokenExists = !!localStorage.getItem('token') || 
-                              !!sessionStorage.getItem('token');
-              } catch (storageErr) {
-                console.error('Error accessing storage:', storageErr);
-              }
-              console.log('TokenStorage not available, using fallback check, token exists:', tokenExists);
-            }
-          }
-        } catch (err) {
-          console.error('Error checking token existence:', err);
-          // Fallback to direct token check
-          try {
-            tokenExists = !!localStorage.getItem('token') || 
-                          !!sessionStorage.getItem('token');
-            console.log('Using fallback token check, token exists:', tokenExists);
-          } catch (storageErr) {
-            console.error('Storage access error:', storageErr);
-          }
-        }
-        
-        if (!isAuthenticated && tokenExists && retryCount < MAX_RETRIES) {
-          console.log('Token exists but not authenticated yet, refreshing auth state...');
-          setRetryCount(prev => prev + 1);
-          
-          // Try to manually refresh auth
-          if (auth.refreshAuth) {
-            try {
-              await auth.refreshAuth();
-              console.log('Auth state refreshed');
-            } catch (refreshErr) {
-              console.error('Error refreshing auth state:', refreshErr);
-            }
-          } else {
-            console.warn('refreshAuth function not available');
-          }
-        } else if (!isAuthenticated && retryCount >= MAX_RETRIES) {
-          console.log('Max retries reached, redirecting to login page');
-          // Force redirect to login page for clean state
-          setTimeout(() => {
-            window.location.href = '/login';
-          }, 100);
-        }
-        
-        console.groupEnd();
-      } catch (error) {
-        console.error('Protected route check error:', error);
-      } finally {
-        setCheckingAuth(false);
-      }
-    };
-  
-    checkAuthentication();
-  }, [isAuthenticated, loading, user, retryCount, auth]);
-
   // Show loading spinner while checking authentication
-  if (loading || checkingAuth) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size="lg" text="Checking authentication..." />
@@ -149,12 +62,19 @@ const ProtectedRoute = ({ children }) => {
   // If authenticated, render the protected content
   // Otherwise, redirect to login page
   if (!isAuthenticated) {
-    console.log('Not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
   
-  // Safe render of children
-  return children;
+  // Render children with a motion div to avoid flickering
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      {children}
+    </motion.div>
+  );
 };
 
 // Admin route component

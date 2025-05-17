@@ -13,7 +13,7 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthService, clearApiCache } from '../services/api';
 import api from '../services/api';
@@ -21,14 +21,19 @@ import Notification from '../components/Notification';
 import { toast } from 'react-toastify';
 // Import from the new utility instead of using a circular dependency
 import TokenStorage from '../utils/tokenStorage';
+import { createLogger, trackFunctionCall, trackRender } from '../utils/debugLogger';
 // Remove mock users import
 // import mockUsers from '../data/mockUsers';
+
+// Create logger for this module
+const logger = createLogger('AuthContext');
 
 // Create context
 const AuthContext = createContext();
 
 // Custom hook to use the auth context
 export const useAuth = () => {
+  logger('useAuth hook called');
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
@@ -40,7 +45,39 @@ export const useAuth = () => {
 export { TokenStorage };
 
 // Debug flag - can be disabled in production
-const DEBUG = true;
+const DEBUG = false;
+
+// EMERGENCY FIX: Disable auto verify and other problematic features
+const DISABLE_AUTO_VERIFY = true;
+const DISABLE_AUTO_REFRESH = true;
+const DISABLE_FREQUENT_CHECKS = true;
+const MIN_REFRESH_INTERVAL = 30000; // 30 seconds minimum between any auth-related refreshes
+
+// Tracking last update time across all auth methods to prevent excessive updates
+let lastGlobalAuthUpdateTime = 0;
+
+// Global throttling function that prevents ANY auth updates happening too frequently
+const shouldThrottleGlobally = () => {
+  const now = Date.now();
+  const timeSinceLastUpdate = now - lastGlobalAuthUpdateTime;
+  
+  if (timeSinceLastUpdate < MIN_REFRESH_INTERVAL) {
+    logger(`Global throttling applied - last update was ${timeSinceLastUpdate}ms ago`);
+    return true;
+  }
+  
+  // Update timestamp
+  lastGlobalAuthUpdateTime = now;
+  return false;
+};
+
+// Debugging helper for state updates
+function debugSetState(setter, value, name) {
+  if (DEBUG) {
+    console.log(`[Auth Debug] Setting state: ${name}`, typeof value === 'function' ? 'Function update' : value);
+  }
+  setter(value);
+}
 
 // Debug logger that can be easily toggled
 const debug = (message, data) => {
@@ -55,6 +92,13 @@ const debug = (message, data) => {
 
 // Provider component
 export const AuthProvider = ({ children }) => {
+  logger('AuthProvider rendering');
+  
+  // Track component renders
+  useEffect(() => {
+    trackRender('AuthProvider');
+  });
+  
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +106,16 @@ export const AuthProvider = ({ children }) => {
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authInitialized, setAuthInitialized] = useState(false);
+  
+  // Add throttling mechanism to prevent excessive verification calls
+  const verifyStateTimeoutRef = useRef(null);
+  const lastVerifyTimeRef = useRef(0);
+  
+  // Add throttling for refreshUserData
+  const lastRefreshTimeRef = useRef(0);
+  const refreshUserDataTimeoutRef = useRef(null);
+  const forceRefreshTimeoutRef = useRef(null);
+  const lastForceRefreshRef = useRef(0);
 
   // Function to update user with proper ID normalization
   const updateUser = useCallback((userData) => {
@@ -103,21 +157,173 @@ export const AuthProvider = ({ children }) => {
       };
     }
     
-    debug('Setting normalized user', normalizedUser);
+    logger('Setting normalized user', normalizedUser);
     setUser(normalizedUser);
     return normalizedUser;
   }, []);
 
+  // Function to refresh user data without full auth refresh
+  // IMPORTANT: This function MUST be defined before it's used in verifyAuthState or other hooks
+  const refreshUserData = useCallback(() => {
+    logger('Refreshing user data');
+    
+    // EMERGENCY FIX: Skip refreshes if disabled
+    if (DISABLE_AUTO_REFRESH) {
+      logger('Auto refresh is disabled');
+      return Promise.reject(new Error('Auto refresh is disabled'));
+    }
+    
+    // Check if we have a token and user
+    if (!TokenStorage.hasToken()) {
+      logger('No token exists, cannot refresh user data');
+      return Promise.reject(new Error('No token exists'));
+    }
+    
+    // Apply global throttling
+    if (shouldThrottleGlobally()) {
+      logger('Global throttling applied to refreshUserData');
+      return Promise.reject(new Error('Throttled'));
+    }
+    
+    // Add throttling to prevent excessive refreshes
+    const now = Date.now();
+    const minRefreshInterval = 5000; // 5 seconds between refreshes
+    
+    if (now - lastRefreshTimeRef.current < minRefreshInterval) {
+      logger(`Throttling refreshUserData - last refresh was ${now - lastRefreshTimeRef.current}ms ago`);
+      
+      // Return a cached promise to avoid creating multiple refreshes
+      if (refreshUserDataTimeoutRef.current) {
+        return refreshUserDataTimeoutRef.current;
+      }
+      
+      // Create a new promise that will resolve after the throttle period
+      refreshUserDataTimeoutRef.current = new Promise((resolve, reject) => {
+        const waitTime = minRefreshInterval - (now - lastRefreshTimeRef.current);
+        setTimeout(() => {
+          // Clear the ref
+          refreshUserDataTimeoutRef.current = null;
+          // Update timestamp
+          lastRefreshTimeRef.current = Date.now();
+          // Execute the actual refresh
+          AuthService.getCurrentUser()
+            .then(userData => {
+              const normalizedUser = updateUser(userData);
+              resolve(normalizedUser);
+            })
+            .catch(reject);
+        }, waitTime);
+      });
+      
+      return refreshUserDataTimeoutRef.current;
+    }
+    
+    // Update timestamp
+    lastRefreshTimeRef.current = now;
+    
+    // Return a promise for better control flow
+    return AuthService.getCurrentUser()
+      .then(userData => {
+        logger('Successfully refreshed user data:', userData);
+        
+        // Process the user data through our normalization function
+        const normalizedUser = updateUser(userData);
+        logger('User data normalized:', normalizedUser);
+        
+        return normalizedUser;
+      })
+      .catch(error => {
+        logger('Error refreshing user data:', error);
+        throw error;
+      });
+  }, [updateUser]);
+
+  // Function to ensure auth state consistency with improved throttling
+  const verifyAuthState = useCallback(() => {
+    // EMERGENCY FIX: Skip verification if disabled
+    if (DISABLE_AUTO_VERIFY || DISABLE_FREQUENT_CHECKS) {
+      logger('Auto verify state is disabled');
+      return;
+    }
+    
+    // Apply global throttling
+    if (shouldThrottleGlobally()) {
+      logger('Global throttling applied to verifyAuthState');
+      return;
+    }
+    
+    // Add throttling mechanism to prevent rapid consecutive calls
+    const now = Date.now();
+    const minInterval = 5000; // 5 seconds between verifications (increased from 2 seconds)
+    
+    if (now - lastVerifyTimeRef.current < minInterval) {
+      // Skip this verification if we've just done one recently
+      logger(`Skipping verifyAuthState - last verify was ${now - lastVerifyTimeRef.current}ms ago`);
+      return;
+    }
+    
+    // Update timestamp
+    lastVerifyTimeRef.current = now;
+    
+    // Clear any pending verification
+    if (verifyStateTimeoutRef.current) {
+      clearTimeout(verifyStateTimeoutRef.current);
+      verifyStateTimeoutRef.current = null;
+    }
+    
+    logger('Verifying auth state consistency');
+    const token = TokenStorage.getToken();
+    
+    // Check if auth state matches token existence
+    if (!!token !== isAuthenticated) {
+      logger(`Auth state (${isAuthenticated}) doesn't match token existence (${!!token}), fixing...`);
+      
+      if (token) {
+        // We have a token but not authenticated - fix the state
+        setIsAuthenticated(true);
+        
+        // Try to load user data if we don't have it
+        if (!user) {
+          logger('Token exists but user object is null, scheduling user data fetch...');
+          
+          // Schedule a delayed fetch instead of immediate execution
+          verifyStateTimeoutRef.current = setTimeout(() => {
+            logger('Executing delayed user data fetch');
+            refreshUserData().catch(err => {
+              logger('Error loading user data during state verification:', err);
+              
+              // If we can't load the user data, the token might be invalid
+              if (err.response && err.response.status === 401) {
+                logger('Token is invalid, clearing authentication state');
+                TokenStorage.removeToken();
+                setIsAuthenticated(false);
+              }
+            });
+          }, 2000); // 2 second delay to prevent immediate execution
+        }
+      } else {
+        // We don't have a token but are authenticated - fix the state
+        setIsAuthenticated(false);
+        setUser(null);
+      }
+    }
+  }, [isAuthenticated, user, refreshUserData]);
+
   // Improved initialization with retries
   const initAuth = useCallback(async () => {
-    debug('Initializing authentication state...');
+    // Skip if already initialized
+    if (authInitialized) {
+      return;
+    }
+    
+    logger('Initializing authentication state...');
     setLoading(true);
     
     try {
       // Check if we have a forced logout flag
       const forcedLogout = localStorage.getItem('FORCE_LOGGED_OUT') === 'true';
       if (forcedLogout) {
-        debug('Found forced logout flag - ignoring any existing tokens');
+        logger('Found forced logout flag - ignoring any existing tokens');
         setIsAuthenticated(false);
         setUser(null);
         setLoading(false);
@@ -129,7 +335,7 @@ export const AuthProvider = ({ children }) => {
       const token = TokenStorage.getToken();
       
       if (!token) {
-        debug('No authentication token found, user is not authenticated');
+        logger('No authentication token found, user is not authenticated');
         setIsAuthenticated(false);
         setUser(null);
         setLoading(false);
@@ -137,159 +343,102 @@ export const AuthProvider = ({ children }) => {
         return;
       }
       
-      debug('Token found, fetching complete user data from server...');
+      // Log token found but don't fetch user data here immediately
+      logger('Token found, will attempt to load user data');
       
-      // Add retry mechanism for more reliable initialization
-      let retryCount = 0;
-      const MAX_RETRIES = 3;
+      // Set authenticated first based on token
+      setIsAuthenticated(true);
       
-      const fetchUserData = async () => {
-        try {
-          debug(`Attempt ${retryCount + 1} to fetch user data...`);
-          const userData = await AuthService.getCurrentUser();
-          
-          if (userData) {
-            debug('Successfully loaded complete user data', userData);
-            setIsAuthenticated(true);
-            const normalizedUser = updateUser(userData);
-            setError(null);
-            setLoading(false);
-            setAuthInitialized(true);
-            
-            if (!normalizedUser) {
-              throw new Error("User data normalization failed");
-            }
-            
-            return true;
-          }
-          throw new Error("No user data returned from API");
-        } catch (fetchErr) {
-          debug('Error fetching complete user data:', fetchErr);
-          
-          // If we get a 401 error, the token is invalid
-          if (fetchErr.response && fetchErr.response.status === 401) {
-            debug('Token is invalid - removing and logging out');
-            TokenStorage.removeToken();
-            setIsAuthenticated(false);
-            setUser(null);
-            setLoading(false);
-            setAuthInitialized(true);
-            return true; // No need to retry on 401
-          }
-          
-          // Retry logic
-          retryCount++;
-          if (retryCount < MAX_RETRIES) {
-            debug(`Retrying fetch... (${retryCount}/${MAX_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
-            return false; // Continue retrying
-          }
-          
-          return false; // Failed after retries
-        }
-      };
-      
-      // Try to fetch user data with retries
-      let fetchSuccess = await fetchUserData();
-      
-      while (!fetchSuccess && retryCount < MAX_RETRIES) {
-        fetchSuccess = await fetchUserData();
-      }
-      
-      // If we failed after all retries, fall back to JWT data extraction
-      if (!fetchSuccess) {
-        debug('All fetch attempts failed, falling back to JWT payload extraction');
+      // Single attempt to get user data
+      try {
+        const userData = await AuthService.getCurrentUser();
         
-        try {
-          // Parse the token payload (JWT format: header.payload.signature)
-          const base64Url = token.split('.')[1];
-          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-          const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-          }).join(''));
-
-          const payload = JSON.parse(jsonPayload);
-          
-          if (payload && payload.user) {
-            debug('Using token payload user data as fallback');
-            // Set authenticated state with token-extracted user data
-            setIsAuthenticated(true);
-            updateUser(payload.user);
-            setError(null);
-          } else {
-            debug('No user data found in token payload');
-            setIsAuthenticated(false);
-            setUser(null);
-          }
-        } catch (tokenErr) {
-          debug('Error extracting user data from token:', tokenErr);
-          // Unable to authenticate user properly
+        // Update user data if available
+        if (userData) {
+          updateUser(userData);
+        }
+      } catch (err) {
+        logger('Error loading user data during initialization:', err);
+        
+        // If unauthorized, clear authentication
+        if (err.response && err.response.status === 401) {
+          TokenStorage.removeToken();
           setIsAuthenticated(false);
           setUser(null);
         }
       }
+      
+      // Always mark as initialized
+      setLoading(false);
+      setAuthInitialized(true);
     } catch (err) {
-      debug('Authentication initialization error:', err);
+      logger('Authentication initialization error:', err);
       
-      // Handle specific API errors
-      if (err.response) {
-        debug('API response error:', err.response.status, err.response.data);
-        
-        if (err.response.status === 401) {
-          debug('Token is invalid or expired, clearing authentication state');
-          // Clear token if unauthorized
-          TokenStorage.removeToken();
-        }
-      } else if (err.request) {
-        debug('API request error (no response):', err.request);
-      } else {
-        debug('Authentication setup error:', err.message);
-      }
-      
+      // Set safe default state
       setIsAuthenticated(false);
       setUser(null);
       setError(err.message || 'Authentication failed');
-    } finally {
-      debug('Authentication initialization completed');
       setLoading(false);
       setAuthInitialized(true);
     }
-  }, [updateUser]);
-  
+  }, [updateUser, authInitialized]);
+
   // Run once when the component mounts
   useEffect(() => {
-    debug('AuthProvider initialized');
+    logger('AuthProvider initialized');
     
-    // Check for token and validate it
+    // Initial auth check
     initAuth();
     
-    // Set up periodic token validation (every 30 seconds)
-    const interval = setInterval(() => {
-      // Only do checks after initial auth is complete
-      if (!authInitialized) return;
-      
-      const hasToken = TokenStorage.hasToken();
-      
-      // Fix any inconsistencies between token existence and auth state
-      if (hasToken && !isAuthenticated) {
-        console.warn('Token exists but user not authenticated - fixing inconsistency');
-        if (!user) {
-          // Need to fetch user data
-          initAuth();
-        } else {
-          // We have user data already, just set auth state
-          setIsAuthenticated(true);
-        }
-      } else if (!hasToken && isAuthenticated) {
-        console.warn('User authenticated but no token exists - fixing inconsistency');
-        setIsAuthenticated(false);
-        setUser(null);
-      }
-    }, 30000);
+    // Cleanup when unmounting
+    return () => {
+      logger('AuthProvider unmounting');
+    };
+  }, []); // Empty dependency array means this only runs once on mount
 
-    return () => clearInterval(interval);
-  }, [initAuth, authInitialized, isAuthenticated, user]);
-  
+  // Separate effect to handle automatic verification ONLY when needed
+  useEffect(() => {
+    // Skip all checks if disabled
+    if (DISABLE_AUTO_VERIFY || DISABLE_FREQUENT_CHECKS) {
+      return;
+    }
+    
+    // Only start verification checks after initialization completes
+    if (!authInitialized) {
+      return;
+    }
+    
+    logger('Setting up periodic auth verification');
+    
+    // Use a fixed interval to check auth state
+    const intervalId = setInterval(() => {
+      // Don't run if throttled
+      if (shouldThrottleGlobally()) {
+        return;
+      }
+      
+      // Verify auth state without causing a loop
+      const token = TokenStorage.getToken();
+      const hasToken = !!token;
+      
+      // Only attempt to fix a mismatch
+      if (hasToken !== isAuthenticated) {
+        logger(`Fixing auth state mismatch: token=${hasToken}, isAuthenticated=${isAuthenticated}`);
+        
+        if (hasToken) {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          setUser(null);
+        }
+      }
+    }, 60000); // Check once per minute
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [authInitialized, isAuthenticated]);
+
   // Enhanced login function with TokenStorage
   const login = async (username, password) => {
     console.log(`Attempting login for user: ${username}`);
@@ -547,51 +696,48 @@ export const AuthProvider = ({ children }) => {
       });
   };
 
-  // Function to refresh user data without full auth refresh
-  const refreshUserData = useCallback(() => {
-    debug('Refreshing user data');
-    
-    // Check if we have a token and user
-    if (!TokenStorage.hasToken()) {
-      debug('No token exists, cannot refresh user data');
-      return Promise.reject(new Error('No token exists'));
-    }
-    
-    // Return a promise for better control flow
-    return AuthService.getCurrentUser()
-      .then(userData => {
-        debug('Successfully refreshed user data:', userData);
-        
-        // Process the user data through our normalization function
-        const normalizedUser = updateUser(userData);
-        debug('User data normalized:', normalizedUser);
-        
-        return normalizedUser;
-      })
-      .catch(error => {
-        debug('Error refreshing user data:', error);
-        throw error;
-      });
-  }, []);
-
   // Force a complete refresh from server and reload UI
   const forceDataRefresh = useCallback(() => {
     debug('Force refreshing all user data and reloading UI');
     
+    // Add strong throttling to prevent excessive refreshes
+    const now = Date.now();
+    const minForceRefreshInterval = 30000; // 30 seconds between forced refreshes
+    
+    if (now - lastForceRefreshRef.current < minForceRefreshInterval) {
+      debug(`Throttling forceDataRefresh - last refresh was ${now - lastForceRefreshRef.current}ms ago`);
+      return Promise.resolve(user); // Return current user without refresh
+    }
+    
+    // Update timestamp
+    lastForceRefreshRef.current = now;
+    
+    // Clear any existing timeout
+    if (forceRefreshTimeoutRef.current) {
+      clearTimeout(forceRefreshTimeoutRef.current);
+      forceRefreshTimeoutRef.current = null;
+    }
+    
     return refreshUserData()
       .then(userData => {
         debug('User data refreshed, reloading UI to apply all changes');
-        // Force a reload after a short delay to ensure state is updated
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
+        
+        // Only reload in extreme cases - this causes a full page refresh
+        // Instead, set a flag that signals components to refresh their state
+        try {
+          localStorage.setItem('force_ui_refresh', Date.now().toString());
+          window.dispatchEvent(new CustomEvent('force_ui_refresh', { detail: { timestamp: Date.now() } }));
+        } catch (e) {
+          debug('Error dispatching UI refresh event:', e);
+        }
+        
         return userData;
       })
       .catch(error => {
         debug('Error in force refresh:', error);
         throw error;
       });
-  }, [refreshUserData]);
+  }, [refreshUserData, user]);
 
   // Update user profile
   const updateUserProfile = (updatedUser) => {
@@ -656,43 +802,15 @@ export const AuthProvider = ({ children }) => {
     refreshAuth,
     refreshUserData,
     forceDataRefresh,
-    // Always compute isAuthenticated from current state, never store it
-    get isAuthenticated() {
-      // Use our improved TokenStorage to check for token
-      const hasToken = TokenStorage.hasToken();
-      
-      // Both user object AND token must exist to be authenticated
-      const isAuth = !!user && hasToken;
-      
-      // Debug info for authentication state issues
-      if (hasToken && !user) {
-        console.warn('Token exists but user object is null - this should be fixed during auth initialization');
-      }
-      
-      return isAuth;
-    },
-    get isAdmin() {
-      return user?.role === 'admin' || user?.forum_rank === 'admin';
-    },
-    get hasLinkedAccount() {
-      // Check both possible field paths for Minecraft data
-      if (!user) return false;
-      
-      // Check direct properties first
-      const directLinked = user.linked === true;
-      const directHasMcUsername = !!user.mcUsername;
-      const directHasMcUUID = !!user.mcUUID;
-      
-      // Then check nested minecraft object
-      const nestedLinked = user.minecraft?.linked === true;
-      const nestedHasMcUsername = !!user.minecraft?.mcUsername;
-      const nestedHasMcUUID = !!user.minecraft?.mcUUID;
-      
-      // Account is linked if either structure indicates it is linked
-      return (directLinked || nestedLinked) || 
-             ((directHasMcUsername || nestedHasMcUsername) && 
-              (directHasMcUUID || nestedHasMcUUID));
-    }
+    // Compute isAuthenticated from current state and token
+    isAuthenticated: !!user && TokenStorage.hasToken(),
+    isAdmin: user?.role === 'admin' || user?.forum_rank === 'admin',
+    hasLinkedAccount: user ? (
+      // Check if user has linked Minecraft account
+      (user.linked === true || user.minecraft?.linked === true) || 
+      ((!!user.mcUsername || !!user.minecraft?.mcUsername) && 
+       (!!user.mcUUID || !!user.minecraft?.mcUUID))
+    ) : false
   };
 
   return (

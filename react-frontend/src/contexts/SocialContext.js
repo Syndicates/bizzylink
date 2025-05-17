@@ -109,39 +109,30 @@ export const SocialProvider = ({ children }) => {
     try {
       const response = await FriendService.getNotifications(page, limit, skipCache);
       
-      // Validate response data before updating state
-      if (response && response.data) {
-        // Ensure all required properties exist with fallbacks
-        const safeResponse = {
-          notifications: Array.isArray(response.data.notifications) ? response.data.notifications : [],
-          unreadCount: typeof response.data.unreadCount === 'number' ? response.data.unreadCount : 0,
-          totalPages: typeof response.data.totalPages === 'number' ? response.data.totalPages : 1,
-          currentPage: typeof response.data.currentPage === 'number' ? response.data.currentPage : 1,
-          totalNotifications: typeof response.data.totalNotifications === 'number' ? response.data.totalNotifications : 0
-        };
-        
-        setNotifications({
-          items: safeResponse.notifications,
-          unreadCount: safeResponse.unreadCount,
-          totalPages: safeResponse.totalPages,
-          currentPage: safeResponse.currentPage,
-          total: safeResponse.totalNotifications
-        });
-      } else {
-        console.warn('Invalid notifications response:', response);
-        // Don't update state if response is invalid
-      }
+      // Safely extract and validate notification data
+      const notificationsArray = Array.isArray(response?.notifications) ? response.notifications : [];
+      const unreadCount = typeof response?.unreadCount === 'number' ? response.unreadCount : 0;
+      const totalPages = typeof response?.totalPages === 'number' ? response.totalPages : 1;
+      const currentPage = typeof response?.currentPage === 'number' ? response.currentPage : 1;
+      const totalNotifications = typeof response?.totalNotifications === 'number' ? response.totalNotifications : 0;
+      
+      // Update state with safe values
+      setNotifications({
+        items: notificationsArray,
+        unreadCount: unreadCount,
+        totalPages: totalPages,
+        currentPage: currentPage,
+        total: totalNotifications
+      });
     } catch (err) {
-      console.error('Failed to fetch notifications:', err);
-      // Don't set error state for background refreshes to avoid disrupting the UI
+      // Don't set error state for background refreshes
       if (!skipCache) {
         setError('Failed to load notifications. Please try again later.');
       }
-      // Keep existing notifications data instead of clearing it on error
     } finally {
       setLoading(prev => ({ ...prev, notifications: false }));
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, setError]);
   
   // Load data when authenticated - with improved error handling
   useEffect(() => {
