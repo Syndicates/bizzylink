@@ -391,4 +391,27 @@
 - **✅ DO:** Capture stack traces and contextual information
 - **✅ DO:** Prioritize fixing frequently occurring errors
 - **❌ DON'T:** Ignore error reports or low-frequency errors
-- **WHY:** Systematic error tracking improves overall application quality 
+- **WHY:** Systematic error tracking improves overall application quality
+
+## Task Management & TO_DO_LIST Maintenance
+
+### 1. Adding New Tasks
+- **✅ DO:** Add newly discovered issues to TO_DO_LIST.md immediately when found
+- **✅ DO:** Include all required information (issue, impact, solution)
+- **✅ DO:** Categorize tasks appropriately according to document structure
+- **❌ DON'T:** Leave discovered issues undocumented or in personal notes
+- **WHY:** Central task tracking ensures nothing is forgotten
+
+### 2. Task Completion
+- **✅ DO:** Remove tasks from TO_DO_LIST.md as soon as they are completed
+- **✅ DO:** Document the solution in the commit message that resolves the task
+- **✅ DO:** Update related documentation if the solution changes approach
+- **❌ DON'T:** Leave completed tasks in the TO_DO_LIST
+- **WHY:** Keeping the task list current prevents confusion about remaining work
+
+### 3. Task Prioritization
+- **✅ DO:** Address security and stability issues first
+- **✅ DO:** Prioritize tasks that impact user experience
+- **✅ DO:** Consider task dependencies when planning work
+- **❌ DON'T:** Leave high-impact issues unaddressed for long periods
+- **WHY:** Strategic prioritization maximizes development effectiveness 
