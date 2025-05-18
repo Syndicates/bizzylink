@@ -78,17 +78,45 @@ async function getLeaderboardData(category, timeFrame, limit) {
     switch(category) {
       case 'playtime':
         pipeline.push(
-          { $sort: { 'minecraft.stats.playtime_minutes': -1 } },
-          { 
-            $project: {
+          { $addFields: {
+              playtime_minutes: { $ifNull: ['$minecraft.stats.playtime_minutes', 0] },
+              playtime: { $ifNull: ['$minecraft.stats.playtime', '0m'] },
+              balance: { $ifNull: ['$minecraft.stats.balance', 0] },
+              lastSeen: { $ifNull: ['$minecraft.stats.lastSeen', 'N/A'] },
+              level: { $ifNull: ['$minecraft.stats.level', 1] },
+              experience: { $ifNull: ['$minecraft.stats.experience', 0] },
+              rank: { $ifNull: ['$minecraft.stats.rank', 'Member'] },
+              blocks_mined: { $ifNull: ['$minecraft.stats.blocks_mined', 0] },
+              mobs_killed: { $ifNull: ['$minecraft.stats.mobs_killed', 0] },
+              deaths: { $ifNull: ['$minecraft.stats.deaths', 0] },
+              world: { $ifNull: ['$minecraft.stats.world', 'world'] },
+              gamemode: { $ifNull: ['$minecraft.stats.gamemode', 'SURVIVAL'] },
+              achievements: { $ifNull: ['$minecraft.stats.achievements', 0] },
+              advancements: { $size: { $ifNull: ['$minecraft.stats.advancements', []] } },
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID'
+            }
+          },
+          { $sort: { playtime_minutes: -1 } },
+          { $project: {
               id: '$_id',
               username: 1,
-              mcUsername: '$minecraft.mcUsername',
-              uuid: '$minecraft.mcUUID',
-              rank: '$minecraft.rank',
-              lastSeenRaw: { $ifNull: ['$minecraft.lastSeen', '$lastUpdated'] },
-              playtime_minutes: '$minecraft.stats.playtime_minutes',
-              playtime: '$minecraft.stats.playtime'
+              mcUsername: 1,
+              uuid: 1,
+              playtime_minutes: 1,
+              playtime: 1,
+              lastSeen: 1,
+              balance: 1,
+              level: 1,
+              experience: 1,
+              rank: 1,
+              blocks_mined: 1,
+              mobs_killed: 1,
+              deaths: 1,
+              world: 1,
+              gamemode: 1,
+              achievements: 1,
+              advancements: 1
             }
           }
         );

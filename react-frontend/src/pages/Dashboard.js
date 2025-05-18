@@ -30,6 +30,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
 
+/**
+ * NOTE: Always use backend/database field names exactly as returned (see RULES.md: Data Management, Naming Consistency).
+ * This prevents silent data mismatches between backend and frontend.
+ */
+
 const Dashboard = () => {
   const { user, updateUserProfile } = useAuth();
   
@@ -45,8 +50,19 @@ const Dashboard = () => {
   const [playerStats, setPlayerStats] = useState(null);
   const [activeTab, setActiveTab] = useState('account');
   const [onlinePlayers, setOnlinePlayers] = useState([]);
+  const [onlinePlayersLoading, setOnlinePlayersLoading] = useState(false);
+  const [onlinePlayersError, setOnlinePlayersError] = useState(null);
   const [serverStatus, setServerStatus] = useState({ online: true, playerCount: 24, maxPlayers: 100 });
   const [isUpdatingStats, setIsUpdatingStats] = useState(false);
+  const [topPlayers, setTopPlayers] = useState([]);
+  const [topPlayersLoading, setTopPlayersLoading] = useState(false);
+  const [topPlayersError, setTopPlayersError] = useState(null);
+  const [serverStats, setServerStats] = useState(null);
+  const [serverStatsLoading, setServerStatsLoading] = useState(false);
+  const [serverStatsError, setServerStatsError] = useState(null);
+  const [recentAchievements, setRecentAchievements] = useState([]);
+  const [recentAchievementsLoading, setRecentAchievementsLoading] = useState(false);
+  const [recentAchievementsError, setRecentAchievementsError] = useState(null);
   
   // Format date
   const formatDate = (dateString) => {
@@ -109,36 +125,36 @@ const Dashboard = () => {
       });
     }
   }, [user]);
-
+  
   // Check for active link code on load and when user changes
   useEffect(() => {
     const checkActiveLinkCode = async () => {
       if (user && !user.linked) {
-        try {
-          // First check if user already has linkCode in profile
-          if (user.linkCode && user.linkCodeExpiry) {
-            const expiryDate = new Date(user.linkCodeExpiry);
-            if (expiryDate > new Date()) {
-              console.log('Found active link code in user profile');
-              setLinkCode(user.linkCode);
-              setLinkExpiryDate(expiryDate);
+      try {
+        // First check if user already has linkCode in profile
+        if (user.linkCode && user.linkCodeExpiry) {
+          const expiryDate = new Date(user.linkCodeExpiry);
+          if (expiryDate > new Date()) {
+            console.log('Found active link code in user profile');
+            setLinkCode(user.linkCode);
+            setLinkExpiryDate(expiryDate);
               setMcUsername(user.mcUsername || '');
-              return;
-            }
+            return;
           }
-          
-          // If not, try to get from the API
-          const response = await MinecraftService.getActiveLinkCode();
-          console.log('Active link code response:', response.data);
-          
+        }
+        
+        // If not, try to get from the API
+        const response = await MinecraftService.getActiveLinkCode();
+        console.log('Active link code response:', response.data);
+        
           setLinkCode(response.data.linkCode);
           setLinkExpiry(response.data.expiresIn);
           setLinkExpiryDate(new Date(response.data.codeExpiry));
-          setMcUsername(response.data.mcUsername || '');
-          
-        } catch (error) {
-          console.log('No active link code found', error);
-          // No active link code, that's ok
+        setMcUsername(response.data.mcUsername || '');
+        
+      } catch (error) {
+        console.log('No active link code found', error);
+        // No active link code, that's ok
         }
       }
     };
@@ -164,8 +180,8 @@ const Dashboard = () => {
             playtime: '0h',
             lastSeen: 'Never',
             balance: 0,
-            blocksMined: 0,
-            mobsKilled: 0,
+            blocks_mined: 0,
+            mobs_killed: 0,
             deaths: 0,
             joinDate: formatDate(user.createdAt) || 'N/A',
             achievements: 0,
@@ -196,8 +212,8 @@ const Dashboard = () => {
             playtime: '0h',
             lastSeen: 'Never',
             balance: 0,
-            blocksMined: 0,
-            mobsKilled: 0,
+            blocks_mined: 0,
+            mobs_killed: 0,
             deaths: 0,
             joinDate: 'N/A',
             achievements: 0,
@@ -223,63 +239,35 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchServerData = async () => {
       if (activeTab === 'community') {
+        setOnlinePlayersLoading(true);
+        setOnlinePlayersError(null);
         try {
-          // Fetch real server data instead of mock data
+          // Fetch real server data
           const serverData = await MinecraftAPI.getServerStatus('play.bizzynation.co.uk');
-          console.log('Server status data:', serverData);
-          
           setServerStatus({
             online: serverData.online,
             playerCount: serverData.playerCount,
             maxPlayers: serverData.maxPlayers
           });
-          
-          // Since we might not have API access to player list,
-          // either show placeholder data or fetch from server API if available
-          
-          // Try to fetch real online players, but fall back to placeholder data
-          try {
-            // This would be replaced with actual API call when available
-            // For now, use placeholder data but with real server status info
-            
-            setOnlinePlayers([
-              { username: 'MinerSteve', rank: 'VIP', playTime: '3h 24m', 
-                avatar: MinecraftAPI.getPlayerAvatar('MinerSteve', 100) },
-              { username: 'DiamondDigger', rank: 'Admin', playTime: '1h 12m',
-                avatar: MinecraftAPI.getPlayerAvatar('DiamondDigger', 100) },
-              { username: 'CreeperSlayer', rank: 'Member', playTime: '45m', 
-                avatar: MinecraftAPI.getPlayerAvatar('CreeperSlayer', 100) },
-              { username: 'RedstoneWizard', rank: 'VIP+', playTime: '2h 53m', 
-                avatar: MinecraftAPI.getPlayerAvatar('RedstoneWizard', 100) },
-              { username: 'PixelBuilder', rank: 'Member', playTime: '16m', 
-                avatar: MinecraftAPI.getPlayerAvatar('PixelBuilder', 100) },
-            ]);
-          } catch (playerError) {
-            console.error('Error fetching online players:', playerError);
-            // Keep default player data if fetching fails
-          }
+
+          // Fetch real online players from API
+          const players = await MinecraftAPI.getOnlinePlayers('play.bizzynation.co.uk');
+          setOnlinePlayers(players);
         } catch (error) {
-          console.error('Error fetching server status:', error);
-          setServerStatus({ 
-            online: false, 
-            playerCount: 0, 
-            maxPlayers: 100,
-            error: 'Could not connect to server'
-          });
+          setOnlinePlayers([]);
+          setOnlinePlayersError('Could not fetch online players.');
+        } finally {
+          setOnlinePlayersLoading(false);
         }
       }
     };
-    
     fetchServerData();
-    
-    // Set up regular polling for server status when on community tab
     let intervalId;
     if (activeTab === 'community') {
       intervalId = setInterval(() => {
         fetchServerData();
-      }, 60000); // Check every minute
+      }, 60000);
     }
-    
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
@@ -333,11 +321,11 @@ const Dashboard = () => {
           message: error.response.data.message || 'You already have an active link code'
         });
       } else {
-        setNotification({
-          show: true,
-          type: 'error',
+      setNotification({
+        show: true,
+        type: 'error',
           message: error.response?.data?.error || 'Failed to generate link code'
-        });
+      });
       }
     } finally {
       setLinkLoading(false);
@@ -354,18 +342,18 @@ const Dashboard = () => {
     
     try {
       const response = await MinecraftService.unlinkAccount();
-      
-      // Update user state
+        
+        // Update user state
       updateUserProfile({
-        ...user,
-        linked: false,
-        mcUsername: null,
+          ...user,
+          linked: false,
+          mcUsername: null,
         mcUUID: null
       });
       
-      setNotification({
-        show: true,
-        type: 'success',
+        setNotification({
+          show: true,
+          type: 'success',
         message: response.data.message
       });
       
@@ -391,6 +379,34 @@ const Dashboard = () => {
       message: 'Command copied to clipboard!'
     });
   };
+  
+  // Fetch statistics tab data
+  useEffect(() => {
+    if (activeTab !== 'statistics') return;
+    // Top Players
+    setTopPlayersLoading(true);
+    setTopPlayersError(null);
+    MinecraftService.getLeaderboard('playtime', 'all', 5)
+      .then(res => {
+        setTopPlayers(res.data?.data?.players || []);
+      })
+      .catch(() => setTopPlayersError('Could not load top players.'))
+      .finally(() => setTopPlayersLoading(false));
+    // Server Stats
+    setServerStatsLoading(true);
+    setServerStatsError(null);
+    MinecraftAPI.getServerStatus('play.bizzynation.co.uk')
+      .then(stats => setServerStats(stats))
+      .catch(() => setServerStatsError('Could not load server stats.'))
+      .finally(() => setServerStatsLoading(false));
+    // Recent Achievements
+    setRecentAchievementsLoading(true);
+    setRecentAchievementsError(null);
+    MinecraftService.getLeaderboard('achievements', 'all', 5)
+      .then(res => setRecentAchievements(res.data?.data?.players || []))
+      .catch(() => setRecentAchievementsError('Could not load achievements.'))
+      .finally(() => setRecentAchievementsLoading(false));
+  }, [activeTab]);
   
   if (!user) {
     return <LoadingSpinner fullScreen />;
@@ -423,65 +439,65 @@ const Dashboard = () => {
             <div className="bg-white/10 rounded-full px-4 py-1 text-sm flex items-center">
               <BellIcon className="h-4 w-4 mr-2" />
               <span>3 notifications</span>
-            </div>
           </div>
+        </div>
         </motion.div>
         
         {/* Dashboard Tabs */}
-        <motion.div
+          <motion.div
           className="flex flex-wrap border-b border-white/10 mb-8 overflow-x-auto"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <button
-            onClick={() => setActiveTab('account')}
+              <button
+                onClick={() => setActiveTab('account')}
             className={`dashboard-tab ${activeTab === 'account' ? 'active' : ''}`}
-          >
+              >
             <UserIcon className="h-5 w-5 inline-block mr-2" />
             <span>Account</span>
-          </button>
-          <button
+              </button>
+              <button
             onClick={() => setActiveTab('community')}
             className={`dashboard-tab ${activeTab === 'community' ? 'active' : ''}`}
           >
             <UsersIcon className="h-5 w-5 inline-block mr-2" />
             <span>Community</span>
-          </button>
-          <button
+              </button>
+              <button
             onClick={() => setActiveTab('statistics')}
             className={`dashboard-tab ${activeTab === 'statistics' ? 'active' : ''}`}
           >
             <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
             <span>Statistics</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('news')}
+              </button>
+              <button
+                onClick={() => setActiveTab('news')}
             className={`dashboard-tab ${activeTab === 'news' ? 'active' : ''}`}
-          >
+              >
             <ChatAltIcon className="h-5 w-5 inline-block mr-2" />
             <span>News & Events</span>
-          </button>
+              </button>
         </motion.div>
-        
-        {/* Account Tab */}
-        {activeTab === 'account' && (
+            
+            {/* Account Tab */}
+            {activeTab === 'account' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* User Profile Card */}
-            <motion.div 
-              className="habbo-card p-6 rounded-habbo"
+                    <motion.div
+                      className="habbo-card p-6 rounded-habbo"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5 }}
-            >
+                      transition={{ duration: 0.5 }}
+                    >
               <div className="flex items-center space-x-4 mb-6">
                 <div className="w-16 h-16 bg-minecraft-habbo-blue rounded-habbo flex items-center justify-center">
                   <UserIcon className="h-8 w-8 text-white" />
                 </div>
-                <div>
+                        <div>
                   <h2 className="text-xl font-bold text-white">{user.username}</h2>
                   <p className="text-gray-400">Member since: {formatDate(user.createdAt)}</p>
-                </div>
+                        </div>
               </div>
               <div className="border-t border-white/10 pt-4 space-y-3">
                 <p className="flex justify-between">
@@ -500,8 +516,8 @@ const Dashboard = () => {
                   <span className="text-gray-400">Account Status:</span> 
                   <span className="text-green-400">Active</span>
                 </p>
-              </div>
-              
+                      </div>
+                      
               <div className="mt-6 pt-4 border-t border-white/10">
                 <Link to="/edit-profile" className="habbo-btn w-full mb-2 block text-center">
                   Edit Profile
@@ -510,13 +526,13 @@ const Dashboard = () => {
                   Change Password
                 </Link>
               </div>
-            </motion.div>
+                    </motion.div>
 
             {/* Minecraft Account Card */}
-            <motion.div 
-              className="habbo-card p-6 rounded-habbo"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+                    <motion.div
+                      className="habbo-card p-6 rounded-habbo"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
               <div className="flex items-center justify-between mb-4">
@@ -563,7 +579,7 @@ const Dashboard = () => {
                     ) : (
                       <div className="w-16 h-16 bg-gray-700 rounded-habbo flex items-center justify-center">
                         <UserIcon className="h-8 w-8 text-white" />
-                      </div>
+                            </div>
                     )}
                     <div>
                       <h3 className="text-lg font-semibold text-white">{user.mcUsername}</h3>
@@ -656,7 +672,7 @@ const Dashboard = () => {
                         <p className="text-gray-400 text-xs mb-1">Sync Your Data</p>
                         <div className="bg-black p-2 rounded-habbo font-mono flex items-center justify-between">
                           <code className="text-minecraft-green text-sm">/link sync</code>
-                          <button 
+                            <button
                             onClick={() => {
                               navigator.clipboard.writeText('/link sync');
                               setNotification({
@@ -668,11 +684,11 @@ const Dashboard = () => {
                             className="text-gray-400 hover:text-gray-300"
                           >
                             <DocumentDuplicateIcon className="h-4 w-4" />
-                          </button>
-                        </div>
+                            </button>
+                          </div>
                       </div>
-                    </div>
-                  ) : (
+                        </div>
+                      ) : (
                     <div className="text-center py-4 text-gray-400">Loading player stats...</div>
                   )}
                   
@@ -691,26 +707,26 @@ const Dashboard = () => {
                   <form onSubmit={handleGenerateLink} className="space-y-4">
                     <div>
                       <label htmlFor="mcUsername" className="block mb-1 font-medium text-gray-300">
-                        Minecraft Username
-                      </label>
-                      <input
-                        type="text"
-                        id="mcUsername"
-                        value={mcUsername}
-                        onChange={(e) => setMcUsername(e.target.value)}
+                              Minecraft Username
+                            </label>
+                            <input
+                              type="text"
+                              id="mcUsername"
+                              value={mcUsername}
+                              onChange={(e) => setMcUsername(e.target.value)}
                         placeholder="Your Minecraft username"
                         className="habbo-input w-full"
-                        required
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={linkLoading}
+                              required
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={linkLoading}
                       className="habbo-btn w-full py-2 rounded-habbo"
-                    >
+                          >
                       {linkLoading ? <LoadingSpinner /> : 'Generate Link Code'}
-                    </button>
-                  </form>
+                          </button>
+                        </form>
 
                   {/* Link instructions if code was generated */}
                   {linkCode && (
@@ -742,8 +758,8 @@ const Dashboard = () => {
             </motion.div>
 
             {/* Quick Actions Card */}
-            <motion.div 
-              className="habbo-card p-6 rounded-habbo"
+                  <motion.div
+                    className="habbo-card p-6 rounded-habbo"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
@@ -751,52 +767,52 @@ const Dashboard = () => {
               <h2 className="text-xl font-bold text-white mb-4">Quick Actions</h2>
               
               <div className="grid grid-cols-2 gap-4">
-                <QuickActionButton
+                      <QuickActionButton 
                   icon={<MapIcon className="h-6 w-6" />}
                   title="Server Map"
                   description="View the live map"
                   path="/map"
                   color="bg-gradient-to-br from-minecraft-habbo-blue to-blue-700"
-                />
-                
-                <QuickActionButton
+                      />
+                      
+                      <QuickActionButton 
                   icon={<ShoppingBagIcon className="h-6 w-6" />}
                   title="Shop"
                   description="Buy items & ranks"
                   path="/shop"
                   color="bg-gradient-to-br from-minecraft-habbo-purple to-purple-800"
-                />
-                
-                <QuickActionButton
+                      />
+                      
+                      <QuickActionButton 
                   icon={<GlobeIcon className="h-6 w-6" />}
                   title="Forums"
                   description="Join discussions"
                   path="https://forums.bizzynation.com"
                   external
                   color="bg-gradient-to-br from-minecraft-habbo-red to-red-800"
-                />
-                
-                <QuickActionButton
+                      />
+                      
+                      <QuickActionButton 
                   icon={<StarIcon className="h-6 w-6" />}
                   title="Vote"
                   description="Get daily rewards"
                   path="https://bizzynation.com/vote"
                   external
                   color="bg-gradient-to-br from-minecraft-habbo-yellow to-amber-700"
-                />
-              </div>
+                      />
+                    </div>
               
               <div className="mt-6">
                 <Changelog showLatestByDefault={false} />
-              </div>
+                </div>
             </motion.div>
 
             {/* Player Stats Card - Only visible when user has linked account */}
             {user.linked && playerStats && (
-              <motion.div 
+                  <motion.div
                 className="habbo-card p-6 rounded-habbo lg:col-span-3"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
               >
                 <h2 className="text-xl font-bold text-white mb-6">Player Statistics</h2>
@@ -820,12 +836,12 @@ const Dashboard = () => {
                   <StatCard 
                     icon={<CubeIcon className="h-5 w-5 text-minecraft-habbo-blue" />}
                     label="Blocks Mined"
-                    value={playerStats.blocksMined.toLocaleString()}
+                    value={playerStats.blocks_mined.toLocaleString()}
                   />
                   <StatCard 
                     icon={<SwordIcon className="h-5 w-5 text-minecraft-habbo-red" />}
                     label="Mobs Killed"
-                    value={playerStats.mobsKilled.toLocaleString()}
+                    value={playerStats.mobs_killed.toLocaleString()}
                   />
                   <StatCard 
                     icon={<SkullIcon className="h-5 w-5 text-gray-400" />}
@@ -872,12 +888,12 @@ const Dashboard = () => {
                   <div className="habbo-progress-bar">
                     <div style={{ width: `${(playerStats.achievements / 30) * 100}%` }}></div>
                   </div>
-                </div>
-              </motion.div>
+                    </div>
+                  </motion.div>
             )}
           </div>
         )}
-        
+                  
         {/* Community Tab */}
         {activeTab === 'community' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -889,52 +905,54 @@ const Dashboard = () => {
               transition={{ duration: 0.5 }}
             >
               <h2 className="text-xl font-bold text-white mb-4">Online Players</h2>
-              
-              <div className="space-y-4">
-                {onlinePlayers.map((player, index) => (
-                  <div 
-                    key={index} 
-                    className="flex items-center p-3 bg-white/5 rounded-habbo"
-                  >
-                    <img 
-                      src={player.avatar}
-                      alt={player.username} 
-                      className="w-10 h-10 rounded-habbo mr-4"
-                      onLoad={() => console.log(`Loaded avatar for ${player.username}`)}
-                      onError={(e) => {
-                        console.log(`Failed to load avatar for ${player.username}, trying mc-heads`);
-                        e.target.src = `https://mc-heads.net/avatar/${player.username}/100`;
-                        e.target.onerror = (e2) => {
-                          console.log(`Failed mc-heads for ${player.username}, trying minotar`);
-                          e2.target.src = `https://minotar.net/avatar/${player.username}/100`;
-                          e2.target.onerror = (e3) => {
-                            console.log(`All avatar attempts failed for ${player.username}`);
-                            e3.target.src = 'https://via.placeholder.com/100?text=MC';
+              {onlinePlayersLoading ? (
+                <div className="text-center py-4 text-gray-400">Loading online players...</div>
+              ) : onlinePlayersError ? (
+                <div className="text-center py-4 text-red-400">{onlinePlayersError}</div>
+              ) : onlinePlayers.length === 0 ? (
+                <div className="text-center py-4 text-gray-400">No players online.</div>
+              ) : (
+                <div className="space-y-4">
+                  {onlinePlayers.map((player, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center p-3 bg-white/5 rounded-habbo"
+                    >
+                      <img 
+                        src={MinecraftAPI.getPlayerAvatar(player.username, 100)}
+                        alt={player.username} 
+                        className="w-10 h-10 rounded-habbo mr-4"
+                        onError={(e) => {
+                          e.target.src = `https://mc-heads.net/avatar/${player.username}/100`;
+                          e.target.onerror = (e2) => {
+                            e2.target.src = `https://minotar.net/avatar/${player.username}/100`;
+                            e2.target.onerror = (e3) => {
+                              e3.target.src = 'https://via.placeholder.com/100?text=MC';
+                            };
                           };
-                        };
-                      }}
-                    />
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h3 className="font-medium text-white">{player.username}</h3>
-                          <span className={`text-xs ${
-                            player.rank === 'Admin' ? 'text-red-400' :
-                            player.rank === 'VIP' || player.rank === 'VIP+' ? 'text-minecraft-habbo-yellow' :
-                            'text-gray-400'
-                          }`}>
-                            {player.rank}
+                        }}
+                      />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h3 className="font-medium text-white">{player.username}</h3>
+                            <span className={`text-xs ${
+                              player.rank === 'Admin' ? 'text-red-400' :
+                              player.rank === 'VIP' || player.rank === 'VIP+' ? 'text-minecraft-habbo-yellow' :
+                              'text-gray-400'
+                            }`}>
+                              {player.rank || 'Player'}
+                            </span>
+                          </div>
+                          <span className="text-sm text-gray-400">
+                            {player.playTime || ''}
                           </span>
                         </div>
-                        <span className="text-sm text-gray-400">
-                          {player.playTime}
-                        </span>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-              
+                  ))}
+                </div>
+              )}
               <div className="mt-6 pt-4 border-t border-white/10 flex justify-between">
                 <span className="text-sm text-gray-400">
                   {onlinePlayers.length} players online
@@ -990,8 +1008,8 @@ const Dashboard = () => {
                     <h3 className="font-medium">New Shop Items</h3>
                     <p className="text-sm text-gray-400">Added new items to the shop</p>
                     <p className="text-xs text-minecraft-habbo-blue">2 hours ago</p>
-                  </div>
-                  
+                </div>
+                
                   <div className="border-l-4 border-minecraft-habbo-red pl-3">
                     <h3 className="font-medium">Server Restart</h3>
                     <p className="text-sm text-gray-400">Scheduled restart at 8PM EST</p>
@@ -1031,41 +1049,37 @@ const Dashboard = () => {
               transition={{ duration: 0.5 }}
             >
               <h2 className="text-xl font-bold text-white mb-6">Top Players</h2>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-3 px-4">Rank</th>
-                      <th className="text-left py-3 px-4">Player</th>
-                      <th className="text-left py-3 px-4">Level</th>
-                      <th className="text-left py-3 px-4">Play Time</th>
-                      <th className="text-left py-3 px-4">Balance</th>
-                      <th className="text-left py-3 px-4">Achievements</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { rank: 1, name: 'DiamondDigger', level: 92, playTime: '342h', balance: '$45,320', achievements: 28 },
-                      { rank: 2, name: 'MinerSteve', level: 87, playTime: '310h', balance: '$38,670', achievements: 27 },
-                      { rank: 3, name: 'RedstoneWizard', level: 84, playTime: '298h', balance: '$35,140', achievements: 26 },
-                      { rank: 4, name: 'CreeperSlayer', level: 79, playTime: '275h', balance: '$29,850', achievements: 24 },
-                      { rank: 5, name: 'PixelBuilder', level: 76, playTime: '268h', balance: '$27,490', achievements: 23 }
-                    ].map((player, index) => (
-                      <tr key={index} className="border-b border-white/5 hover:bg-white/5">
-                        <td className="py-3 px-4 font-bold">#{player.rank}</td>
-                        <td className="py-3 px-4">{player.name}</td>
-                        <td className="py-3 px-4">{player.level}</td>
-                        <td className="py-3 px-4">{player.playTime}</td>
-                        <td className="py-3 px-4 text-minecraft-habbo-yellow">{player.balance}</td>
-                        <td className="py-3 px-4">{player.achievements}/30</td>
+              {topPlayersLoading ? (
+                <div className="text-center py-4 text-gray-400">Loading top players...</div>
+              ) : topPlayersError ? (
+                <div className="text-center py-4 text-red-400">{topPlayersError}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="text-left py-3 px-4">Rank</th>
+                        <th className="text-left py-3 px-4">Player</th>
+                        <th className="text-left py-3 px-4">Play Time</th>
+                        <th className="text-left py-3 px-4">Balance</th>
+                        <th className="text-left py-3 px-4">Achievements</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {topPlayers.map((player, index) => (
+                        <tr key={player.id || player.username || index} className="border-b border-white/5 hover:bg-white/5">
+                          <td className="py-3 px-4 font-bold">#{index + 1}</td>
+                          <td className="py-3 px-4">{player.username || player.mcUsername}</td>
+                          <td className="py-3 px-4">{MinecraftService.formatPlaytime(player.playtime_minutes || player.playtime)}</td>
+                          <td className="py-3 px-4 text-minecraft-habbo-yellow">${player.balance || 0}</td>
+                          <td className="py-3 px-4">{player.achievements || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </motion.div>
-            
             <motion.div
               className="habbo-card p-6 rounded-habbo"
               initial={{ opacity: 0, y: 20 }}
@@ -1073,65 +1087,33 @@ const Dashboard = () => {
               transition={{ duration: 0.5, delay: 0.1 }}
             >
               <h2 className="text-xl font-bold text-white mb-4">Server Statistics</h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">Average Players</span>
-                    <span className="text-minecraft-habbo-blue">76%</span>
+              {serverStatsLoading ? (
+                <div className="text-center py-4 text-gray-400">Loading server stats...</div>
+              ) : serverStatsError ? (
+                <div className="text-center py-4 text-red-400">{serverStatsError}</div>
+              ) : serverStats ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-400">Players Online</span>
+                      <span className="text-minecraft-habbo-blue">{serverStats.playerCount}/{serverStats.maxPlayers}</span>
+                    </div>
                   </div>
-                  <div className="habbo-progress-bar">
-                    <div style={{ width: '76%' }}></div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-400">Server Version</span>
+                      <span className="text-minecraft-habbo-blue">{serverStats.version || 'N/A'}</span>
+                    </div>
                   </div>
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">Server Uptime</span>
-                    <span className="text-minecraft-habbo-blue">99.8%</span>
-                  </div>
-                  <div className="habbo-progress-bar">
-                    <div style={{ width: '99.8%' }}></div>
-                  </div>
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">Disk Space</span>
-                    <span className="text-minecraft-habbo-blue">42%</span>
-                  </div>
-                  <div className="habbo-progress-bar">
-                    <div style={{ width: '42%' }}></div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-400">MOTD</span>
+                      <span className="text-minecraft-habbo-blue">{serverStats.motd || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">RAM Usage</span>
-                    <span className="text-minecraft-habbo-blue">68%</span>
-                  </div>
-                  <div className="habbo-progress-bar">
-                    <div style={{ width: '68%' }}></div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 pt-4 border-t border-white/10 space-y-2">
-                <p className="flex justify-between">
-                  <span className="text-gray-400">Total Players:</span>
-                  <span className="text-white">4,237</span>
-                </p>
-                <p className="flex justify-between">
-                  <span className="text-gray-400">Server Age:</span>
-                  <span className="text-white">342 days</span>
-                </p>
-                <p className="flex justify-between">
-                  <span className="text-gray-400">World Size:</span>
-                  <span className="text-white">14.8 GB</span>
-                </p>
-              </div>
+              ) : null}
             </motion.div>
-            
             <motion.div
               className="habbo-card p-6 rounded-habbo"
               initial={{ opacity: 0, y: 20 }}
@@ -1139,65 +1121,31 @@ const Dashboard = () => {
               transition={{ duration: 0.5, delay: 0.2 }}
             >
               <h2 className="text-xl font-bold text-white mb-4">Recent Achievements</h2>
-              
-              <div className="space-y-3">
-                {[
-                  { player: 'RedstoneWizard', achievement: 'Master Engineer', time: '2 hours ago' },
-                  { player: 'MinerSteve', achievement: 'Diamond Hunter', time: '5 hours ago' },
-                  { player: 'CreeperSlayer', achievement: 'Monster Exterminator', time: '1 day ago' },
-                  { player: 'PixelBuilder', achievement: 'Artistic Genius', time: '2 days ago' },
-                  { player: 'DiamondDigger', achievement: 'Millionaire', time: '3 days ago' }
-                ].map((item, index) => (
-                  <div key={index} className="flex bg-white/5 p-3 rounded-habbo">
-                    <div className="flex-1">
-                      <div className="flex justify-between">
-                        <span className="font-medium">{item.player}</span>
-                        <span className="text-xs text-gray-400">{item.time}</span>
+              {recentAchievementsLoading ? (
+                <div className="text-center py-4 text-gray-400">Loading achievements...</div>
+              ) : recentAchievementsError ? (
+                <div className="text-center py-4 text-red-400">{recentAchievementsError}</div>
+              ) : (
+                <div className="space-y-3">
+                  {recentAchievements.map((item, index) => (
+                    <div key={item.id || index} className="flex bg-white/5 p-3 rounded-habbo">
+                      <div className="flex-1">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{item.username || item.player}</span>
+                          <span className="text-xs text-gray-400">{item.achievement_time || item.time || ''}</span>
+                        </div>
+                        <p className="text-sm text-minecraft-habbo-yellow">
+                          Unlocked: {item.achievement || item.achievement_name || ''}
+                        </p>
                       </div>
-                      <p className="text-sm text-minecraft-habbo-yellow">
-                        Unlocked: {item.achievement}
-                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-            
-            <motion.div
-              className="habbo-card p-6 rounded-habbo"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <h2 className="text-xl font-bold text-white mb-4">Economy Statistics</h2>
-              
-              <div className="space-y-4">
-                <div className="bg-white/5 p-4 rounded-habbo">
-                  <h3 className="text-sm text-gray-400 mb-1">Total Money in Circulation</h3>
-                  <p className="text-2xl font-bold text-minecraft-habbo-yellow">$4,827,350</p>
+                  ))}
                 </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white/5 p-3 rounded-habbo">
-                    <h3 className="text-sm text-gray-400 mb-1">Shop Sales</h3>
-                    <p className="text-xl font-bold text-white">$348,920</p>
-                  </div>
-                  <div className="bg-white/5 p-3 rounded-habbo">
-                    <h3 className="text-sm text-gray-400 mb-1">Auction Sales</h3>
-                    <p className="text-xl font-bold text-white">$129,540</p>
-                  </div>
-                </div>
-                
-                <div className="bg-white/5 p-4 rounded-habbo">
-                  <h3 className="text-sm text-gray-400 mb-1">Most Expensive Sale</h3>
-                  <p className="font-medium">Netherite Sword (Sharpness V)</p>
-                  <p className="text-lg font-bold text-minecraft-habbo-yellow">$24,680</p>
-                </div>
-              </div>
+              )}
             </motion.div>
           </div>
         )}
-        
+            
         {/* News & Events Tab */}
         {activeTab === 'news' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1232,8 +1180,8 @@ const Dashboard = () => {
                   image="https://via.placeholder.com/600x300?text=Plot+World"
                   content="We've added a brand new plot world with larger plots and new themes. Reserve your spot now before they're all taken!"
                   link="#"
-                />
-              </div>
+                  />
+                </div>
               
               <div className="mt-6 pt-4 border-t border-white/10 text-center">
                 <button className="habbo-btn">
@@ -1304,16 +1252,16 @@ const Dashboard = () => {
                 </button>
               </div>
             </motion.div>
-          </div>
-        )}
+              </div>
+            )}
       </div>
-      
-      <Notification
-        show={notification.show}
-        type={notification.type}
-        message={notification.message}
-        onClose={() => setNotification({ ...notification, show: false })}
-      />
+            
+            <Notification
+              show={notification.show}
+              type={notification.type}
+              message={notification.message}
+              onClose={() => setNotification({ ...notification, show: false })}
+            />
     </div>
   );
 };
@@ -1321,19 +1269,19 @@ const Dashboard = () => {
 // Quick Action Button component
 const QuickActionButton = ({ icon, title, description, path, color, external = false }) => {
   if (external) {
-    return (
-      <a 
-        href={path}
+  return (
+    <a 
+      href={path} 
         target="_blank"
         rel="noopener noreferrer"
         className={`block p-4 rounded-habbo transition-all duration-200 hover:-translate-y-1 ${color}`}
       >
         <div className="flex flex-col items-center text-center">
           <div className="mb-2">{icon}</div>
-          <h3 className="font-bold text-white">{title}</h3>
+        <h3 className="font-bold text-white">{title}</h3>
           <p className="text-xs text-white/80">{description}</p>
-        </div>
-      </a>
+      </div>
+    </a>
     );
   }
   
