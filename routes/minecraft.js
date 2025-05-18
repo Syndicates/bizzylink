@@ -20,6 +20,7 @@ const { authenticateToken } = require('../middleware/auth');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const eventEmitter = require('../eventEmitter');
+const io = require('../io');
 
 // GET current user's Minecraft link status
 router.get('/link', authenticateToken, async (req, res) => {
@@ -193,6 +194,18 @@ router.delete('/link', authenticateToken, async (req, res) => {
         linked: false,
         timestamp: new Date().toISOString(),
         message: 'Your Minecraft account has been successfully unlinked!'
+      });
+    }
+    
+    // Notify any connected clients via socket.io (real-time unlink event)
+    if (typeof io !== 'undefined' && io.to) {
+      io.to(user._id.toString()).emit('player_unlinked', {
+        type: 'player_unlinked',
+        userId: user._id.toString(),
+        mcUsername: previousMcUsername,
+        mcUUID: mcUUID,
+        timestamp: new Date().toISOString(),
+        message: 'Your Minecraft account has been unlinked.'
       });
     }
     
@@ -556,6 +569,30 @@ router.post('/unlink', async (req, res) => {
     
     console.log(`[MINECRAFT UNLINK] Successfully unlinked account for user ${user.username}`);
     
+    // Notify any connected browser clients that the account has been unlinked
+    if (global.notifyUser) {
+      global.notifyUser(user._id.toString(), {
+        type: 'account_unlinked',
+        userId: user._id.toString(),
+        previousMcUsername: username,
+        linked: false,
+        timestamp: new Date().toISOString(),
+        message: 'Your Minecraft account has been unlinked from the Minecraft client!'
+      });
+    }
+    
+    // Notify any connected clients via socket.io (real-time unlink event)
+    if (typeof io !== 'undefined' && io.to) {
+      io.to(user._id.toString()).emit('player_unlinked', {
+        type: 'player_unlinked',
+        userId: user._id.toString(),
+        mcUsername: username,
+        mcUUID: uuid,
+        timestamp: new Date().toISOString(),
+        message: 'Your Minecraft account has been unlinked.'
+      });
+    }
+    
     return res.status(200).json({
       success: true,
       message: 'Account successfully unlinked'
@@ -664,6 +701,18 @@ router.post('/unlink', async (req, res) => {
         linked: false,
         timestamp: new Date().toISOString(),
         message: 'Your Minecraft account has been unlinked from the Minecraft client!'
+      });
+    }
+    
+    // Notify any connected clients via socket.io (real-time unlink event)
+    if (typeof io !== 'undefined' && io.to) {
+      io.to(user._id.toString()).emit('player_unlinked', {
+        type: 'player_unlinked',
+        userId: user._id.toString(),
+        mcUsername: previousMcUsername,
+        mcUUID: uuid,
+        timestamp: new Date().toISOString(),
+        message: 'Your Minecraft account has been unlinked.'
       });
     }
     
