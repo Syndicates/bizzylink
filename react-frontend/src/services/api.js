@@ -769,20 +769,12 @@ export const MinecraftService = {
   // Enhanced player stats retrieval with better error handling
   getPlayerStats: (username, skipCache = false) => {
     console.log(`Getting player stats for ${username}${skipCache ? ' (forced refresh)' : ''}`);
-    
-    // Clear cache if skipCache is true
     if (skipCache) {
       console.log('Clearing cache for player stats');
       clearApiCache();
     }
-    
-    // Handle bizzy/n0t_awake special case
-    let lookupName = username;
-    if (username === 'bizzy') {
-      lookupName = 'n0t_awake';
-      console.log('Special case: Using MC username n0t_awake for user bizzy');
-    }
-    
+    // Remove all special-case logic for 'bizzy' and 'n0t_awake'. Always use the actual username provided.
+    const lookupName = username;
     // Normalize response to handle both data structures
     const normalizeResponse = (response) => {
       const data = response.data;
@@ -914,6 +906,15 @@ export const MinecraftService = {
     skipCache,
     maxRetries: 3,
     retryDelay: 2000
+  }).then(response => {
+    // Normalize the response to always return { linkCode, expiresAt }
+    if (response.data && response.data.data && response.data.data.linkCode) {
+      return {
+        linkCode: response.data.data.linkCode,
+        expiresAt: response.data.data.expiresAt
+      };
+    }
+    return {};
   }),
   
   getLeaderboard: (category, timeFrame = 'all', limit = 10, skipCache = false) => {

@@ -150,6 +150,8 @@ router.post('/link/verify', async (req, res, next) => {
     
     // Link Minecraft account
     user.linkMinecraftAccount(mcUUID, mcUsername);
+    // Force linked true in case of race/delay
+    user.linked = true;
     
     // Sync player rank from LuckPerms
     try {
@@ -211,14 +213,19 @@ router.delete('/link', protect, async (req, res, next) => {
         $set: {
           linkCode: undefined,
           linkExpiryDate: undefined,
-          minecraftUsername: undefined,
+          minecraftUsername: null,
           linked: false,
           'minecraft.linked': false,
-          'minecraft.mcUsername': undefined,
+          'minecraft.mcUsername': null,
+          'minecraft.mcUUID': undefined,
+          'minecraft.linkCode': undefined,
+          'minecraft.linkCodeExpires': undefined,
         },
         $unset: {
           mcUUID: "",
-          'minecraft.mcUUID': ""
+          'minecraft.mcUUID': "",
+          'minecraft.linkCode': "",
+          'minecraft.linkCodeExpires': "",
         }
       }
     );
@@ -241,6 +248,7 @@ router.delete('/link', protect, async (req, res, next) => {
       message: 'Minecraft account unlinked successfully'
     });
   } catch (error) {
+    console.error('Unlink error (DELETE /api/minecraft/link):', error.stack || error);
     next(error);
   }
 });
@@ -253,43 +261,41 @@ router.delete('/link', protect, async (req, res, next) => {
 router.get('/player/:identifier', async (req, res, next) => {
   try {
     const { identifier } = req.params;
-    
-    // Determine if identifier is UUID or username
-    const isUUID = identifier.includes('-') || identifier.length === 32 || identifier.length === 36;
-    
-    // Find user by UUID or username
-    let user;
+    let user = null;
+    let lookupUsername = null;
+    let isUUID = identifier.includes('-') || identifier.length === 32 || identifier.length === 36;
+
     if (isUUID) {
       // Format UUID if needed
       const formattedUUID = identifier.length === 32 
         ? `${identifier.slice(0, 8)}-${identifier.slice(8, 12)}-${identifier.slice(12, 16)}-${identifier.slice(16, 20)}-${identifier.slice(20)}`
         : identifier;
-        
       user = await User.findOne({ minecraftUUID: formattedUUID });
+      lookupUsername = user ? user.minecraftUsername : null;
     } else {
-      // Try exact match first
+      // First, try as a Minecraft username (exact, then case-insensitive)
       user = await User.findOne({ minecraftUsername: identifier });
-      
-      // If not found, try case-insensitive match
       if (!user) {
-        user = await User.findOne({ 
-          minecraftUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } 
-        });
+        user = await User.findOne({ minecraftUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } });
       }
-      
-      // If still not found, try to find by website username
+      lookupUsername = user ? user.minecraftUsername : null;
+      // If not found, try as a website username
       if (!user) {
-        user = await User.findOne({ username: identifier });
+        const websiteUser = await User.findOne({ username: identifier });
+        if (websiteUser && websiteUser.minecraftUsername) {
+          user = websiteUser;
+          lookupUsername = websiteUser.minecraftUsername;
+        }
       }
     }
-    
-    if (!user || !user.minecraftUUID) {
+
+    if (!user || !user.minecraftUUID || !user.minecraftUsername) {
       return next(new ErrorResponse('Player not found or not linked', 404));
     }
-    
+
     // Generate player stats (in a real implementation, this would fetch from Minecraft server)
     const playerStats = generateMockPlayerStats(user);
-    
+
     res.status(200).json({
       success: true,
       data: playerStats
@@ -323,6 +329,11 @@ router.post('/player/update', async (req, res, next) => {
     
     if (!user) {
       return next(new ErrorResponse('Player not found', 404));
+    }
+    
+    // Only allow updates for users who are already linked
+    if (!user.linked) {
+      return res.status(400).json({ success: false, message: 'Player is not linked to a website account' });
     }
     
     // In a real implementation, this would process and store the player data
@@ -365,6 +376,36 @@ router.post('/unlink', async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: `Minecraft account unlinked successfully for ${username}`
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   GET /api/user/by-username/:username
+ * @desc    Get user by website username (for profile lookups)
+ * @access  Public
+ */
+router.get('/user/by-username/:username', async (req, res, next) => {
+  try {
+    const { username } = req.params;
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    res.status(200).json({
+      success: true,
+      user: {
+        username: user.username,
+        minecraftUsername: user.minecraftUsername,
+        minecraftUUID: user.minecraftUUID,
+        createdAt: user.createdAt,
+        role: user.webRank,
+        activeTitle: user.activeTitle,
+        titles: user.titles,
+        _id: user._id,
+      }
     });
   } catch (error) {
     next(error);

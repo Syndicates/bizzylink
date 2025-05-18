@@ -149,7 +149,16 @@ const UserSchema = new mongoose.Schema({
     theme: { type: String, default: 'dark' },
     emailNotifications: { type: Boolean, default: true },
     showOnlineStatus: { type: Boolean, default: true }
-  }
+  },
+
+  // Minecraft integration (nested)
+  minecraft: {
+    mcUsername: { type: String, trim: true },
+    mcUUID: { type: String, trim: true },
+    linkCode: { type: String, trim: true },
+    linkCodeExpires: { type: Date }
+    // Add more fields as needed for player profile
+  },
 });
 
 // Add indexes for performance
@@ -228,8 +237,15 @@ UserSchema.methods.isLinkCodeValid = function() {
 UserSchema.methods.linkMinecraftAccount = function(uuid, username) {
   this.minecraftUUID = uuid;
   this.minecraftUsername = username;
+  this.linked = true;
   this.linkCode = undefined;
   this.linkExpiryDate = undefined;
+  // Also set nested fields for compatibility
+  if (!this.minecraft) this.minecraft = {};
+  this.minecraft.mcUUID = uuid;
+  this.minecraft.mcUsername = username;
+  this.minecraft.linkCode = undefined;
+  this.minecraft.linkCodeExpires = undefined;
 };
 
 module.exports = mongoose.model('User', UserSchema);

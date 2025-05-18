@@ -239,60 +239,26 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
 
     private void showStatus(Player player) {
         UUID playerUUID = player.getUniqueId();
-        
-        // First check locally
-        boolean locallyLinked = plugin.getConfigManager().isPlayerLinked(playerUUID);
-        
+        // Always clear local cache before checking status
+        plugin.getConfigManager().clearLinkData(playerUUID);
         // Show a message that we're checking
         MessageUtils.sendMessage(player, "&6[BizzyLink] &eChecking your account status...");
-        
-        // Run an async task to check with the backend too
+        // Run an async task to check with the backend only
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
-                // Try to get player data from the API
-                // This is a simplified version - in a real implementation, you'd call an API endpoint
+                // Always check backend, ignore local cache
                 boolean backendLinked = checkLinkedStatusWithBackend(player);
-                
                 if (backendLinked) {
-                    // If they're linked on the backend but not locally, update local state
-                    if (!locallyLinked) {
-                        plugin.getConfigManager().setPlayerLinked(playerUUID, true);
-                        plugin.getLogger().info("Updated local link status for " + player.getName() + " based on backend");
-                    }
-                    
-                    // Show the linked message
-                    MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-linked", 
-                            "&6[BizzyLink] &aYour Minecraft account is linked to the website!"));
+                    plugin.getConfigManager().setPlayerLinked(playerUUID, true);
+                    MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-linked", "&6[BizzyLink] &aYour Minecraft account is linked to the website!"));
                 } else {
-                    // If they're not linked on the backend but are locally, update local state
-                    if (locallyLinked) {
-                        plugin.getConfigManager().clearLinkData(playerUUID);
-                        plugin.getLogger().info("Cleared local link status for " + player.getName() + " based on backend");
-                    }
-                    
-                    // Show the not linked message
-                    MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-not-linked", 
-                            "&6[BizzyLink] &eYour account is not linked. Visit the website to get a link code."));
-                    MessageUtils.sendMessage(player, String.format(
-                        plugin.getConfig().getString("messages.website-url", 
-                            "&6Website: &b%s"), 
-                        plugin.getConfig().getString("website-url", "https://bizzynation.co.uk")));
+                    plugin.getConfigManager().setPlayerLinked(playerUUID, false);
+                    MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-not-linked", "&6[BizzyLink] &eYour account is not linked. Visit the website to get a link code."));
+                    MessageUtils.sendMessage(player, String.format(plugin.getConfig().getString("messages.website-url", "&6Website: &b%s"), plugin.getConfig().getString("website-url", "https://bizzynation.co.uk")));
                 }
             } catch (Exception e) {
-                // If we can't reach the backend, just use the local status
                 plugin.getLogger().warning("Error checking link status: " + e.getMessage());
-                
-                if (locallyLinked) {
-                    MessageUtils.sendMessage(player, "&6[BizzyLink] &eAccording to local data, your account is linked.");
-                    MessageUtils.sendMessage(player, "&6[BizzyLink] &7(Could not verify with website)");
-                } else {
-                    MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-not-linked", 
-                            "&6[BizzyLink] &eYour account is not linked. Visit the website to get a link code."));
-                    MessageUtils.sendMessage(player, String.format(
-                        plugin.getConfig().getString("messages.website-url", 
-                            "&6Website: &b%s"), 
-                        plugin.getConfig().getString("website-url", "https://bizzynation.co.uk")));
-                }
+                MessageUtils.sendMessage(player, "&6[BizzyLink] &cCould not verify link status with the website.");
             }
         });
     }
@@ -475,7 +441,13 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
             boolean alreadyUnlinked = statusCode == 200 && response.contains("\"alreadyUnlinked\":true");
             
             // Consider both cases a success
-            return success || alreadyUnlinked;
+            boolean result = success || alreadyUnlinked;
+            if (result) {
+                // After unlink, clear local cache and re-check backend
+                plugin.getConfigManager().clearLinkData(player.getUniqueId());
+                showStatus(player); // Re-check backend and report status
+            }
+            return result;
         } catch (Exception e) {
             plugin.getLogger().severe("Error calling unlink API: " + e.getMessage());
             return false;

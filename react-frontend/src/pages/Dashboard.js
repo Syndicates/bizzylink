@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { MinecraftService } from '../services/api';
+import { AuthService } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
 import Changelog from '../components/Changelog';
@@ -78,30 +79,33 @@ const Dashboard = () => {
   
   // Check and update time remaining on link code
   useEffect(() => {
-    if (!linkExpiryDate) return;
-    
+    if (!linkExpiryDate || isNaN(linkExpiryDate.getTime())) {
+      setTimeRemaining('');
+      return;
+    }
+
     const updateTimeRemaining = () => {
       const now = new Date();
       const expiryTime = new Date(linkExpiryDate);
-      
-      if (now >= expiryTime) {
+
+      if (isNaN(expiryTime.getTime()) || now >= expiryTime) {
         setLinkCode('');
         setLinkExpiry(null);
         setLinkExpiryDate(null);
         setTimeRemaining('');
         return;
       }
-      
+
       const diffMs = expiryTime - now;
       const diffMins = Math.floor(diffMs / 60000);
       const diffSecs = Math.floor((diffMs % 60000) / 1000);
-      
+
       setTimeRemaining(`${diffMins}:${diffSecs < 10 ? '0' : ''}${diffSecs}`);
     };
-    
+
     updateTimeRemaining();
     const interval = setInterval(updateTimeRemaining, 1000);
-    
+
     return () => clearInterval(interval);
   }, [linkExpiryDate]);
 
@@ -127,41 +131,28 @@ const Dashboard = () => {
     }
   }, [user]);
   
-  // Check for active link code on load and when user changes
+  // Check for active link code on load (only on mount, not on every user change)
   useEffect(() => {
     const checkActiveLinkCode = async () => {
       if (user && !user.linked) {
-      try {
-        // First check if user already has linkCode in profile
-        if (user.linkCode && user.linkCodeExpiry) {
-          const expiryDate = new Date(user.linkCodeExpiry);
-          if (expiryDate > new Date()) {
-            console.log('Found active link code in user profile');
-            setLinkCode(user.linkCode);
-            setLinkExpiryDate(expiryDate);
-              setMcUsername(user.mcUsername || '');
-            return;
+        try {
+          // Try to get from the API
+          const response = await MinecraftService.getActiveLinkCode();
+          if (response.linkCode) {
+            setLinkCode(response.linkCode);
+            // Optionally, calculate expiresIn if you want a timer
+            setLinkExpiryDate(response.expiresAt ? new Date(response.expiresAt) : null);
+            setMcUsername(user.mcUsername || '');
           }
-        }
-        
-        // If not, try to get from the API
-        const response = await MinecraftService.getActiveLinkCode();
-        console.log('Active link code response:', response.data);
-        
-          setLinkCode(response.data.linkCode);
-          setLinkExpiry(response.data.expiresIn);
-          setLinkExpiryDate(new Date(response.data.codeExpiry));
-        setMcUsername(response.data.mcUsername || '');
-        
-      } catch (error) {
-        console.log('No active link code found', error);
-        // No active link code, that's ok
+          // Do NOT clear the code if not found; just leave as is
+        } catch (error) {
+          // Do NOT clear the code here
         }
       }
     };
-    
     checkActiveLinkCode();
-  }, [user]);
+    // Only run on mount
+  }, []);
 
   // Fetch player stats if account is linked and when tab changes
   useEffect(() => {
@@ -295,38 +286,44 @@ const Dashboard = () => {
       console.log('Calling linkAccount API...');
       const response = await MinecraftService.linkAccount(mcUsername);
       console.log('Link account API response:', response);
-      
-      // Update state with new link code data
-      setLinkCode(response.data.linkCode);
-      setLinkExpiry(response.data.expiresIn);
-      setLinkExpiryDate(new Date(response.data.codeExpiry));
-      
       setNotification({
         show: true,
         type: 'success',
         message: response.data.message
       });
+      // Set link code from the generate endpoint response only; do NOT call getActiveLinkCode here
+      const code = response.data.linkCode || response.data.code || response.data.link_code;
+      setLinkCode(code);
+      setLinkExpiry(response.data.expiresIn);
+      const expiryDate = new Date(response.data.codeExpiry || response.data.expires);
+      setLinkExpiryDate(!isNaN(expiryDate.getTime()) ? expiryDate : null);
+      setMcUsername(response.data.mcUsername || mcUsername);
     } catch (error) {
       console.error('Link account error:', error);
       console.error('Error response:', error.response);
-      
       // If we got an error about already having an active link code, update the UI with that info
-      if (error.response?.data?.linkCode) {
-        setLinkCode(error.response.data.linkCode);
+      const code = error.response?.data?.linkCode || error.response?.data?.code || error.response?.data?.link_code;
+      if (code) {
+        setLinkCode(code);
         setLinkExpiry(error.response.data.expiresIn);
-        setLinkExpiryDate(new Date(error.response.data.codeExpiry));
-        
+        // Defensive date parsing
+        const expiryDate = new Date(error.response.data.codeExpiry);
+        if (!isNaN(expiryDate.getTime())) {
+          setLinkExpiryDate(expiryDate);
+        } else {
+          setLinkExpiryDate(null);
+        }
         setNotification({
           show: true,
           type: 'info',
           message: error.response.data.message || 'You already have an active link code'
         });
       } else {
-      setNotification({
-        show: true,
-        type: 'error',
+        setNotification({
+          show: true,
+          type: 'error',
           message: error.response?.data?.error || 'Failed to generate link code'
-      });
+        });
       }
     } finally {
       setLinkLoading(false);
@@ -342,10 +339,13 @@ const Dashboard = () => {
     setUnlinkLoading(true);
     try {
       const response = await MinecraftService.unlinkAccount();
-      updateUserProfile({ ...user, linked: false, mcUsername: null, mcUUID: null });
+      // After unlink, reload user profile from backend to ensure state is correct
+      const freshUser = await AuthService.getProfile(true).then(res => res.data || res);
+      updateUserProfile(freshUser);
       setNotification({ show: true, type: 'success', message: response.data.message });
       setPlayerStats(null);
       setShowUnlinkModal(false);
+      setActiveTab('account');
     } catch (error) {
       setNotification({ show: true, type: 'error', message: error.response?.data?.error || 'Failed to unlink account' });
     } finally {
@@ -712,7 +712,7 @@ const Dashboard = () => {
                         </form>
 
                   {/* Link instructions if code was generated */}
-                  {linkCode && (
+                  {linkCode && !user.linked && (
                     <div className="mt-4 bg-minecraft-navy-dark p-4 rounded-habbo">
                       <p className="mb-2 text-gray-300">To complete linking, run this command in-game:</p>
                       <div className="bg-black p-3 rounded-habbo font-mono flex items-center justify-between">

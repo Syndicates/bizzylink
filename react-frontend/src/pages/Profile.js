@@ -300,20 +300,15 @@ const Profile = () => {
     const isCacheValid = cachedData && cachedTimestamp && (now - parseInt(cachedTimestamp, 10) < CACHE_DURATION);
     
     const fetchProfileData = async () => {
-      // If the page is already loading or there's already a request in progress, don't start another
       if (!isMounted) return;
-      
       try {
         setLoading(true);
         setNotFound(false);
-        
         // Check if viewing own profile
         const isOwn = user && (user.username === username || (!username && user));
         setIsOwnProfile(isOwn);
-        
         // Use currently logged in user for "me" profile
         const targetUsername = username || (user ? user.username : null);
-        
         if (!targetUsername) {
           if (isMounted) {
             setNotFound(true);
@@ -321,221 +316,94 @@ const Profile = () => {
           }
           return;
         }
-        
-        // Set default cover based on username
         setCoverImage(getDefaultCover(targetUsername));
-        
-        // Use cached data if available and not expired
-        if (isCacheValid) {
-          console.log(`Using cached profile data for ${targetUsername} (age: ${(now - parseInt(cachedTimestamp, 10))/1000}s)`);
-          
-          try {
-            const parsedData = JSON.parse(cachedData);
-            
-            // Process wall posts to ensure React elements are properly created
-            if (parsedData.wallPosts && Array.isArray(parsedData.wallPosts)) {
-              parsedData.wallPosts = parsedData.wallPosts.map(post => {
-                // If the icon is a string representation, convert it back to a React element
-                if (post.icon === 'UserIcon') {
-                  return { ...post, icon: <UserIcon className="h-5 w-5 text-white" /> };
-                } else if (post.icon === 'ChatBubbleLeftIcon') {
-                  return { ...post, icon: <ChatBubbleLeftIcon className="h-5 w-5 text-white" /> };
-                } else {
-                  return post;
-                }
-              });
-            }
-            
-            setProfileUser(parsedData.profileUser);
-            setPlayerStats(parsedData.playerStats);
-            setRelationship(parsedData.relationship);
-            setFriends(parsedData.friends);
-            setWallPosts(parsedData.wallPosts || []);
-            
-            // Still loaded! Just from cache
-            if (isMounted) {
-              setLoading(false);
-            }
-            return;
-          } catch (error) {
-            console.error("Error processing cached profile data:", error);
-            // Continue with normal loading if cache processing fails
-          }
-        }
-        
-        console.log(`Fetching fresh profile data for ${targetUsername}`);
-        
-        // Initialize default stats object
-        let completeStats = {
-          playtime: '0h',
-          lastSeen: 'Never',
-          balance: 0,
-          blocksMined: 0,
-          mobsKilled: 0,
-          deaths: 0,
-          joinDate: user ? formatDate(user.createdAt) : 'N/A',
-          achievements: 0,
-          level: 1,
-          experience: 0,
-          rank: 'Member',
-          group: 'default',
-          groups: ['default'],
-          world: 'world',
-          gamemode: 'SURVIVAL',
-          online: false
-        };
-        
+        // Try to fetch user by website username first
+        let websiteUser = null;
         try {
-          // Get player stats with Cache-Control header
-          const headers = new Headers({
-            'Cache-Control': 'max-age=60' // 60 seconds cache
-          });
-          
-          // Use a single fetch with a timeout
-          const fetchPromise = MinecraftService.getPlayerStats(targetUsername, false, { signal, headers });
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Fetch timeout')), 5000)
-          );
-          
+          const userRes = await API.get(`/api/user/by-username/${targetUsername}`);
+          websiteUser = userRes.data && userRes.data.user ? userRes.data.user : null;
+        } catch (e) {
+          websiteUser = null;
+        }
+        let mcUsernameToUse = targetUsername;
+        if (websiteUser && websiteUser.minecraftUsername) {
+          mcUsernameToUse = websiteUser.minecraftUsername;
+        }
+        // Now fetch player stats using the correct Minecraft username
+        let completeStats = {
+          playtime: '0h', lastSeen: 'Never', balance: 0, blocksMined: 0, mobsKilled: 0, deaths: 0, joinDate: websiteUser ? formatDate(websiteUser.createdAt) : 'N/A', achievements: 0, level: 1, experience: 0, rank: 'Member', group: 'default', groups: ['default'], world: 'world', gamemode: 'SURVIVAL', online: false
+        };
+        try {
+          const headers = new Headers({ 'Cache-Control': 'max-age=60' });
+          const fetchPromise = MinecraftService.getPlayerStats(mcUsernameToUse, false, { signal, headers });
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 5000));
           const statsResponse = await Promise.race([fetchPromise, timeoutPromise]);
-          console.log('Player stats response:', statsResponse.data);
-          
-          // Normalize the stats data to handle both structures
           const normalizedStats = { ...statsResponse.data };
-          
-          // Merge with default stats
-          completeStats = {
-            ...completeStats,
-            ...normalizedStats,
-          };
-          
-          // Check if the user is linked to an account
+          completeStats = { ...completeStats, ...normalizedStats };
           const isLinked = statsResponse.data.linked || false;
-          
           if (!isLinked) {
-            // This is a Minecraft player that doesn't have a BizzyLink account
-            setNotification({
-              show: true,
-              type: 'warning',
-              message: 'This Minecraft player has not registered on BizzyLink yet'
-            });
+            setNotification({ show: true, type: 'warning', message: 'This Minecraft player has not registered on BizzyLink yet' });
           }
         } catch (statsError) {
-          console.warn('Error fetching player stats:', statsError);
-          
-          // If we get a 404, user doesn't exist
           if (statsError.response && statsError.response.status === 404) {
-            console.log(`User ${targetUsername} not found in the database`);
-            
             if (isMounted) {
               setNotFound(true);
               setLoading(false);
             }
             return;
           }
-          
-          // For other errors, continue with default stats
-          completeStats = {
-            ...completeStats,
-            username: targetUsername,
-            mcUsername: targetUsername,
-            error: statsError.message
-          };
+          completeStats = { ...completeStats, username: mcUsernameToUse, mcUsername: mcUsernameToUse, error: statsError.message };
         }
-        
         setPlayerStats(completeStats);
-        
-        // Set profile user data (from auth user if own profile)
+        // Set profile user data
         let userProfileData;
         if (isOwn && user) {
           userProfileData = user;
           setProfileUser(user);
+        } else if (websiteUser) {
+          userProfileData = websiteUser;
+          setProfileUser(websiteUser);
         } else {
-          // Determine the best usernames to use
-          let userAccountName, userMinecraftName;
-          
-          // Handle special case for n0t_awake and similar
-          if (targetUsername === 'n0t_awake' || targetUsername === 'bizzy') {
-            // Handle special known accounts
-            if (targetUsername === 'n0t_awake') {
-              userAccountName = 'bizzy';  // Known account name for n0t_awake
-              userMinecraftName = 'n0t_awake';
-            } else if (targetUsername === 'bizzy') {
-              userAccountName = 'bizzy';
-              userMinecraftName = 'n0t_awake';
-            } else {
-              userAccountName = completeStats.username || targetUsername;
-              userMinecraftName = completeStats.mcUsername || targetUsername;
-            }
-          } else {
-            // Standard logic for other accounts
-            userAccountName = completeStats.username || targetUsername;
-            userMinecraftName = completeStats.mcUsername || targetUsername;
-          }
-          
-          // Create user profile data
-          userProfileData = {
-            username: userAccountName,
-            mcUsername: userMinecraftName,
-            createdAt: completeStats.joinDate,
-            role: completeStats.rank || 'Member',
-            titles: completeStats.titles || [],
-            activeTitle: completeStats.activeTitle,
-            _id: completeStats.userId || 'user-' + Math.random().toString(36).substr(2, 9),
-          };
-          
+          userProfileData = { username: mcUsernameToUse, mcUsername: mcUsernameToUse, createdAt: completeStats.joinDate, role: completeStats.rank || 'Member', titles: completeStats.titles || [], activeTitle: completeStats.activeTitle, _id: completeStats.userId || 'user-' + Math.random().toString(36).substr(2, 9) };
           setProfileUser(userProfileData);
         }
-        
         // Prevent excessive API calls for relationship status
         let relationshipData = { status: 'not_friends', following: false };
         
         if (!isOwn && isMounted) {
-          // Only fetch relationship data if we're viewing someone else's profile and component is still mounted
           try {
-            // Use a pre-defined relationship for n0t_awake to avoid API calls
-            if (targetUsername === 'n0t_awake' || userProfileData.username === 'bizzy') {
-              relationshipData = { status: 'friends', following: true };
+            // Only fetch relationship data if we're viewing someone else's profile and component is still mounted
+            // Remove all special-case logic for n0t_awake and bizzy
+            const userAccountName = userProfileData.username;
+            const userMinecraftName = userProfileData.mcUsername;
+            console.log(`Getting relationship for user ${userAccountName} (MC: ${userMinecraftName})`);
+            // Use a rate-limited API call with cache
+            const cacheKey = `relationship_${userAccountName}_${Date.now() - (Date.now() % 300000)}`; // Cache key with 5-minute granularity
+            const cachedRelationship = sessionStorage.getItem(cacheKey);
+            if (cachedRelationship) {
+              relationshipData = JSON.parse(cachedRelationship);
+              console.log('Using cached relationship data:', relationshipData);
             } else {
-              // Fetch relationship status with proper caching
-              const userAccountName = userProfileData.username;
-              const userMinecraftName = userProfileData.mcUsername;
-              
-              console.log(`Getting relationship for user ${userAccountName} (MC: ${userMinecraftName})`);
-              
-              // Use a rate-limited API call with cache
-              const cacheKey = `relationship_${userAccountName}_${Date.now() - (Date.now() % 300000)}`; // Cache key with 5-minute granularity
-              const cachedRelationship = sessionStorage.getItem(cacheKey);
-              
-              if (cachedRelationship) {
-                relationshipData = JSON.parse(cachedRelationship);
-                console.log('Using cached relationship data:', relationshipData);
-              } else {
-                try {
-                  // Fetch relationship with timeout
-                  const fetchRelationshipPromise = getRelationship(userAccountName, userMinecraftName);
-                  const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Relationship fetch timeout')), 3000)
-                  );
-                  
-                  const relationshipResponse = await Promise.race([fetchRelationshipPromise, timeoutPromise]);
-                  console.log('API relationship response:', relationshipResponse);
-                  
-                  if (relationshipResponse) {
-                    relationshipData = {
-                      status: relationshipResponse.status || 'not_friends',
-                      following: relationshipResponse.following || false
-                    };
-                    
-                    // Cache the relationship data
-                    sessionStorage.setItem(cacheKey, JSON.stringify(relationshipData));
-                  }
-                } catch (err) {
-                  console.warn('Error fetching relationship, using default');
+              try {
+                // Fetch relationship with timeout
+                const fetchRelationshipPromise = getRelationship(userAccountName, userMinecraftName);
+                const timeoutPromise = new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Relationship fetch timeout')), 3000)
+                );
+                const relationshipResponse = await Promise.race([fetchRelationshipPromise, timeoutPromise]);
+                console.log('API relationship response:', relationshipResponse);
+                if (relationshipResponse) {
+                  relationshipData = {
+                    status: relationshipResponse.status || 'not_friends',
+                    following: relationshipResponse.following || false
+                  };
+                  // Cache the relationship data
+                  sessionStorage.setItem(cacheKey, JSON.stringify(relationshipData));
                 }
+              } catch (err) {
+                console.warn('Error fetching relationship, using default');
               }
             }
-            
             if (isMounted) {
               setRelationship(relationshipData);
             }
@@ -550,54 +418,27 @@ const Profile = () => {
         // Fetch or generate friend data
         let friendsList = [];
         try {
-          // For n0t_awake, use static data
-          if (targetUsername === 'n0t_awake' || userProfileData.username === 'bizzy') {
-            friendsList = [
-              { username: 'DiamondDigger', status: 'Mining diamonds', online: true },
-              { username: 'CreeperSlayer', status: 'Fighting mobs', online: true },
-              { username: 'RedstoneWizard', status: 'Building circuits', online: false },
-              { username: 'MinerSteve', status: 'Last seen 2 hours ago', online: false },
-            ];
-          } else {
-            // Attempt to fetch for others
-            friendsList = await fetchFriends(targetUsername);
-          }
-          
+          // Remove all special-case logic for n0t_awake and bizzy. Always use real data from the API or generic fallback.
+          friendsList = await fetchFriends(targetUsername);
           if (isMounted) {
             setFriends(friendsList);
           }
         } catch (err) {
           console.warn('Error with friends, using defaults');
-          // Use defaults but don't re-fetch
+          // Use generic fallback but don't re-fetch
         }
         
         // Generate or fetch wall posts
         let posts = [];
         try {
-          // For n0t_awake, use static data
-          if (targetUsername === 'n0t_awake' || userProfileData.username === 'bizzy') {
-            const defaultIcon = <UserIcon className="h-5 w-5 text-white" />;
-            posts = [
-              {
-                id: Date.now(),
-                type: 'default',
-                title: `${targetUsername}'s Profile`,
-                description: 'Welcome to my Minecraft profile!',
-                time: 'Just now',
-                icon: defaultIcon
-              }
-            ];
-          } else {
-            // For others, attempt to fetch
-            posts = await generateWallPosts(targetUsername, completeStats);
-          }
-          
+          // Remove all special-case logic for n0t_awake and bizzy. Always use real data from the API or generic fallback.
+          posts = await generateWallPosts(targetUsername, completeStats);
           if (isMounted) {
             setWallPosts(posts);
           }
         } catch (err) {
           console.warn('Error with wall posts, using defaults:', err);
-          // Use defaults but don't re-fetch
+          // Use generic fallback but don't re-fetch
           if (isMounted) {
             setWallPosts([]);
           }
@@ -793,22 +634,18 @@ const Profile = () => {
   useEffect(() => {
     const handleMinecraftLinked = (event) => {
       console.log('🎮 Minecraft account linked event received:', event.detail);
-      
       // Show celebration notification
       setNotification({
         show: true,
         type: 'success',
         message: `Your Minecraft account (${event.detail.mcUsername}) has been successfully linked!`
       });
-      
       // Enable celebration animation
       setShowCelebration(true);
-      setMcUsername(event.detail.mcUsername || 'n0t_awake');
-      
+      setMcUsername(event.detail.mcUsername);
       // Force the celebration to show with a slight delay to ensure DOM is ready
       setTimeout(() => {
         console.log('Showing celebration modal...');
-        
         // Make sure the modal is visible in the DOM
         const modal = document.querySelector('.celebration-container');
         if (modal) {
@@ -819,7 +656,6 @@ const Profile = () => {
         } else {
           console.log('Modal not found in DOM');
         }
-        
         // Play a sound effect
         try {
           const audio = new Audio('/sounds/level-up.mp3');
@@ -829,84 +665,39 @@ const Profile = () => {
           console.log('Audio not supported', e);
         }
       }, 500);
-      
       // Refresh profile data
       if (user && (user.username === username || !username)) {
-        // Prevent API calls that might cause infinite loops
-        // Force refresh player stats
-        /* 
-        MinecraftService.getPlayerStats(user.username, true)
-          .then(stats => {
-            setPlayerStats(stats);
-            
-            // Also refresh the full user profile to get updated minecraft status
-            API.fetchUser(user.username, true)
-              .then(updatedUser => {
-                setProfileUser(updatedUser);
-              });
-          });
-        */
-        
         // Use direct state updates instead
         setPlayerStats(prevStats => ({
           ...prevStats,
-          mcUsername: event.detail.mcUsername || 'n0t_awake',
+          mcUsername: event.detail.mcUsername,
           linked: true,
           balance: prevStats?.balance || 500,
           playtime: prevStats?.playtime || '10h',
           achievements: prevStats?.achievements || 42
         }));
-        
         setProfileUser(prevUser => ({
           ...prevUser,
-          mcUsername: event.detail.mcUsername || 'n0t_awake',
+          mcUsername: event.detail.mcUsername,
           minecraft: {
             ...prevUser?.minecraft,
             linked: true,
-            mcUsername: event.detail.mcUsername || 'n0t_awake'
+            mcUsername: event.detail.mcUsername
           }
         }));
       }
-      
       // Hide celebration after 5 seconds
       setTimeout(() => {
         setShowCelebration(false);
       }, 8000);
     };
-    
     // Add event listener
     window.addEventListener('minecraft_linked', handleMinecraftLinked);
-    
     // Cleanup
     return () => {
       window.removeEventListener('minecraft_linked', handleMinecraftLinked);
     };
   }, [user, username]);
-  
-  // Generate mock friends data for demo
-  const generateMockFriends = (username) => {
-    const mockFriends = [
-      { username: 'DiamondDigger', status: 'Mining diamonds', online: true },
-      { username: 'CreeperSlayer', status: 'Fighting mobs', online: true },
-      { username: 'RedstoneWizard', status: 'Building circuits', online: false },
-      { username: 'MinerSteve', status: 'Last seen 2 hours ago', online: false },
-      { username: 'PixelBuilder', status: 'Creating masterpieces', online: true },
-    ];
-    
-    // Remove the current user from the friends list and add some variety
-    const filteredFriends = mockFriends.filter(f => f.username !== username);
-    
-    // Add username-specific friends to make it more personalized
-    if (username) {
-      filteredFriends.push({ 
-        username: `Friend_of_${username.substring(0, 5)}`, 
-        status: 'Your newest friend', 
-        online: Math.random() > 0.5 
-      });
-    }
-    
-    setFriends(filteredFriends);
-  };
   
   // Handle posting to wall
   const handleWallPost = (e) => {
