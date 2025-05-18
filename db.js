@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file db.js
- * @description 
+ * @description Database connection and utilities for MongoDB
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -32,23 +32,39 @@ async function connectDB() {
       minPoolSize: 5,
       heartbeatFrequencyMS: 10000
     });
+    
     connected = true;
+    
+    // Set the global.db property to provide direct access to the database
+    global.db = mongoose.connection.db;
+    
     dbEvents.emit('connected');
     console.log('Connected to MongoDB (bizzylink)');
+    
     mongoose.connection.on('disconnected', () => {
       connected = false;
+      global.db = null;
       dbEvents.emit('disconnected');
       console.log('MongoDB disconnected. Attempting to reconnect...');
       setTimeout(connectDB, 5000);
     });
+    
     mongoose.connection.on('reconnected', () => {
       connected = true;
+      global.db = mongoose.connection.db;
       dbEvents.emit('reconnected');
       console.log('MongoDB reconnected');
     });
+    
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+      dbEvents.emit('error', err);
+    });
+    
     return mongoose.connection;
   } catch (err) {
     connected = false;
+    global.db = null;
     dbEvents.emit('error', err);
     console.error('MongoDB connection error:', err);
     setTimeout(connectDB, 5000);
@@ -61,8 +77,28 @@ function isConnected() {
 }
 
 async function withConnection(fn) {
-  if (!isConnected()) throw new Error('Not connected to DB');
+  if (!isConnected()) {
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      try {
+        await connectDB();
+      } catch (connErr) {
+        throw new Error('Failed to connect to database: ' + connErr.message);
+      }
+    }
+  }
+  
+  // Verify global.db is set
+  if (!global.db && isConnected()) {
+    global.db = mongoose.connection.db;
+  }
+  
   return fn();
+}
+
+// Explicitly provide the database
+function getDB() {
+  if (!isConnected()) return null;
+  return mongoose.connection.db;
 }
 
 module.exports = {
@@ -70,5 +106,6 @@ module.exports = {
   isConnected,
   withConnection,
   dbEvents,
-  mongoose
+  mongoose,
+  getDB
 }; 

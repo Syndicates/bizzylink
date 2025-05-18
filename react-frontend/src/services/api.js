@@ -96,10 +96,9 @@ const apiCache = {
 const getBaseUrl = () => {
   // For production, use the deployed API URL
   // For development, use the local API URL
-  // Always explicitly use localhost:8080 in development
   return process.env.NODE_ENV === 'production'
     ? process.env.REACT_APP_API_URL || window.location.origin
-    : 'http://localhost:8080';  // Hard-coded for development
+    : 'http://localhost:8080';  // Use port 8080 for development
 };
 
 /**
@@ -917,13 +916,33 @@ export const MinecraftService = {
     retryDelay: 2000
   }),
   
-  getLeaderboard: (category, timeFrame = 'all', limit = 10) => 
-    api.get(`/api/leaderboard/${category}?timeFrame=${timeFrame}&limit=${limit}`, {
+  getLeaderboard: (category, timeFrame = 'all', limit = 10, skipCache = false) => {
+    console.log(`API: Getting leaderboard for ${category}, timeFrame=${timeFrame}, limit=${limit}`);
+    
+    // Create a special axios instance for the leaderboard server
+    const leaderboardApi = axios.create({
+      baseURL: 'http://localhost:8083', // Connect to our simple leaderboard server
+      timeout: 10000
+    });
+    
+    return leaderboardApi.get(`/api/leaderboard/${category}?timeFrame=${timeFrame}&limit=${limit}`, {
       // Use long cache for leaderboards (5 minutes)
       maxRetries: 5,
       retryDelay: 1000,
-      cacheTTL: 5 * 60 * 1000 // 5 minutes cache
-    }),
+      cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      skipCache: skipCache, // Add skipCache parameter
+      withCredentials: false // Disable credentials for leaderboard requests
+    })
+    .then(response => {
+      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`, 
+        response.data?.data?.players?.length || 0, 'players');
+      return response;
+    })
+    .catch(error => {
+      console.error(`API: Error fetching leaderboard for ${category}:`, error.message);
+      throw error;
+    });
+  },
   
   // Method to manually trigger a sync from frontend
   triggerSync: (uuid) => {

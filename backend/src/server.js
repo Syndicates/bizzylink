@@ -83,6 +83,7 @@ const minecraftRoutes = require('./routes/minecraft');
 const forumRoutes = require('./routes/forum');
 const achievementsRoutes = require('./routes/achievements');
 const titlesRoutes = require('./routes/titles');
+const linkcodeRoutes = require('../../routes/linkcode');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -90,6 +91,7 @@ app.use('/api/minecraft', minecraftRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/achievements', achievementsRoutes);
 app.use('/api/titles', titlesRoutes);
+app.use('/api/linkcode', linkcodeRoutes);
 
 // Basic root route
 app.get('/', (req, res) => {

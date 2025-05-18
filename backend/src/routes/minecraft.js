@@ -204,13 +204,25 @@ router.delete('/link', protect, async (req, res, next) => {
     const oldMcUsername = user.minecraftUsername;
     const oldMcUUID = user.minecraftUUID;
     
-    // Unlink account
-    user.minecraftUUID = undefined;
-    user.minecraftUsername = undefined;
-    user.linkCode = undefined;
-    user.linkExpiryDate = undefined;
-    
-    await user.save();
+    // Unlink account (fix: use $unset for UUID fields to avoid unique index errors)
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          linkCode: undefined,
+          linkExpiryDate: undefined,
+          minecraftUsername: undefined,
+          linked: false,
+          'minecraft.linked': false,
+          'minecraft.mcUsername': undefined,
+        },
+        $unset: {
+          mcUUID: "",
+          'minecraft.mcUUID': ""
+        }
+      }
+    );
+    // Note: $unset is required for unique sparse index on mcUUID fields (see RULES.md)
     
     // Log account unlinking
     await SecurityLog.create({

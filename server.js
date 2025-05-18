@@ -114,7 +114,7 @@ global.notifyUser = function(userId, eventData) {
         } catch (err) {
           console.error('Error sending delayed notifications:', err);
         }
-      }, 3000); // Send a follow-up notification after 3 seconds
+      }, 3000);
     }
   }
   
@@ -242,14 +242,16 @@ app.use(cors({
     origin: function(origin, callback) {
         // In development mode, allow all origins for easier testing
         if (process.env.NODE_ENV === 'development') {
-            return callback(null, true);
+            // Don't use wildcard when credentials are true
+            // Instead, echo back the origin of the request
+            return callback(null, origin || true);
         }
         
         // Allow requests with no origin (like mobile apps, curl, etc)
         if (!origin) return callback(null, true);
         
         // List of allowed origins - use environment variables instead of hardcoding
-        const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080')
+        const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080,http://localhost:8081')
           .split(',')
           .map(origin => origin.trim());
         
@@ -260,7 +262,7 @@ app.use(cors({
         
         // Check if the origin is allowed
         if (allowedOrigins.includes(origin)) {
-            callback(null, true);
+            callback(null, origin); // Echo back the specific origin instead of true
         } else {
             console.log(`CORS blocked request from: ${origin}`);
             callback(new Error('Not allowed by CORS'));
@@ -527,24 +529,259 @@ app.post('/api/test/player-stats', (req, res) => {
 
 // Function to get leaderboard data from the database
 const getLeaderboardData = async (category, timeFrame, limit) => {
-  // This is a placeholder implementation - in a real app, this would query the database
-  console.log(`Getting leaderboard data for ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
-  
-  // Mock data for demonstration purposes
-  const mockLeaderboardData = [
-    { username: 'Player1', mcUsername: 'MinePlayer1', [category]: category === 'playtime' ? '120h 30m' : 5000 },
-    { username: 'Player2', mcUsername: 'MinePlayer2', [category]: category === 'playtime' ? '100h 45m' : 4500 },
-    { username: 'Player3', mcUsername: 'MinePlayer3', [category]: category === 'playtime' ? '80h 20m' : 4000 },
-    { username: 'Player4', mcUsername: 'MinePlayer4', [category]: category === 'playtime' ? '75h 15m' : 3500 },
-    { username: 'Player5', mcUsername: 'MinePlayer5', [category]: category === 'playtime' ? '70h 30m' : 3000 },
-    { username: 'Player6', mcUsername: 'MinePlayer6', [category]: category === 'playtime' ? '65h 45m' : 2500 },
-    { username: 'Player7', mcUsername: 'MinePlayer7', [category]: category === 'playtime' ? '60h 10m' : 2000 },
-    { username: 'Player8', mcUsername: 'MinePlayer8', [category]: category === 'playtime' ? '55h 25m' : 1500 },
-    { username: 'Player9', mcUsername: 'MinePlayer9', [category]: category === 'playtime' ? '50h 30m' : 1000 },
-    { username: 'Player10', mcUsername: 'MinePlayer10', [category]: category === 'playtime' ? '45h 15m' : 500 }
-  ];
-  
-  return mockLeaderboardData.slice(0, Number(limit));
+  try {
+    console.log(`Getting leaderboard data for ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
+    
+    // Create sample player data for development environment
+    const generateSamplePlayers = () => {
+      console.log('Generating sample leaderboard data for development');
+      
+      const ranks = ['Member', 'VIP', 'VIP+', 'MVP', 'MVP+', 'Admin'];
+      const usernames = [
+        'DiamondMiner42', 'EmberCraft', 'PixelWarrior', 'CosmicBuilder', 
+        'RubyRaider', 'MythicSurvival', 'GalaxyGamer', 'ShadowExplorer',
+        'EnderCrafter', 'BlazeRunner', 'FrostByte', 'SapphireQuest'
+      ];
+      
+      return usernames.map((username, index) => {
+        const now = new Date();
+        const lastSeen = new Date(now - Math.floor(Math.random() * 1000000000));
+        
+        // Base player data
+        const player = {
+          id: `player-${index}`,
+          username,
+          mcUsername: username,
+          uuid: `sample-${index}-uuid-${Math.random().toString(36).substring(2, 15)}`,
+          rank: ranks[Math.floor(Math.random() * ranks.length)],
+          lastSeen: lastSeen
+        };
+        
+        // Add category-specific data
+        switch(category) {
+          case 'playtime':
+            player.playtime_minutes = 10000 - (index * 800) + Math.floor(Math.random() * 500);
+            const hours = Math.floor(player.playtime_minutes / 60);
+            const mins = player.playtime_minutes % 60;
+            player.playtime = `${hours}h ${mins}m`;
+            break;
+          case 'economy':
+            player.balance = 1000000 - (index * 75000) + Math.floor(Math.random() * 20000);
+            player.money_earned = Math.floor(Math.random() * 10000) + 500;
+            player.money_spent = Math.floor(Math.random() * 5000) + 300;
+            break;
+          case 'mcmmo':
+            player.mcmmo_power_level = 2500 - (index * 200) + Math.floor(Math.random() * 100);
+            player.skills = {
+              mining: Math.floor(Math.random() * 500) + 200,
+              woodcutting: Math.floor(Math.random() * 500) + 150,
+              herbalism: Math.floor(Math.random() * 500) + 100,
+              fishing: Math.floor(Math.random() * 500) + 50,
+              excavation: Math.floor(Math.random() * 500) + 25
+            };
+            break;
+          case 'kills':
+            player.mobs_killed = 5000 - (index * 400) + Math.floor(Math.random() * 200);
+            player.player_kills = Math.floor(Math.random() * 50) + 1;
+            player.deaths = Math.floor(Math.random() * 200) + 10;
+            break;
+          case 'mining':
+            player.blocks_mined = 100000 - (index * 8000) + Math.floor(Math.random() * 4000);
+            player.ores_mined = Math.floor(player.blocks_mined * 0.15);
+            player.diamonds_mined = Math.floor(player.ores_mined * 0.05);
+            break;
+          case 'achievements':
+            player.achievements = Math.floor(Math.random() * 15) + 5;
+            player.advancements_completed = player.achievements * 3;
+            break;
+          default:
+            // Add default data for any other category
+            player.playtime_minutes = 10000 - (index * 800) + Math.floor(Math.random() * 500);
+            const h = Math.floor(player.playtime_minutes / 60);
+            const m = player.playtime_minutes % 60;
+            player.playtime = `${h}h ${m}m`;
+        }
+        
+        return player;
+      });
+    };
+    
+    // Initialize MongoDB connection if needed
+    const db = global.db;
+    if (!db) {
+      console.error('Database connection not available');
+      return generateSamplePlayers();
+    }
+    
+    // Query for players with Minecraft accounts linked
+    let pipeline = [
+      // Only include players with linked Minecraft accounts
+      { 
+        $match: { 
+          'minecraft.linked': true,
+          'minecraft.mcUsername': { $exists: true, $ne: null },
+          'minecraft.mcUUID': { $exists: true, $ne: null }
+        } 
+      }
+    ];
+    
+    // Add category-specific sorting and fields
+    switch(category) {
+      case 'playtime':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.playtime_minutes': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              playtime_minutes: '$minecraft.stats.playtime_minutes',
+              playtime: '$minecraft.stats.playtime'
+            }
+          }
+        );
+        break;
+      case 'economy':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.balance': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              balance: '$minecraft.stats.balance',
+              money_earned: '$minecraft.stats.money_earned',
+              money_spent: '$minecraft.stats.money_spent'
+            }
+          }
+        );
+        break;
+      case 'mcmmo':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.mcmmo_power_level': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              mcmmo_power_level: '$minecraft.stats.mcmmo_power_level',
+              skills: '$minecraft.stats.mcmmo_data.skills'
+            }
+          }
+        );
+        break;
+      case 'kills':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.mobs_killed': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              mobs_killed: '$minecraft.stats.mobs_killed',
+              player_kills: '$minecraft.stats.player_kills',
+              deaths: '$minecraft.stats.deaths',
+              kdr: { 
+                $cond: [
+                  { $gt: ['$minecraft.stats.deaths', 0] },
+                  { $divide: ['$minecraft.stats.mobs_killed', '$minecraft.stats.deaths'] },
+                  '$minecraft.stats.mobs_killed'
+                ]
+              }
+            }
+          }
+        );
+        break;
+      case 'mining':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.blocks_mined': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              blocks_mined: '$minecraft.stats.blocks_mined',
+              ores_mined: '$minecraft.stats.ores_mined',
+              diamonds_mined: '$minecraft.stats.diamonds_mined'
+            }
+          }
+        );
+        break;
+      case 'achievements':
+        pipeline.push(
+          { $sort: { 'minecraft.stats.achievements': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              achievements: '$minecraft.stats.achievements',
+              advancements_completed: '$minecraft.stats.advancements_completed'
+            }
+          }
+        );
+        break;
+      default:
+        // Default to playtime if category is not recognized
+        pipeline.push(
+          { $sort: { 'minecraft.stats.playtime_minutes': -1 } },
+          { 
+            $project: {
+              id: '$_id',
+              username: 1,
+              mcUsername: '$minecraft.mcUsername',
+              uuid: '$minecraft.mcUUID',
+              rank: '$minecraft.rank',
+              lastSeen: '$minecraft.lastSeen',
+              playtime_minutes: '$minecraft.stats.playtime_minutes',
+              playtime: '$minecraft.stats.playtime'
+            }
+          }
+        );
+    }
+    
+    // Limit the results
+    pipeline.push({ $limit: parseInt(limit) });
+    
+    // Execute the aggregation pipeline
+    const players = await db.collection('users').aggregate(pipeline).toArray();
+    console.log(`Found ${players.length} players for leaderboard category: ${category}`);
+    
+    // If no players found, use sample data
+    if (players.length === 0) {
+      console.log('No players found - using sample data');
+      return generateSamplePlayers();
+    }
+    
+    return players;
+  } catch (error) {
+    console.error(`Error retrieving leaderboard data:`, error);
+    
+    // In non-production, provide sample data on errors
+    if (process.env.NODE_ENV !== 'production') {
+      return generateSamplePlayers();
+    }
+    
+    return [];
+  }
 };
 
 // Leaderboard endpoint with rate limiting
@@ -556,7 +793,7 @@ app.get('/api/leaderboard/:category', leaderboardRateLimiter, async (req, res) =
     console.log(`Leaderboard request for category: ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
     
     // Validate category
-    const validCategories = ['playtime', 'balance', 'level', 'blocks_mined', 'mobs_killed', 'votes'];
+    const validCategories = ['playtime', 'economy', 'mcmmo', 'kills', 'mining', 'achievements'];
     if (!validCategories.includes(category)) {
       return res.status(400).json({ 
         success: false, 
@@ -565,15 +802,18 @@ app.get('/api/leaderboard/:category', leaderboardRateLimiter, async (req, res) =
     }
     
     // Retrieve leaderboard data from MongoDB or cache
-    const leaderboardData = await getLeaderboardData(category, timeFrame, limit);
+    const players = await getLeaderboardData(category, timeFrame, limit);
     
+    // Format response in the way the frontend expects
     return res.status(200).json({
       success: true,
-      category,
-      timeFrame,
-      data: leaderboardData
+      data: {
+        players,
+        category,
+        timeFrame
+      }
     });
-    } catch (error) {
+  } catch (error) {
     console.error(`Error fetching leaderboard data:`, error);
     return res.status(500).json({
       success: false,
@@ -952,109 +1192,14 @@ app.post('/api/test-create-user', async (req, res) => {
     }
 });
 
-// Add mock leaderboard endpoint
-app.get('/api/leaderboard/:category', (req, res) => {
-    const category = req.params.category;
-    const timeFrame = req.query.timeFrame || 'all';
-        const limit = parseInt(req.query.limit) || 10;
-    
-    console.log(`Mock leaderboard request received for category: ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
-    
-    // Generate mock data based on the category
-    const mockPlayers = [];
-    const categories = ['playtime', 'economy', 'mcmmo', 'kills', 'mining', 'achievements'];
-    
-    if (!categories.includes(category)) {
-        return res.status(400).json({ error: 'Invalid category' });
-    }
-    
-    // Create random player data
-    for (let i = 0; i < limit; i++) {
-        const player = {
-            id: `player_${i}`,
-            username: `Player${i + 1}`,
-            mcUsername: `MC_Player${i + 1}`,
-            avatar: `https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7`,
-        };
-        
-        // Add category-specific stats
-        switch (category) {
-            case 'playtime':
-                player.playtime = Math.floor(Math.random() * 5000) + 100;
-                player.lastSeen = new Date(Date.now() - Math.random() * 86400000 * 10).toISOString();
-                break;
-            case 'economy':
-                player.balance = Math.floor(Math.random() * 1000000) + 1000;
-                player.transactions = Math.floor(Math.random() * 500) + 50;
-                break;
-            case 'mcmmo':
-                player.mcmmo = {
-                    power: Math.floor(Math.random() * 1000) + 100,
-                    skills: {
-                        mining: Math.floor(Math.random() * 1000) + 100,
-                        woodcutting: Math.floor(Math.random() * 1000) + 100,
-                        excavation: Math.floor(Math.random() * 1000) + 100,
-                        fishing: Math.floor(Math.random() * 1000) + 100,
-                        herbalism: Math.floor(Math.random() * 1000) + 100
-                    }
-                };
-                break;
-            case 'kills':
-                player.kills = Math.floor(Math.random() * 1000) + 50;
-                player.deaths = Math.floor(Math.random() * 500) + 10;
-                player.kdr = (player.kills / (player.deaths || 1)).toFixed(2);
-                break;
-            case 'mining':
-                player.blocks_mined = Math.floor(Math.random() * 100000) + 1000;
-                player.ores_mined = Math.floor(Math.random() * 10000) + 100;
-                break;
-            case 'achievements':
-                player.achievements = Math.floor(Math.random() * 100) + 5;
-                player.achievement_points = Math.floor(Math.random() * 1000) + 100;
-                break;
-        }
-        
-        mockPlayers.push(player);
-    }
-    
-    // Sort the players based on category
-    switch (category) {
-      case 'playtime':
-            mockPlayers.sort((a, b) => b.playtime - a.playtime);
-        break;
-      case 'economy':
-            mockPlayers.sort((a, b) => b.balance - a.balance);
-        break;
-      case 'mcmmo':
-            mockPlayers.sort((a, b) => b.mcmmo.power - a.mcmmo.power);
-        break;
-      case 'kills':
-            mockPlayers.sort((a, b) => b.kills - a.kills);
-        break;
-      case 'mining':
-            mockPlayers.sort((a, b) => b.blocks_mined - a.blocks_mined);
-        break;
-      case 'achievements':
-            mockPlayers.sort((a, b) => b.achievement_points - a.achievement_points);
-        break;
-    }
-    
-    // Add rank property
-    mockPlayers.forEach((player, index) => {
-        player.rank = index + 1;
-    });
-    
-    res.json({ players: mockPlayers, timeFrame, category });
-});
+// Register simple auth route for reliable login
+app.use('/api', require('./routes/simple-auth'));
 
 // Configure server timeouts to avoid ECONNRESET
 app.use((req, res, next) => {
     // Increase header timeout
     req.socket.setTimeout(120000);
 
-// Register simple auth route for reliable login
-app.use('/api', require('./routes/simple-auth'));
- // 120 seconds
     // Increase keepalive timeout
     if (req.socket.server) {
         req.socket.server.keepAliveTimeout = 65000; // 65 seconds

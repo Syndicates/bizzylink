@@ -414,4 +414,43 @@
 - **✅ DO:** Prioritize tasks that impact user experience
 - **✅ DO:** Consider task dependencies when planning work
 - **❌ DON'T:** Leave high-impact issues unaddressed for long periods
-- **WHY:** Strategic prioritization maximizes development effectiveness 
+- **WHY:** Strategic prioritization maximizes development effectiveness
+
+## Server Architecture & Deployment
+
+### 1. Server Components Overview
+- **✅ DO:** Understand all server components and their interactions
+- **✅ DO:** Ensure all required servers are running before testing features
+- **❌ DON'T:** Start only partial server components when testing integrated features
+- **WHY:** The application relies on multiple interconnected services that must work together
+
+### 2. Server Components & Their Functions
+
+| Server | File | Port | Purpose |
+|--------|------|------|---------|
+| Main Server | `server.js` | 8080 | Primary backend server handling core application functionality, user authentication (legacy), and data services |
+| Enhanced Server | `enhanced-server.js` | 8082 | Handles WebSocket connections for real-time features and provides enhanced notification services |
+| Direct Auth Server | `direct-auth-server.js` | 8084 | Specialized authentication server with faster response times and dedicated user authentication flow |
+| Player Stats Server | `player-stats-server.js` | 8081 | Handles Minecraft player statistics, caching, and serves player data to the frontend |
+| Leaderboard Server | `simple-leaderboard-server.js` | 8083 | Processes and serves game leaderboard data including playtime, achievements, and other metrics |
+
+### 3. Starting All Servers
+- **✅ DO:** Use the provided batch scripts to ensure proper startup sequence
+- **✅ DO:** Check all servers are running when debugging connection issues
+- **✅ DO:** Use `start-all-servers.bat` to launch the complete application stack
+- **❌ DON'T:** Manually start servers in incorrect order
+- **WHY:** Server components have dependencies and must be started in the correct sequence
+
+### 4. Monitoring Server Health
+- **✅ DO:** Check each server's `/api/test` endpoint to verify operational status
+- **✅ DO:** Monitor server logs for error patterns and connection issues
+- **✅ DO:** Verify MongoDB connectivity across all server components
+- **❌ DON'T:** Assume server is functioning based solely on process being active
+- **WHY:** Servers may be running but encountering runtime errors or database connection issues
+
+### 5. Deployment Requirements
+- **✅ DO:** Ensure MongoDB is properly installed and running on port 27017
+- **✅ DO:** Configure environment variables properly across all server components
+- **✅ DO:** Set appropriate memory limits for Node.js based on server capacity
+- **❌ DON'T:** Deploy without testing all server components and their interactions
+- **WHY:** Incomplete server deployment will result in partial functionality and confusing errors 

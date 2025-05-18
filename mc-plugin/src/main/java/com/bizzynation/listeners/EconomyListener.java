@@ -44,6 +44,10 @@ public class EconomyListener implements Listener {
     private final Map<UUID, Double> lastKnownBalances = new HashMap<>();
     // Track when the last notification was sent for each player
     private final Map<UUID, Long> lastNotificationTimes = new HashMap<>();
+    // Track daily earnings for each player
+    private final Map<UUID, Double> moneyEarnedToday = new HashMap<>();
+    // Track daily spending for each player
+    private final Map<UUID, Double> moneySpentToday = new HashMap<>();
     
     // Configuration
     private int balanceCheckInterval;
@@ -56,6 +60,7 @@ public class EconomyListener implements Listener {
         this.apiService = new ApiService(plugin);
         loadConfiguration();
         setupEconomyMonitor();
+        scheduleDailyEarningsReset();
     }
     
     /**
@@ -149,77 +154,56 @@ public class EconomyListener implements Listener {
                 
                 // If we have a previous balance to compare
                 if (lastKnownBalances.containsKey(playerUUID)) {
-                    double previousBalance = lastKnownBalances.get(playerUUID);
-                    double difference = Math.abs(currentBalance - previousBalance);
-                    
-                    // Debug log
-                    MessageUtils.log(java.util.logging.Level.INFO, 
-                        "Economy check for " + player.getName() + 
-                        " - Previous: " + previousBalance + ", Current: " + currentBalance + 
-                        ", Diff: " + difference + ", Threshold: " + balanceChangeThreshold);
-                    
-                    // FORCE SEND UPDATE FOR TESTING
-                    // Remove this in production - for testing only
-                    if (currentBalance != previousBalance) {
-                        MessageUtils.log(java.util.logging.Level.INFO, 
-                            "🔄 Force triggering update - values different");
-                    }
-                    
-                    // If the balance has changed AT ALL
-                    // Changed condition from >= to > for more sensitivity
-                    if (difference > 0.0) {
-                        // Check if enough time has passed since last notification
-                        long now = System.currentTimeMillis();
-                        long lastNotification = lastNotificationTimes.getOrDefault(playerUUID, 0L);
-                        long elapsedSeconds = (now - lastNotification) / 1000;
+                    Double previousBalance = lastKnownBalances.get(playerUUID);
+                    if (previousBalance != null) {
+                        double difference = Math.abs(currentBalance - previousBalance);
                         
-                        // ALWAYS NOTIFY - REMOVE THE TIME CHECK FOR TESTING
-                        //if (elapsedSeconds >= minimumNotificationDelay) {
-                            // Trigger sync for the player
+                        // Debug log
+                        MessageUtils.log(java.util.logging.Level.INFO, 
+                            "Economy check for " + player.getName() + 
+                            " - Previous: " + previousBalance + ", Current: " + currentBalance + 
+                            ", Diff: " + difference + ", Threshold: " + balanceChangeThreshold);
+                        
+                        // FORCE SEND UPDATE FOR TESTING
+                        // Remove this in production - for testing only
+                        if (currentBalance != previousBalance) {
                             MessageUtils.log(java.util.logging.Level.INFO, 
-                                "🔄 Balance change detected for " + player.getName() + 
-                                ": " + previousBalance + " -> " + currentBalance + 
-                                " (diff: " + difference + ")");
-                                
-                            // Send webhook notification for immediate update
-                            boolean webhookSuccess = apiService.notifyRealtimeUpdate(playerUUID.toString());
-                            MessageUtils.log(java.util.logging.Level.INFO, 
-                                "🔄 Webhook notification sent: " + (webhookSuccess ? "SUCCESS" : "FAILED"));
-                            
-                            // Record notification time
-                            lastNotificationTimes.put(playerUUID, now);
-                            
-                            // Send player data IMMEDIATELY for faster updates
-                            boolean dataSuccess = apiService.sendPlayerData(player);
-                            MessageUtils.log(java.util.logging.Level.INFO, 
-                                "🔄 Player data sent: " + (dataSuccess ? "SUCCESS" : "FAILED"));
-                            
-                            // Send MULTIPLE notifications to ensure delivery
-                            for (int i = 0; i < 3; i++) {
-                                final int attemptNumber = i + 1;
-                                plugin.getServer().getScheduler().runTaskLaterAsynchronously(
-                                    plugin, 
-                                    () -> {
-                                        boolean success = apiService.notifyRealtimeUpdate(playerUUID.toString());
-                                        MessageUtils.log(java.util.logging.Level.INFO, 
-                                            "🔄 Additional webhook notification #" + attemptNumber + ": " + 
-                                            (success ? "SUCCESS" : "FAILED"));
-                                    },
-                                    (i + 1) * 5L // Spaced out by 5 ticks each
-                                );
-                            }
-                            
-                            // Send player data AGAIN after a short delay to ensure latest data
-                            plugin.getServer().getScheduler().runTaskLaterAsynchronously(
-                                plugin, 
-                                () -> {
-                                    boolean success = apiService.sendPlayerData(player);
+                                "🔄 Force triggering update - values different");
+                        }
+                        
+                        // If the balance has changed AT ALL
+                        // Changed condition from >= to > for more sensitivity
+                        if (difference > 0.0) {
+                            double minChange = plugin.getConfig().getDouble("data.min_balance_change", 1.0);
+                            int minInterval = plugin.getConfig().getInt("data.min_balance_sync_interval", 10); // seconds
+                            if (Math.abs(difference) >= minChange) {
+                                long now = System.currentTimeMillis();
+                                long lastNotification = lastNotificationTimes.getOrDefault(playerUUID, 0L);
+                                long elapsedSeconds = (now - lastNotification) / 1000;
+                                if (elapsedSeconds >= minInterval) {
+                                    // BizzyLink rules: Only sync on significant change and with debounce
                                     MessageUtils.log(java.util.logging.Level.INFO, 
-                                        "🔄 Delayed player data sent: " + (success ? "SUCCESS" : "FAILED"));
-                                },
-                                10L // 0.5 second delay (10 ticks)
-                            );
-                        //}
+                                        "🔄 Balance change detected for " + player.getName() + 
+                                        ": " + previousBalance + " -> " + currentBalance + 
+                                        " (diff: " + difference + ")");
+                                    boolean webhookSuccess = apiService.notifyRealtimeUpdate(playerUUID.toString());
+                                    MessageUtils.log(java.util.logging.Level.INFO, 
+                                        "🔄 Webhook notification sent: " + (webhookSuccess ? "SUCCESS" : "FAILED"));
+                                    lastNotificationTimes.put(playerUUID, now);
+                                    boolean dataSuccess = apiService.sendPlayerData(player);
+                                    MessageUtils.log(java.util.logging.Level.INFO, 
+                                        "🔄 Player data sent: " + (dataSuccess ? "SUCCESS" : "FAILED"));
+                                }
+                            }
+                        }
+                        // After detecting a balance change:
+                        if (currentBalance > previousBalance) {
+                            double earned = currentBalance - previousBalance;
+                            moneyEarnedToday.put(playerUUID, moneyEarnedToday.getOrDefault(playerUUID, 0.0) + earned);
+                        } else if (currentBalance < previousBalance) {
+                            double spent = previousBalance - currentBalance;
+                            moneySpentToday.put(playerUUID, moneySpentToday.getOrDefault(playerUUID, 0.0) + spent);
+                        }
                     }
                 }
                 
@@ -265,5 +249,31 @@ public class EconomyListener implements Listener {
                 }
             }, 40L); // 2-second delay (40 ticks)
         }
+    }
+
+    // Schedule a reset of daily earnings at midnight UK time
+    public void scheduleDailyEarningsReset() {
+        java.time.ZoneId ukZone = java.time.ZoneId.of("Europe/London");
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(ukZone);
+        java.time.LocalDateTime nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay();
+        long delaySeconds = java.time.Duration.between(now, nextMidnight).getSeconds();
+        // Schedule the reset
+        plugin.getServer().getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            moneyEarnedToday.clear();
+            moneySpentToday.clear();
+            MessageUtils.log(java.util.logging.Level.INFO, "Reset all players' money_earned_today and money_spent_today at midnight UK time");
+            // Reschedule for the next day
+            scheduleDailyEarningsReset();
+        }, delaySeconds * 20L); // Convert seconds to ticks
+    }
+
+    // Add a public getter for moneyEarnedToday
+    public Map<UUID, Double> getMoneyEarnedToday() {
+        return moneyEarnedToday;
+    }
+
+    // Add a public getter for moneySpentToday
+    public Map<UUID, Double> getMoneySpentToday() {
+        return moneySpentToday;
     }
 }

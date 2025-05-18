@@ -24,6 +24,7 @@ import com.bizzynation.data.PlayerDataManager;
 import com.bizzynation.integrations.EssentialsIntegration;
 import com.bizzynation.integrations.LuckPermsIntegration;
 import com.bizzynation.integrations.VaultIntegration;
+import com.bizzynation.listeners.EconomyListener;
 import com.bizzynation.listeners.PlayerListener;
 import com.bizzynation.notification.ForumNotificationHandler;
 import com.bizzynation.social.FriendManager;
@@ -47,6 +48,7 @@ public class LinkPlugin extends JavaPlugin {
     private ForumNotificationHandler forumNotificationHandler;
     private BukkitTask reminderTask;
     private BukkitTask dataSyncTask;
+    private EconomyListener economyListener;
     
     @Override
     public void onEnable() {
@@ -66,6 +68,13 @@ public class LinkPlugin extends JavaPlugin {
         
         // Initialize data manager
         playerDataManager = new PlayerDataManager(this);
+        
+        // Initialize leaderboard top 3 tracking and alerts (see RULES.md: Monitoring, Observability, UX)
+        playerDataManager.initializeTop3Tracking();
+        
+        // Initialize and register economy listener
+        economyListener = new EconomyListener(this);
+        getServer().getPluginManager().registerEvents(economyListener, this);
         
         // Initialize friend manager
         friendManager = new FriendManager(this);
@@ -481,5 +490,13 @@ public class LinkPlugin extends JavaPlugin {
                 }, 0L, 1200L); // Process one player every 60 seconds (1200 ticks) to avoid rate limiting
             }
         }, 20 * 20, intervalTicks); // Start after 20 seconds, then use configured interval
+    }
+    
+    /**
+     * Gets the EconomyListener instance
+     * @return The EconomyListener
+     */
+    public EconomyListener getEconomyListener() {
+        return economyListener;
     }
 }

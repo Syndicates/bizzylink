@@ -35,6 +35,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import org.json.simple.JSONArray;
+import com.bizzynation.listeners.EconomyListener;
 
 /**
  * Manages player data and synchronization with the website
@@ -43,6 +48,22 @@ public class PlayerDataManager {
     private final LinkPlugin plugin;
     private final JSONParser jsonParser;
     
+    // Store previous top 3 for each leaderboard category
+    private final Map<String, List<String>> previousTop3 = new HashMap<>(); // category -> list of UUID strings
+    private final Map<String, Map<String, Double>> previousTop3Values = new HashMap<>(); // category -> (uuid -> value)
+
+    // List of leaderboard categories and their stat keys
+    private static final String[] LEADERBOARD_CATEGORIES = {"playtime", "economy", "mcmmo", "kills", "mining", "achievements"};
+    private static final Map<String, String> CATEGORY_STAT_KEY = new HashMap<>();
+    static {
+        CATEGORY_STAT_KEY.put("playtime", "playtime_minutes");
+        CATEGORY_STAT_KEY.put("economy", "balance");
+        CATEGORY_STAT_KEY.put("mcmmo", "mcmmo_power_level");
+        CATEGORY_STAT_KEY.put("kills", "mobs_killed");
+        CATEGORY_STAT_KEY.put("mining", "blocks_mined");
+        CATEGORY_STAT_KEY.put("achievements", "achievements");
+    }
+
     public PlayerDataManager(LinkPlugin plugin) {
         this.plugin = plugin;
         this.jsonParser = new JSONParser();
@@ -330,9 +351,22 @@ public class PlayerDataManager {
                 double balance = plugin.getVaultIntegration().getBalance(player);
                 plugin.getLogger().info("Syncing balance for " + player.getName() + ": " + balance);
                 data.put("balance", balance);
+                // Add daily earnings if available
+                EconomyListener ecoListener = plugin.getEconomyListener();
+                if (ecoListener != null) {
+                    double earnedToday = ecoListener.getMoneyEarnedToday().getOrDefault(player.getUniqueId(), 0.0);
+                    data.put("money_earned_today", earnedToday);
+                    double spentToday = ecoListener.getMoneySpentToday().getOrDefault(player.getUniqueId(), 0.0);
+                    data.put("money_spent_today", spentToday);
+                } else {
+                    data.put("money_earned_today", 0.0);
+                    data.put("money_spent_today", 0.0);
+                }
             } catch (Exception e) {
                 plugin.getLogger().warning("Failed to get player balance: " + e.getMessage());
                 data.put("balance", 0.0);
+                data.put("money_earned_today", 0.0);
+                data.put("money_spent_today", 0.0);
             }
         }
         
@@ -1693,5 +1727,168 @@ public class PlayerDataManager {
             plugin.getLogger().warning("Error getting player data for " + username + ": " + e.getMessage());
             return null;
         }
+    }
+
+    // Call this after syncing all player data (e.g., after a batch update or on a timer)
+    public void checkAndAnnounceTop3(List<Map<String, Object>> allPlayerData) {
+        for (String category : LEADERBOARD_CATEGORIES) {
+            String statKey = CATEGORY_STAT_KEY.get(category);
+            // Sort all players by this stat descending
+            List<Map<String, Object>> sorted = new ArrayList<>(allPlayerData);
+            sorted.sort((a, b) -> Double.compare(
+                ((Number) b.getOrDefault(statKey, 0)).doubleValue(),
+                ((Number) a.getOrDefault(statKey, 0)).doubleValue()
+            ));
+            // Get top 3 UUIDs and values
+            List<String> newTop3 = new ArrayList<>();
+            Map<String, Double> newTop3Values = new HashMap<>();
+            for (int i = 0; i < Math.min(3, sorted.size()); i++) {
+                String uuid = (String) sorted.get(i).get("uuid");
+                newTop3.add(uuid);
+                newTop3Values.put(uuid, ((Number) sorted.get(i).getOrDefault(statKey, 0)).doubleValue());
+            }
+            List<String> prevTop3 = previousTop3.getOrDefault(category, new ArrayList<>());
+            Map<String, Double> prevValues = previousTop3Values.getOrDefault(category, new HashMap<>());
+            // Check for new entries or overtakes
+            for (int i = 0; i < newTop3.size(); i++) {
+                String uuid = newTop3.get(i);
+                String playerName = getPlayerNameByUUID(uuid);
+                double value = newTop3Values.get(uuid);
+                if (!prevTop3.contains(uuid)) {
+                    // New entry in top 3
+                    String msg = "§b[Leaderboards] §e" + playerName + " §7has reached §6Top " + (i+1) + " §7in " + capitalize(category) + "!";
+                    if (i > 0 && newTop3.get(i-1) != null) {
+                        // Show how much they overtook
+                        double prevValue = newTop3Values.get(newTop3.get(i-1));
+                        double diff = Math.abs(value - prevValue);
+                        msg += " (Overtook by " + formatStatDiff(category, diff) + ")";
+                    }
+                    Bukkit.broadcastMessage(msg);
+                } else if (prevTop3.indexOf(uuid) > i) {
+                    // Player moved up (e.g., from #3 to #2)
+                    String msg = "§b[Leaderboards] §e" + playerName + " §7has overtaken and is now §6Top " + (i+1) + " §7in " + capitalize(category) + "!";
+                    double prevValue = prevValues.getOrDefault(uuid, value);
+                    double diff = Math.abs(value - prevValue);
+                    msg += " (Gained " + formatStatDiff(category, diff) + ")";
+                    Bukkit.broadcastMessage(msg);
+                }
+            }
+            // Update previous top 3
+            previousTop3.put(category, newTop3);
+            previousTop3Values.put(category, newTop3Values);
+        }
+    }
+
+    // Helper to get player name by UUID (implement as needed)
+    private String getPlayerNameByUUID(String uuid) {
+        Player player = Bukkit.getPlayer(UUID.fromString(uuid));
+        if (player != null) return player.getName();
+        // Optionally look up from database or cache
+        return uuid.substring(0, 8); // fallback
+    }
+
+    // Helper to format stat difference for each category
+    private String formatStatDiff(String category, double diff) {
+        switch (category) {
+            case "playtime":
+                int mins = (int) diff;
+                int hours = mins / 60;
+                mins = mins % 60;
+                return (hours > 0 ? hours + "h " : "") + mins + "m";
+            case "economy":
+                return "$" + String.format("%,.0f", diff);
+            case "mcmmo":
+                return String.format("%.0f PL", diff);
+            case "kills":
+                return String.format("%.0f kills", diff);
+            case "mining":
+                return String.format("%.0f blocks", diff);
+            case "achievements":
+                return String.format("%.0f achievements", diff);
+            default:
+                return String.format("%.0f", diff);
+        }
+    }
+
+    private String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return s.substring(0,1).toUpperCase() + s.substring(1);
+    }
+
+    // Schedule regular leaderboard checks (every 5 minutes)
+    private void scheduleTop3Check() {
+        Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+            List<Map<String, Object>> allPlayerData = collectAllOnlinePlayerData();
+            checkAndAnnounceTop3(allPlayerData);
+            saveTop3ToDisk();
+        }, 20L * 60 * 5, 20L * 60 * 5); // 5 minutes in ticks
+    }
+
+    // Collect all online player data for leaderboard checks
+    private List<Map<String, Object>> collectAllOnlinePlayerData() {
+        List<Map<String, Object>> allData = new ArrayList<>();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            allData.add(collectPlayerData(player));
+        }
+        return allData;
+    }
+
+    // Save previousTop3 and previousTop3Values to disk
+    private void saveTop3ToDisk() {
+        try {
+            File file = new File(plugin.getDataFolder(), "top3_leaderboards.json");
+            JSONObject root = new JSONObject();
+            for (String category : previousTop3.keySet()) {
+                JSONArray arr = new JSONArray();
+                arr.addAll(previousTop3.get(category));
+                root.put(category + "_uuids", arr);
+                JSONObject values = new JSONObject();
+                Map<String, Double> valMap = previousTop3Values.getOrDefault(category, new HashMap<>());
+                for (String uuid : valMap.keySet()) {
+                    values.put(uuid, valMap.get(uuid));
+                }
+                root.put(category + "_values", values);
+            }
+            try (FileWriter fw = new FileWriter(file)) {
+                fw.write(root.toJSONString());
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to save top 3 leaderboard data: " + e.getMessage());
+        }
+    }
+
+    // Load previousTop3 and previousTop3Values from disk
+    private void loadTop3FromDisk() {
+        try {
+            File file = new File(plugin.getDataFolder(), "top3_leaderboards.json");
+            if (!file.exists()) return;
+            try (FileReader fr = new FileReader(file)) {
+                JSONObject root = (JSONObject) jsonParser.parse(fr);
+                for (String category : LEADERBOARD_CATEGORIES) {
+                    JSONArray arr = (JSONArray) root.get(category + "_uuids");
+                    List<String> uuids = new ArrayList<>();
+                    if (arr != null) for (Object o : arr) uuids.add((String) o);
+                    previousTop3.put(category, uuids);
+                    JSONObject values = (JSONObject) root.get(category + "_values");
+                    Map<String, Double> valMap = new HashMap<>();
+                    if (values != null) for (Object k : values.keySet()) valMap.put((String) k, ((Number) values.get(k)).doubleValue());
+                    previousTop3Values.put(category, valMap);
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to load top 3 leaderboard data: " + e.getMessage());
+        }
+    }
+
+    // Call this after any batch/manual sync
+    public void onBatchSyncComplete(List<Map<String, Object>> allPlayerData) {
+        checkAndAnnounceTop3(allPlayerData);
+        saveTop3ToDisk();
+    }
+
+    // Call this in plugin enable/init
+    public void initializeTop3Tracking() {
+        loadTop3FromDisk();
+        scheduleTop3Check();
     }
 }

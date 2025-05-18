@@ -625,16 +625,18 @@ router.delete('/', authenticateToken, async (req, res) => {
                 $set: {
                     linked: false,
                     mcUsername: null,
-                    mcUUID: null,
                     linkCode: null,
                     linkCodeExpiry: null,
                     mcStats: {}, // Clear stats when unlinking
                     'minecraft.linked': false,
                     'minecraft.mcUsername': null,
-                    'minecraft.mcUUID': null,
                     'minecraft.linkCode': null,
                     'minecraft.linkCodeExpires': null,
                     'minecraft.stats': {}
+                },
+                $unset: {
+                    mcUUID: "",
+                    'minecraft.mcUUID': ""
                 }
             }
         );
@@ -798,7 +800,6 @@ router.post('/reset-status', authenticateToken, async (req, res) => {
         $set: {
           linked: false,
           mcUsername: null,
-          mcUUID: null,
           linkCode: null,
           linkCodeExpiry: null,
           mcStats: {} // Clear stats when resetting

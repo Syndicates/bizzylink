@@ -389,6 +389,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
                     // Only clear local data after successful backend unlink
                     plugin.getConfigManager().clearLinkData(playerUUID);
                     MessageUtils.sendMessage(player, "&6[BizzyLink] &aYour account has been unlinked successfully!");
+                    player.sendTitle("§cAccount Unlinked", "§7Your Minecraft account is no longer linked.", 10, 60, 10);
                     plugin.getLogger().info("Player " + player.getName() + " unlinked their account");
                 } else {
                     // If backend unlink failed but we still thought they were linked

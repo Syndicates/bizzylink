@@ -1,17 +1,17 @@
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\commands\FriendCommand.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\integrations\EssentialsIntegration.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\integrations\LuckPermsIntegration.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\social\FriendManager.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\notification\ForumNotificationHandler.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\commands\LinkCommandTabCompleter.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\commands\FriendCommandTabCompleter.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\commands\LinkCommand.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\LinkPlugin.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\utils\MessageUtils.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\listeners\EconomyListener.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\data\PlayerDataManager.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\integrations\VaultIntegration.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\config\ConfigManager.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\LinkCommand.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\listeners\PlayerListener.java
-D:\Projects\BizzyLink v0.1 [First Release]\mc-plugin\src\main\java\com\bizzynation\utils\ApiService.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\commands\FriendCommandTabCompleter.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\LinkCommand.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\notification\ForumNotificationHandler.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\integrations\VaultIntegration.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\social\FriendManager.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\commands\LinkCommandTabCompleter.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\LinkPlugin.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\utils\ApiService.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\config\ConfigManager.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\listeners\PlayerListener.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\commands\LinkCommand.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\listeners\EconomyListener.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\commands\FriendCommand.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\utils\MessageUtils.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\integrations\LuckPermsIntegration.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\integrations\EssentialsIntegration.java
+D:\Projects\BizzyLinkStableBackUp\mc-plugin\src\main\java\com\bizzynation\data\PlayerDataManager.java

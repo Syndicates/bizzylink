@@ -15,5 +15,9 @@ echo Starting player stats server...
 start "BizzyLink Player Stats Server" cmd /c "node player-stats-server.js"
 echo Player stats server started in a new window.
 echo.
+echo Starting leaderboard server...
+start "BizzyLink Leaderboard Server" cmd /c "node simple-leaderboard-server.js"
+echo Leaderboard server started in a new window.
+echo.
 echo All servers are now running. Close this window to exit.
 pause 

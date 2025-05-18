@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file Leaderboard.js
- * @description 
+ * @description Player leaderboards for various Minecraft statistics
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -18,7 +18,94 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { MinecraftService } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { ChartBarIcon, ArrowTopRightOnSquareIcon, TrophyIcon, ArrowPathIcon, UserCircleIcon, UserIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowPathIcon, TrophyIcon, UserIcon } from '@heroicons/react/24/outline';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faEye } from '@fortawesome/free-solid-svg-icons';
+import { getPlayerAvatar } from '../utils/minecraft-api';
+
+// Helper function to format numbers with commas
+const numberWithCommas = (x) => {
+  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
+// Sample leaderboard data as fallback
+const SAMPLE_LEADERBOARD_DATA = [
+  {
+    id: 'sample-1',
+    username: 'DiamondMiner42',
+    mcUsername: 'DiamondMiner42',
+    uuid: 'sample-uuid-1',
+    rank: 'VIP+',
+    playtime_minutes: 9879,
+    playtime: '164h 39m',
+    balance: 985000,
+    blocks_mined: 95700,
+    mobs_killed: 4850,
+    mcmmo_power_level: 2345,
+    achievements: 28,
+    lastSeen: new Date().toISOString()
+  },
+  {
+    id: 'sample-2',
+    username: 'EmberCraft',
+    mcUsername: 'EmberCraft',
+    uuid: 'sample-uuid-2',
+    rank: 'MVP',
+    playtime_minutes: 8950,
+    playtime: '149h 10m',
+    balance: 875000,
+    blocks_mined: 87200,
+    mobs_killed: 4200,
+    mcmmo_power_level: 2100,
+    achievements: 24,
+    lastSeen: new Date().toISOString()
+  },
+  {
+    id: 'sample-3',
+    username: 'PixelWarrior',
+    mcUsername: 'PixelWarrior',
+    uuid: 'sample-uuid-3',
+    rank: 'Member',
+    playtime_minutes: 7840,
+    playtime: '130h 40m',
+    balance: 750000,
+    blocks_mined: 75600,
+    mobs_killed: 3680,
+    mcmmo_power_level: 1850,
+    achievements: 20,
+    lastSeen: new Date().toISOString()
+  },
+  {
+    id: 'sample-4',
+    username: 'CosmicBuilder',
+    mcUsername: 'CosmicBuilder',
+    uuid: 'sample-uuid-4',
+    rank: 'MVP+',
+    playtime_minutes: 7120,
+    playtime: '118h 40m',
+    balance: 650000,
+    blocks_mined: 67900,
+    mobs_killed: 3350,
+    mcmmo_power_level: 1650,
+    achievements: 19,
+    lastSeen: new Date().toISOString()
+  },
+  {
+    id: 'sample-5',
+    username: 'RubyRaider',
+    mcUsername: 'RubyRaider',
+    uuid: 'sample-uuid-5',
+    rank: 'VIP',
+    playtime_minutes: 6580,
+    playtime: '109h 40m',
+    balance: 580000,
+    blocks_mined: 61250,
+    mobs_killed: 3100,
+    mcmmo_power_level: 1540,
+    achievements: 17,
+    lastSeen: new Date().toISOString()
+  }
+];
 
 const Leaderboard = () => {
   const [players, setPlayers] = useState([]);
@@ -34,7 +121,8 @@ const Leaderboard = () => {
   });
   const [timeFrame, setTimeFrame] = useState('all');
   const [error, setError] = useState(null);
-
+  const [leaderboardData, setLeaderboardData] = useState([]);
+  
   // Simple debounce utility function 
   function debounce(func, wait) {
     let timeout;
@@ -50,217 +138,65 @@ const Leaderboard = () => {
   
   // Function to fetch leaderboard data
   useEffect(() => {
-    // Use debounce to prevent too many concurrent requests
-    const debouncedFetch = debounce(async () => {
+    const fetchLeaderboardData = async () => {
+      setLoadingPlayers(true);
       try {
-        setLoadingPlayers(true);
-        setError(null);
+        console.log('Fetching leaderboard data for', activeCategory, 'timeFrame:', timeFrame);
+        const response = await MinecraftService.getLeaderboard(activeCategory, timeFrame, 50);
+        console.log('API: Leaderboard response received:', response);
         
-        // Add retry and debounce logic with improved exponential backoff
-        const retryLeaderboardFetch = async (retries = 2, delay = 2000) => {
-          try {
-            return await MinecraftService.getLeaderboard(activeCategory, timeFrame, 50);
-          } catch (err) {
-            if (retries <= 0) {
-              console.error("Leaderboard fetch failed after all retries", err);
-              setError("Failed to load leaderboard data. Please try again later.");
-              throw err;
-            }
-            
-            console.log(`Leaderboard fetch failed, retrying in ${delay}ms... (${retries} retries left)`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return retryLeaderboardFetch(retries - 1, delay * 2);
+        // Check for successful response
+        if (response.data && response.data.success && response.data.data) {
+          const playersData = response.data.data.players || [];
+          console.log(`Received ${playersData.length} players`);
+          setLeaderboardData(playersData);
+          setPlayers(playersData);
+          
+          // Update top players by category
+          if (playersData.length > 0) {
+            // Create a copy of the current top players
+            const updatedTopPlayers = { ...topPlayers };
+            // Update the current category
+            updatedTopPlayers[activeCategory] = playersData.slice(0, 10);
+            setTopPlayers(updatedTopPlayers);
           }
-        };
-        
-        // Fetch real data from the API based on active category and time frame with retry
-        const response = await retryLeaderboardFetch();
-        
-        if (response.data && response.data.players) {
-          // Set all players
-          setPlayers(response.data.players);
-          
-          // Sort and group players by categories for different leaderboards
-          // First, create copies for each category since we have all the data
-          const allPlayers = [...response.data.players];
-          
-          // We don't need to re-sort by the active category since the API already did that
-          // But we'll need to sort for other categories
-          const topPlayersData = {};
-          
-          // Create sorted list for the active category
-          topPlayersData[activeCategory] = allPlayers.slice(0, 10);
-          
-          // Create sorted lists for all other categories
-          const categories = ['playtime', 'economy', 'mcmmo', 'kills', 'mining', 'achievements'];
-          
-          // Just use client-side sorting instead of making multiple API calls
-          // This will prevent rate limiting issues
-          if (allPlayers.length > 0) {
-            for (const category of categories) {
-              if (category !== activeCategory) {
-                // Use local sorting based on the data we already have
-                switch (category) {
-                  case 'playtime':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => b.playtime_minutes - a.playtime_minutes).slice(0, 10);
-                    break;
-                  case 'economy':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => (b.balance || 0) - (a.balance || 0)).slice(0, 10);
-                    break;
-                  case 'mcmmo':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => (b.mcmmo_power_level || 0) - (a.mcmmo_power_level || 0)).slice(0, 10);
-                    break;
-                  case 'kills':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => (b.mobs_killed || 0) - (a.mobs_killed || 0)).slice(0, 10);
-                    break;
-                  case 'mining':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => (b.blocks_mined || 0) - (a.blocks_mined || 0)).slice(0, 10);
-                    break;
-                  case 'achievements':
-                    topPlayersData[category] = [...allPlayers].sort((a, b) => (b.achievements || 0) - (a.achievements || 0)).slice(0, 10);
-                    break;
-                }
-              }
-            }
-          } else {
-            // Fallback to empty arrays for each category if no players
-            categories.forEach(category => {
-              if (category !== activeCategory) {
-                topPlayersData[category] = [];
-              }
-            });
-          }
-          
-          setTopPlayers(topPlayersData);
+          setError(null);
         } else {
-          // If no players in response, show an empty state
-          console.warn('No players returned from API');
-          setPlayers([]);
-          
-          // Set empty arrays for categories
-          setTopPlayers({
-            playtime: [],
-            economy: [],
-            mcmmo: [],
-            kills: [],
-            mining: [],
-            achievements: []
-          });
+          console.error('Invalid leaderboard data structure:', response);
+          // If we have sample data, use it as fallback
+          if (SAMPLE_LEADERBOARD_DATA && SAMPLE_LEADERBOARD_DATA.length > 0) {
+            console.log('Using sample data as fallback');
+            setLeaderboardData(SAMPLE_LEADERBOARD_DATA);
+            setPlayers(SAMPLE_LEADERBOARD_DATA);
+            
+            // Update sample top players
+            const updatedTopPlayers = { ...topPlayers };
+            updatedTopPlayers[activeCategory] = SAMPLE_LEADERBOARD_DATA.slice(0, 10);
+            setTopPlayers(updatedTopPlayers);
+          }
+          setError('Could not load leaderboard data from server. Using sample data instead.');
         }
       } catch (error) {
         console.error('Error fetching leaderboard data:', error);
-        
-        // Check if this is a rate limit error
-        if (error.response && error.response.status === 429) {
-          setError('Rate limit exceeded. Please wait a moment before trying again.');
-        } else {
-          setError(`Failed to load leaderboard data. ${error.message || 'Please try again later.'}`);
+        // Use sample data if API fails
+        if (SAMPLE_LEADERBOARD_DATA && SAMPLE_LEADERBOARD_DATA.length > 0) {
+          console.log('Using sample data due to error');
+          setLeaderboardData(SAMPLE_LEADERBOARD_DATA);
+          setPlayers(SAMPLE_LEADERBOARD_DATA);
+          
+          // Update sample top players
+          const updatedTopPlayers = { ...topPlayers };
+          updatedTopPlayers[activeCategory] = SAMPLE_LEADERBOARD_DATA.slice(0, 10);
+          setTopPlayers(updatedTopPlayers);
         }
-        
-        // Use cached data if available
-        try {
-          // Try to use previously loaded data if any
-          if (topPlayers[activeCategory] && topPlayers[activeCategory].length > 0) {
-            console.log('Using cached leaderboard data');
-            setPlayers(topPlayers[activeCategory]);
-          } else {
-            // Show empty state if API fails and no cache
-            console.warn('API failed, showing empty state');
-            setPlayers([]);
-            
-            // Set empty arrays for each category
-            setTopPlayers({
-              playtime: [],
-              economy: [],
-              mcmmo: [],
-              kills: [],
-              mining: [],
-              achievements: []
-            });
-          }
-        } catch (cacheError) {
-          console.error('Error using cached data:', cacheError);
-          // Reset all data
-          setPlayers([]);
-          setTopPlayers({
-            playtime: [],
-            economy: [],
-            mcmmo: [],
-            kills: [],
-            mining: [],
-            achievements: []
-          });
-        }
+        setError('Error connecting to leaderboard server. Using sample data instead.');
       } finally {
         setLoadingPlayers(false);
       }
-    }, 500); // Increase debounce time from 300ms to 500ms to reduce API calls
-    
-    // Execute the debounced function
-    debouncedFetch();
-    
-    // Cleanup function to cancel pending requests
-    return () => clearTimeout(debouncedFetch);
+    };
+
+    fetchLeaderboardData();
   }, [activeCategory, timeFrame]);
-  
-  // Generate mock player data for demonstration
-  const generateMockPlayers = (count) => {
-    const players = [];
-    const names = ['MinerSteve', 'DiamondDigger', 'RedstoneWizard', 'CreeperSlayer', 'PixelBuilder', 
-                  'EnderDragon', 'IronGolem', 'ZombieHunter', 'WitchCrafter', 'NetherExplorer',
-                  'BlazeMaster', 'GhastBuster', 'WitherKiller', 'VillagerTrader', 'PillagerRaider',
-                  'FarmingPro', 'BuildingMaster', 'CommandGuru', 'RedstoneEngineer', 'PvPChampion'];
-    
-    for (let i = 0; i < count; i++) {
-      const name = i < names.length ? names[i] : `Player${i + 1}`;
-      const player = {
-        username: name,
-        uuid: `player-${i}-uuid`,
-        playtime_minutes: Math.floor(Math.random() * 50000) + 1000,
-        balance: Math.floor(Math.random() * 100000) + 1000,
-        kills: Math.floor(Math.random() * 5000) + 10,
-        deaths: Math.floor(Math.random() * 1000) + 5,
-        blocks_mined: Math.floor(Math.random() * 1000000) + 10000,
-        mcmmo_power_level: Math.floor(Math.random() * 2000) + 100,
-        achievements: Math.floor(Math.random() * 30) + 1,
-        last_login: new Date(Date.now() - Math.random() * 10000000000),
-        rank: getRandom(['Member', 'VIP', 'VIP+', 'MVP', 'MVP+', 'Admin']),
-        // mcMMO skills
-        skills: {
-          mining: Math.floor(Math.random() * 1000) + 1,
-          woodcutting: Math.floor(Math.random() * 1000) + 1,
-          herbalism: Math.floor(Math.random() * 1000) + 1,
-          fishing: Math.floor(Math.random() * 1000) + 1,
-          excavation: Math.floor(Math.random() * 1000) + 1,
-          repair: Math.floor(Math.random() * 1000) + 1,
-          alchemy: Math.floor(Math.random() * 1000) + 1,
-          archery: Math.floor(Math.random() * 1000) + 1,
-          swords: Math.floor(Math.random() * 1000) + 1,
-          axes: Math.floor(Math.random() * 1000) + 1,
-          acrobatics: Math.floor(Math.random() * 1000) + 1,
-          unarmed: Math.floor(Math.random() * 1000) + 1,
-        },
-        // For kills category, include PvP and PvE kills
-        player_kills: Math.floor(Math.random() * 1000),
-        mob_kills: Math.floor(Math.random() * 4000) + 10,
-        // For money earned today
-        money_earned_today: Math.floor(Math.random() * 1000) + 10,
-        money_spent_today: Math.floor(Math.random() * 500) + 5,
-      };
-      
-      // Calculate total kills
-      player.kills = player.player_kills + player.mob_kills;
-      
-      players.push(player);
-    }
-    
-    return players;
-  };
-  
-  // Helper function to get random item from array
-  const getRandom = (arr) => {
-    return arr[Math.floor(Math.random() * arr.length)];
-  };
   
   // Format playtime to display in a readable format
   const formatPlaytime = (minutes) => {
@@ -289,7 +225,7 @@ const Leaderboard = () => {
     );
   }
 
-  if (error) {
+  if (error && players.length === 0) {
     return (
       <div className="min-h-screen py-12 minecraft-grid-bg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -384,6 +320,12 @@ const Leaderboard = () => {
           </div>
         </motion.div>
         
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 rounded-lg p-4 mb-6">
+            <p className="text-white">{error}</p>
+          </div>
+        )}
+        
         {/* Category tabs */}
         <motion.div
           className="flex flex-wrap border-b border-white/10 mb-8 overflow-x-auto"
@@ -444,7 +386,7 @@ const Leaderboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {topPlayers[activeCategory].slice(0, 3).map((player, index) => (
               <PlayerPodiumCard 
-                key={player.uuid}
+                key={player.uuid || index}
                 player={player}
                 rank={index + 1}
                 category={activeCategory}
@@ -466,118 +408,123 @@ const Leaderboard = () => {
           </h2>
           
           <div className="overflow-x-auto">
-            {topPlayers[activeCategory].length > 0 ? (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left py-3 px-4">Rank</th>
-                    <th className="text-left py-3 px-4">Player</th>
-                    {activeCategory === 'playtime' && (
-                      <th className="text-left py-3 px-4">Playtime</th>
-                    )}
-                    {activeCategory === 'economy' && (
-                      <>
-                        <th className="text-left py-3 px-4">Balance</th>
-                        <th className="text-left py-3 px-4">Earned Today</th>
-                      </>
-                    )}
-                    {activeCategory === 'mcmmo' && (
-                      <>
-                        <th className="text-left py-3 px-4">Power Level</th>
-                        <th className="text-left py-3 px-4">Top Skill</th>
-                      </>
-                    )}
-                    {activeCategory === 'kills' && (
-                      <>
-                        <th className="text-left py-3 px-4">Total Kills</th>
-                        <th className="text-left py-3 px-4">Player Kills</th>
-                        <th className="text-left py-3 px-4">Mob Kills</th>
-                      </>
-                    )}
-                    {activeCategory === 'mining' && (
-                      <th className="text-left py-3 px-4">Blocks Mined</th>
-                    )}
-                    {activeCategory === 'achievements' && (
-                      <th className="text-left py-3 px-4">Achievements</th>
-                    )}
-                    <th className="text-left py-3 px-4">Last Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPlayers[activeCategory].map((player, index) => (
-                    <tr key={player.uuid} className="border-b border-white/5 hover:bg-white/5">
-                      <td className="py-3 px-4 font-bold">#{index + 1}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center">
-                          <Link 
-                            to={`/profile/${player.username}`}
-                            title={`View ${player.username}'s profile`}
-                            className="h-8 w-8 mr-2 relative transition-transform hover:scale-110"
-                          >
-                            <img 
-                              src={`https://mc-heads.net/avatar/${player.username}/32`}
-                              alt={player.username}
-                              className="rounded-sm"
-                              onError={(e) => {
-                                e.target.src = 'https://via.placeholder.com/32?text=MC';
-                              }}
-                            />
-                            {/* Rank badge */}
-                            {getPlayerRankBadge(player.rank)}
-                          </Link>
-                          <div className="flex flex-col">
-                            <div className="font-medium flex items-center gap-2">
-                              {player.username}
-                            </div>
-                            <div className="text-xs text-gray-400">{player.rank}</div>
-                          </div>
-                        </div>
-                      </td>
+            {leaderboardData.length > 0 ? (
+              <>
+                <div className="text-xs text-gray-400 italic mb-2 flex items-center" style={{ display: activeCategory === 'economy' ? 'flex' : 'none' }}>
+                  <svg className="w-4 h-4 mr-1 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                  Daily earnings reset at midnight UK time (London).
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="text-left py-3 px-4">Rank</th>
+                      <th className="text-left py-3 px-4">Player</th>
                       {activeCategory === 'playtime' && (
-                        <td className="py-3 px-4">{formatPlaytime(player.playtime_minutes)}</td>
+                        <th className="text-left py-3 px-4">Playtime</th>
                       )}
                       {activeCategory === 'economy' && (
                         <>
-                          <td className="py-3 px-4 text-minecraft-habbo-yellow">${player.balance.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-green-400">+${player.money_earned_today ? player.money_earned_today.toLocaleString() : '0'}</td>
+                          <th className="text-left py-3 px-4">Balance</th>
+                          <th className="text-left py-3 px-4">Earned Today</th>
                         </>
                       )}
                       {activeCategory === 'mcmmo' && (
                         <>
-                          <td className="py-3 px-4">{player.mcmmo_power_level.toLocaleString()}</td>
-                          <td className="py-3 px-4">{getTopMcMMOSkill(player)}</td>
+                          <th className="text-left py-3 px-4">Power Level</th>
+                          <th className="text-left py-3 px-4">Top Skill</th>
                         </>
                       )}
                       {activeCategory === 'kills' && (
                         <>
-                          <td className="py-3 px-4">{player.kills.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-red-400">{player.player_kills ? player.player_kills.toLocaleString() : '0'}</td>
-                          <td className="py-3 px-4 text-gray-400">{player.mob_kills ? player.mob_kills.toLocaleString() : '0'}</td>
+                          <th className="text-left py-3 px-4">Total Kills</th>
+                          <th className="text-left py-3 px-4">Player Kills</th>
+                          <th className="text-left py-3 px-4">Mob Kills</th>
                         </>
                       )}
                       {activeCategory === 'mining' && (
-                        <td className="py-3 px-4">{player.blocks_mined.toLocaleString()}</td>
+                        <th className="text-left py-3 px-4">Blocks Mined</th>
                       )}
                       {activeCategory === 'achievements' && (
-                        <td className="py-3 px-4">
+                        <th className="text-left py-3 px-4">Achievements</th>
+                      )}
+                      <th className="text-left py-3 px-4">Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboardData.map((player, index) => (
+                      <motion.tr 
+                        key={player.uuid || index}
+                        className={`border-b ${index % 2 === 0 ? 'bg-gray-900/60' : 'bg-gray-800/60'} hover:bg-gray-700/80 transition-colors duration-150`}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                      >
+                        <td className="px-4 py-3 text-center text-gray-400 font-bold">{index + 1}</td>
+                        <td className="px-4 py-3">
                           <div className="flex items-center">
-                            <span className="mr-2">{player.achievements}/30</span>
-                            <div className="w-20 h-2 bg-gray-700 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-minecraft-habbo-blue"
-                                style={{ width: `${(player.achievements / 30) * 100}%` }}
-                              ></div>
+                            <div className="relative h-10 w-10 mr-3">
+                              <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`}>
+                                <img 
+                                  src={`https://visage.surgeplay.com/face/128/${player.mcUsername || player.username}`}
+                                  alt={player.username || player.mcUsername || 'Unknown'} 
+                                  className="h-10 w-10 rounded-md object-cover" 
+                                  onError={(e) => {
+                                    e.target.onerror = (e2) => {
+                                      e2.target.onerror = (e3) => {
+                                        e3.target.onerror = null;
+                                        e3.target.src = 'https://via.placeholder.com/128?text=MC';
+                                      };
+                                      e2.target.src = `https://minotar.net/avatar/${player.mcUsername || player.username}/128.png`;
+                                    };
+                                    e.target.src = `https://mc-heads.net/avatar/${player.mcUsername || player.username}/128`;
+                                  }}
+                                />
+                              </Link>
+                            </div>
+                            <div>
+                              <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`} className="font-semibold text-white hover:underline">
+                                {player.username || player.mcUsername || 'Unknown'}
+                              </Link>
+                              <div className="text-xs text-gray-400">{player.mcUsername !== player.username ? player.mcUsername : ''}</div>
                             </div>
                           </div>
                         </td>
-                      )}
-                      <td className="py-3 px-4 text-gray-400">
-                        {formatLastSeen(player.last_login)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        {activeCategory === 'playtime' && (
+                          <td className="px-4 py-3 text-gray-300">{player.playtime || formatPlaytime(player.playtime_minutes || 0)}</td>
+                        )}
+                        {activeCategory === 'economy' && (
+                          <>
+                            <td className="px-4 py-3 text-gray-300">${numberWithCommas(player.balance || 0)}</td>
+                            <td className="px-4 py-3 text-green-400">+${numberWithCommas(player.money_earned_today || 0)}</td>
+                          </>
+                        )}
+                        {activeCategory === 'mcmmo' && (
+                          <>
+                            <td className="px-4 py-3 text-gray-300">{numberWithCommas(player.mcmmo_power_level || 0)} PL</td>
+                            <td className="px-4 py-3 text-gray-300">{getTopMcMMOSkill(player)}</td>
+                          </>
+                        )}
+                        {activeCategory === 'kills' && (
+                          <>
+                            <td className="px-4 py-3 text-gray-300">{numberWithCommas(player.mobs_killed || 0)}</td>
+                            <td className="px-4 py-3 text-red-400">{numberWithCommas(player.player_kills || 0)}</td>
+                            <td className="px-4 py-3 text-gray-400">{numberWithCommas(player.mobs_killed || 0)}</td>
+                          </>
+                        )}
+                        {activeCategory === 'mining' && (
+                          <td className="px-4 py-3 text-gray-300">{numberWithCommas(player.blocks_mined || 0)}</td>
+                        )}
+                        {activeCategory === 'achievements' && (
+                          <td className="px-4 py-3 text-gray-300">{numberWithCommas(player.achievements || 0)}</td>
+                        )}
+                        <td className="px-4 py-3 text-gray-400">
+                          {formatLastSeen(player.lastSeen)}
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             ) : (
               <div className="text-center py-10 bg-white/5 rounded-md">
                 <p className="text-gray-400">No players found for this category.</p>
@@ -668,23 +615,32 @@ const getTopMcMMOSkill = (player) => {
 
 // Helper function to format last seen
 const formatLastSeen = (date) => {
-  const now = new Date();
-  const lastSeen = new Date(date);
-  const diff = now - lastSeen;
+  if (!date) return 'Unknown';
   
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  
-  if (days > 0) {
-    return `${days} day${days > 1 ? 's' : ''} ago`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  } else {
-    return 'Just now';
+  try {
+    if (date === 'Online now') return date;
+    
+    const now = new Date();
+    const lastSeen = new Date(date);
+    const diff = now - lastSeen;
+    
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) {
+      return `${days} day${days > 1 ? 's' : ''} ago`;
+    } else if (hours > 0) {
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else if (minutes > 0) {
+      return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    } else {
+      return 'Just now';
+    }
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    return 'Unknown';
   }
 };
 
@@ -697,33 +653,33 @@ const PlayerPodiumCard = ({ player, rank, category }) => {
   // Determine what to display based on category
   switch (category) {
     case 'playtime':
-      const hours = Math.floor(player.playtime_minutes / 60);
-      const mins = player.playtime_minutes % 60;
-      statValue = `${hours}h ${mins}m`;
+      const hours = Math.floor((player.playtime_minutes || 0) / 60);
+      const mins = (player.playtime_minutes || 0) % 60;
+      statValue = player.playtime || `${hours}h ${mins}m`;
       statLabel = 'Playtime';
       break;
     case 'economy':
-      statValue = `$${player.balance.toLocaleString()}`;
+      statValue = `$${(player.balance || 0).toLocaleString()}`;
       statLabel = 'Balance';
       statColor = 'text-minecraft-habbo-yellow';
       break;
     case 'mcmmo':
-      statValue = player.mcmmo_power_level.toLocaleString();
+      statValue = (player.mcmmo_power_level || 0).toLocaleString();
       statLabel = 'Power Level';
       statColor = 'text-purple-400';
       break;
     case 'kills':
-      statValue = player.kills.toLocaleString();
+      statValue = (player.mobs_killed || 0).toLocaleString();
       statLabel = 'Kills';
       statColor = 'text-red-400';
       break;
     case 'mining':
-      statValue = player.blocks_mined.toLocaleString();
+      statValue = (player.blocks_mined || 0).toLocaleString();
       statLabel = 'Blocks Mined';
       statColor = 'text-blue-400';
       break;
     case 'achievements':
-      statValue = `${player.achievements}/30`;
+      statValue = `${player.achievements || 0}/30`;
       statLabel = 'Achievements';
       statColor = 'text-green-400';
       break;
@@ -752,24 +708,31 @@ const PlayerPodiumCard = ({ player, rank, category }) => {
     >
       <div className="flex justify-between items-start mb-4">
         <div className={`${trophyColor} font-minecraft text-3xl`}>#{rank}</div>
-        <div className="bg-white/10 px-2 py-1 rounded text-xs">{player.rank}</div>
+        <div className="bg-white/10 px-2 py-1 rounded text-xs">{player.rank || 'Member'}</div>
       </div>
       
       <div className="flex items-center mb-6">
         <div className="mr-4 relative">
           <img
-            src={`https://mc-heads.net/avatar/${player.username}/64`}
-            alt={player.username}
+            src={`https://visage.surgeplay.com/face/128/${player.mcUsername || player.username}`}
+            alt={player.username || player.mcUsername}
             className="rounded-md shadow-lg border-2 border-white/20"
             onError={(e) => {
-              e.target.src = 'https://via.placeholder.com/64?text=MC';
+              e.target.onerror = (e2) => {
+                e2.target.onerror = (e3) => {
+                  e3.target.onerror = null;
+                  e3.target.src = 'https://via.placeholder.com/128?text=MC';
+                };
+                e2.target.src = `https://minotar.net/avatar/${player.mcUsername || player.username}/128.png`;
+              };
+              e.target.src = `https://mc-heads.net/avatar/${player.mcUsername || player.username}/128`;
             }}
           />
           {getPlayerRankBadge(player.rank)}
         </div>
         <div>
-          <h3 className="font-minecraft text-lg">{player.username}</h3>
-          <p className="text-gray-400 text-sm">Last seen {formatLastSeen(player.last_login)}</p>
+          <h3 className="font-minecraft text-lg">{player.username || player.mcUsername}</h3>
+          <p className="text-gray-400 text-sm">Last seen {formatLastSeen(player.lastSeen)}</p>
         </div>
       </div>
       
@@ -782,7 +745,7 @@ const PlayerPodiumCard = ({ player, rank, category }) => {
       
       <div className="mt-4 text-center">
         <Link 
-          to={`/profile/${player.username}`} 
+          to={`/profile/${player.username || player.mcUsername}`} 
           className="minecraft-btn px-5 py-2 text-sm font-medium inline-flex items-center"
         >
           <UserIcon className="h-4 w-4 mr-1" />
@@ -799,7 +762,7 @@ const McMMOTopSkills = ({ players }) => {
   const getTopPlayersForSkill = (skill) => {
     return [...players]
       .filter(player => player.skills && player.skills[skill])
-      .sort((a, b) => b.skills[skill] - a.skills[skill])
+      .sort((a, b) => (b.skills[skill] || 0) - (a.skills[skill] || 0))
       .slice(0, 5);
   };
   
@@ -819,24 +782,31 @@ const McMMOTopSkills = ({ players }) => {
           
           <div className="space-y-3">
             {getTopPlayersForSkill(skill).map((player, index) => (
-              <div key={`${skill}-${player.uuid}`} className="flex items-center bg-white/5 p-3 rounded-md">
+              <div key={`${skill}-${player.uuid || index}`} className="flex items-center bg-white/5 p-3 rounded-md">
                 <div className="w-6 text-center font-bold mr-2">#{index + 1}</div>
                 <div className="h-7 w-7 mr-2">
-                  <Link to={`/profile/${player.username}`} title={`View ${player.username}'s profile`}>
+                  <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`}>
                     <img 
-                      src={`https://mc-heads.net/avatar/${player.username}/28`}
-                      alt={player.username}
+                      src={`https://visage.surgeplay.com/face/64/${player.mcUsername || player.username}`}
+                      alt={player.username || player.mcUsername}
                       className="rounded-sm hover:opacity-80 transition-opacity"
                       onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/28?text=MC';
+                        e.target.onerror = (e2) => {
+                          e2.target.onerror = (e3) => {
+                            e3.target.onerror = null;
+                            e3.target.src = 'https://via.placeholder.com/64?text=MC';
+                          };
+                          e2.target.src = `https://minotar.net/avatar/${player.mcUsername || player.username}/64.png`;
+                        };
+                        e.target.src = `https://mc-heads.net/avatar/${player.mcUsername || player.username}/64`;
                       }}
                     />
                   </Link>
                 </div>
                 <div className="flex-1">
-                  <div className="text-sm font-medium">{player.username}</div>
+                  <div className="text-sm font-medium">{player.username || player.mcUsername}</div>
                 </div>
-                <div className="text-sm font-minecraft">Lv. {player.skills[skill]}</div>
+                <div className="text-sm font-minecraft">Lv. {player.skills?.[skill] || 0}</div>
               </div>
             ))}
           </div>
@@ -849,10 +819,10 @@ const McMMOTopSkills = ({ players }) => {
 // Economy Stats Component
 const EconomyStats = ({ players }) => {
   // Calculate economy statistics
-  const totalMoney = players.reduce((sum, player) => sum + player.balance, 0);
-  const avgMoney = totalMoney / players.length;
-  const todayEarned = players.reduce((sum, player) => sum + player.money_earned_today, 0);
-  const todaySpent = players.reduce((sum, player) => sum + player.money_spent_today, 0);
+  const totalMoney = players.reduce((sum, player) => sum + (player.balance || 0), 0);
+  const avgMoney = players.length > 0 ? totalMoney / players.length : 0;
+  const todayEarned = players.reduce((sum, player) => sum + (player.money_earned_today || 0), 0);
+  const todaySpent = players.reduce((sum, player) => sum + (player.money_spent_today || 0), 0);
   
   return (
     <motion.div
