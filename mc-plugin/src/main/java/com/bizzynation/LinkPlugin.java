@@ -23,6 +23,7 @@ import com.bizzynation.config.ConfigManager;
 import com.bizzynation.data.PlayerDataManager;
 import com.bizzynation.integrations.EssentialsIntegration;
 import com.bizzynation.integrations.LuckPermsIntegration;
+import com.bizzynation.integrations.SocketIOClientManager;
 import com.bizzynation.integrations.VaultIntegration;
 import com.bizzynation.listeners.EconomyListener;
 import com.bizzynation.listeners.PlayerListener;
@@ -49,6 +50,7 @@ public class LinkPlugin extends JavaPlugin {
     private BukkitTask reminderTask;
     private BukkitTask dataSyncTask;
     private EconomyListener economyListener;
+    private SocketIOClientManager socketIOClientManager;
     
     @Override
     public void onEnable() {
@@ -81,6 +83,11 @@ public class LinkPlugin extends JavaPlugin {
         
         // Initialize forum notification handler
         forumNotificationHandler = new ForumNotificationHandler(this);
+        
+        // Initialize and start Socket.IO client for real-time unlink alerts
+        String socketServerUrl = getConfig().getString("socketio.url", "http://localhost:8080");
+        socketIOClientManager = new SocketIOClientManager(this, socketServerUrl);
+        socketIOClientManager.start();
         
         // Test the configuration values and show them in console
         String apiUrl = getApiUrl();
@@ -129,6 +136,11 @@ public class LinkPlugin extends JavaPlugin {
     public void onDisable() {
         // Cancel any active tasks
         stopTasks();
+        
+        // Stop Socket.IO client cleanly
+        if (socketIOClientManager != null) {
+            socketIOClientManager.stop();
+        }
         
         // Log shutdown message
         MessageUtils.log(Level.INFO, "BizzyLink Plugin Disabled!");
