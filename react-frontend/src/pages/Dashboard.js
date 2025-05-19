@@ -1,15 +1,31 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file Dashboard.js
+ * @description User dashboard showing account status and Minecraft integration
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ * 
+ * This file is protected intellectual property of Bizzy Nation.
+ * Unauthorized use, copying, or distribution is prohibited.
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { MinecraftService } from '../services/api';
-import { AuthService } from '../services/api';
+import { useEventSource } from '../contexts/EventSourceContext';
+import { useWebSocket } from '../contexts/WebSocketContext';
+import { MinecraftService, AuthService } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
 import Changelog from '../components/Changelog';
+import useGuidedTour from '../hooks/useGuidedTour';
 import MinecraftAPI from '../utils/minecraft-api';
 import { 
   UserIcon, 
-  LinkIcon, 
   ClockIcon, 
   CubeIcon, 
   CalendarIcon, 
@@ -17,7 +33,6 @@ import {
   DocumentDuplicateIcon,
   ChatBubbleLeftIcon as ChatAltIcon,
   UsersIcon,
-  PuzzlePieceIcon as PuzzleIcon,
   StarIcon,
   BellIcon,
   MapIcon,
@@ -27,9 +42,14 @@ import {
   BookOpenIcon as BookIcon,
   QuestionMarkCircleIcon,
   ChatBubbleBottomCenterIcon as ChatIcon,
-  GiftIcon
+  GiftIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
+import { SwordIcon, SkullIcon } from '../utils/CustomIcons';
 import { Link } from 'react-router-dom';
+import VerificationCelebration from '../components/VerificationCelebration';
+import GuidedTour from '../components/GuidedTour';
+import StatCard from '../components/StatCard';
 
 /**
  * NOTE: Always use backend/database field names exactly as returned (see RULES.md: Data Management, Naming Consistency).
@@ -38,9 +58,11 @@ import { Link } from 'react-router-dom';
 
 const Dashboard = () => {
   const { user, updateUserProfile } = useAuth();
+  const { addEventListener } = useEventSource();
+  const { socket, addEventListener: addSocketListener } = useWebSocket();
+  const { tourActive, startTour: startGuidedTour, endTour } = useGuidedTour();
   
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
-  const [loading, setLoading] = useState(false);
   const [linkLoading, setLinkLoading] = useState(false);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
   const [mcUsername, setMcUsername] = useState('');
@@ -53,7 +75,11 @@ const Dashboard = () => {
   const [onlinePlayers, setOnlinePlayers] = useState([]);
   const [onlinePlayersLoading, setOnlinePlayersLoading] = useState(false);
   const [onlinePlayersError, setOnlinePlayersError] = useState(null);
-  const [serverStatus, setServerStatus] = useState({ online: true, playerCount: 24, maxPlayers: 100 });
+  const [serverStatus, setServerStatus] = useState({
+    online: true,
+    playerCount: 0,
+    maxPlayers: 0
+  });
   const [isUpdatingStats, setIsUpdatingStats] = useState(false);
   const [topPlayers, setTopPlayers] = useState([]);
   const [topPlayersLoading, setTopPlayersLoading] = useState(false);
@@ -65,11 +91,91 @@ const Dashboard = () => {
   const [recentAchievementsLoading, setRecentAchievementsLoading] = useState(false);
   const [recentAchievementsError, setRecentAchievementsError] = useState(null);
   const [showUnlinkModal, setShowUnlinkModal] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [realTimeMode, setRealTimeMode] = useState(true);
+  const [statsRefreshInterval, setStatsRefreshInterval] = useState(null);
+  const [lastStatsUpdate, setLastStatsUpdate] = useState(null);
   
+  // Reference to track polling interval for link status
+  const pollIntervalRef = useRef(null);
+
+  /**
+   * Shows a notification and optional sound when a player stat changes.
+   * @param {string} statType - The type of stat (e.g. 'balance', 'level', 'achievement').
+   * @param {number|string} oldValue - The previous value of the stat.
+   * @param {number|string} newValue - The new value of the stat.
+   * @param {string|null} soundPath - Optional path to a sound to play.
+   */
+  const showStatChangeNotification = (statType, oldValue, newValue, soundPath = null) => {
+    let message = '';
+    switch (statType) {
+      case 'balance':
+        message = `Balance increased: $${oldValue} → $${newValue}`;
+        break;
+      case 'level':
+        message = `Level up! ${oldValue} → ${newValue}`;
+        break;
+      case 'achievement':
+        message = `New achievement unlocked! (${newValue} total)`;
+        break;
+      default:
+        message = `${statType} updated: ${oldValue} → ${newValue}`;
+    }
+    setNotification({
+      show: true,
+      type: 'info',
+      message
+    });
+    if (soundPath) {
+      try {
+        const audio = new Audio(soundPath);
+        audio.volume = 0.3;
+        audio.play().catch(e => console.log('[DASHBOARD] Audio play prevented by browser policy', e));
+      } catch (e) {
+        console.log('[DASHBOARD] Audio not supported', e);
+      }
+    }
+  };
+
   // Format date
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  const formatTimestamp = (timestamp) => {
+    if (timestamp === 'Online now') return 'Online now'; // Already formatted
+    if (!timestamp) return 'Never';
+    
+    let date;
+    if (typeof timestamp === 'number' || /^\d+$/.test(timestamp)) {
+      const timestampNum = parseInt(timestamp, 10);
+      date = timestampNum > 20000000000 
+        ? new Date(timestampNum)
+        : new Date(timestampNum * 1000);
+    } else {
+      date = new Date(timestamp);
+    }
+    
+    if (isNaN(date.getTime())) return 'Invalid date';
+    
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffSecs < 60) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -83,11 +189,11 @@ const Dashboard = () => {
       setTimeRemaining('');
       return;
     }
-
+    
     const updateTimeRemaining = () => {
       const now = new Date();
       const expiryTime = new Date(linkExpiryDate);
-
+      
       if (isNaN(expiryTime.getTime()) || now >= expiryTime) {
         setLinkCode('');
         setLinkExpiry(null);
@@ -95,17 +201,17 @@ const Dashboard = () => {
         setTimeRemaining('');
         return;
       }
-
+      
       const diffMs = expiryTime - now;
       const diffMins = Math.floor(diffMs / 60000);
       const diffSecs = Math.floor((diffMs % 60000) / 1000);
-
+      
       setTimeRemaining(`${diffMins}:${diffSecs < 10 ? '0' : ''}${diffSecs}`);
     };
-
+    
     updateTimeRemaining();
     const interval = setInterval(updateTimeRemaining, 1000);
-
+    
     return () => clearInterval(interval);
   }, [linkExpiryDate]);
 
@@ -130,14 +236,14 @@ const Dashboard = () => {
       });
     }
   }, [user]);
-  
+
   // Check for active link code on load (only on mount, not on every user change)
   useEffect(() => {
     const checkActiveLinkCode = async () => {
       if (user && !user.linked) {
         try {
           // Try to get from the API
-          const response = await MinecraftService.getActiveLinkCode();
+        const response = await MinecraftService.getActiveLinkCode();
           if (response.linkCode) {
             setLinkCode(response.linkCode);
             // Optionally, calculate expiresIn if you want a timer
@@ -145,7 +251,7 @@ const Dashboard = () => {
             setMcUsername(user.mcUsername || '');
           }
           // Do NOT clear the code if not found; just leave as is
-        } catch (error) {
+      } catch (error) {
           // Do NOT clear the code here
         }
       }
@@ -162,45 +268,84 @@ const Dashboard = () => {
         try {
           console.log('Fetching player stats for:', user.mcUsername);
           
-          // Use real API call instead of mock data
-          const response = await MinecraftService.getPlayerStats(user.mcUsername);
-          console.log('API Response:', response.data);
-          
-          // Create a complete data object by merging API response with defaults for missing fields
-          const completeStats = {
-            // Default values for fields that might be missing
-            playtime: '0h',
-            lastSeen: 'Never',
-            balance: 0,
-            blocks_mined: 0,
-            mobs_killed: 0,
-            deaths: 0,
-            joinDate: formatDate(user.createdAt) || 'N/A',
-            achievements: 0,
-            level: 1,
-            experience: 0,
-            rank: 'Member',
-            group: 'default',
-            groups: ['default'],
-            world: 'world',
-            gamemode: 'SURVIVAL',
-            online: false,
+          // Use real API call instead of mock data - but handle 404 errors gracefully
+          try {
+            const response = await MinecraftService.getPlayerStats(user.mcUsername);
+            console.log('API Response:', response.data);
             
-            // Override with actual data from API
-            ...response.data,
+            // Create a complete data object by merging API response with defaults for missing fields
+            const completeStats = {
+              // Default values for fields that might be missing
+              playtime: '0h',
+              lastSeen: 'Never',
+              balance: 0,
+              blocks_mined: 0,
+              mobs_killed: 0,
+              deaths: 0,
+              joinDate: formatDate(user.createdAt) || 'N/A',
+              achievements: 0,
+              level: 1,
+              experience: 0,
+              rank: 'Member',
+              group: 'default',
+              groups: ['default'],
+              world: 'world',
+              gamemode: 'SURVIVAL',
+              online: false,
+              
+              // Override with actual data from API (Accessing the nested 'data' object)
+              ...response.data.data,
+              
+              // Ensure we have a valid value for experience percentage
+              experience: response.data.data.experience || 0
+            };
             
-            // Ensure we have a valid value for experience percentage
-            experience: response.data.experience || 0
-          };
-          
-          console.log('Using player stats:', completeStats);
-          setPlayerStats(completeStats);
-          setIsUpdatingStats(false);
-          
+            console.log('Using player stats:', completeStats);
+            setPlayerStats(completeStats);
+            setIsUpdatingStats(false);
+            
+            // After setPlayerStats(completeStats), add debug logging
+            if (completeStats) {
+              console.log('[DASHBOARD DEBUG] playerStats:', completeStats);
+              console.log('[DASHBOARD DEBUG] playtime:', completeStats.playtime);
+              console.log('[DASHBOARD DEBUG] lastSeen:', completeStats.lastSeen);
+              console.log('[DASHBOARD DEBUG] balance:', completeStats.balance);
+              console.log('[DASHBOARD DEBUG] blocks_mined:', completeStats.blocks_mined);
+              console.log('[DASHBOARD DEBUG] mobs_killed:', completeStats.mobs_killed);
+              console.log('[DASHBOARD DEBUG] deaths:', completeStats.deaths);
+              console.log('[DASHBOARD DEBUG] level:', completeStats.level);
+              console.log('[DASHBOARD DEBUG] experience:', completeStats.experience);
+              console.log('[DASHBOARD DEBUG] rank:', completeStats.rank);
+              // Add more fields as needed
+            }
+          } catch (apiError) {
+            console.error('Failed to fetch player stats from API:', apiError);
+            console.log('Falling back to basic user data for stats display');
+            
+            // Use basic user data for fallback
+            const fallbackStats = {
+              playtime: '0h',
+              lastSeen: new Date().toISOString(), // Use current time as last seen
+              balance: 0,
+              blocks_mined: 0,
+              mobs_killed: 0,
+              deaths: 0,
+              joinDate: formatDate(user.createdAt) || 'N/A',
+              achievements: 0,
+              level: 1,
+              experience: 0,
+              rank: user.role || 'Member',
+              group: 'default',
+              mcUsername: user.mcUsername,
+              mcUUID: user.mcUUID
+            };
+            setPlayerStats(fallbackStats);
+            setIsUpdatingStats(false);
+          }
         } catch (error) {
           console.error('Failed to fetch player stats:', error);
           // Use placeholder data if API fails
-          setPlayerStats({
+          const fallbackStats = {
             playtime: '0h',
             lastSeen: 'Never',
             balance: 0,
@@ -213,8 +358,20 @@ const Dashboard = () => {
             experience: 0,
             rank: 'Member',
             group: 'default'
-          });
+          };
+          setPlayerStats(fallbackStats);
           setIsUpdatingStats(false);
+          // --- Add debug logging for fallback stats ---
+          console.log('[DASHBOARD DEBUG] playerStats (fallback):', fallbackStats);
+          console.log('[DASHBOARD DEBUG] playtime:', fallbackStats.playtime);
+          console.log('[DASHBOARD DEBUG] lastSeen:', fallbackStats.lastSeen);
+          console.log('[DASHBOARD DEBUG] balance:', fallbackStats.balance);
+          console.log('[DASHBOARD DEBUG] blocks_mined:', fallbackStats.blocks_mined);
+          console.log('[DASHBOARD DEBUG] mobs_killed:', fallbackStats.mobs_killed);
+          console.log('[DASHBOARD DEBUG] deaths:', fallbackStats.deaths);
+          console.log('[DASHBOARD DEBUG] level:', fallbackStats.level);
+          console.log('[DASHBOARD DEBUG] experience:', fallbackStats.experience);
+          console.log('[DASHBOARD DEBUG] rank:', fallbackStats.rank);
         }
       }
     };
@@ -235,24 +392,35 @@ const Dashboard = () => {
         setOnlinePlayersError(null);
         try {
           // Fetch real server data
-          const serverData = await MinecraftAPI.getServerStatus('play.bizzynation.co.uk');
+          // Use MinecraftService instead of MinecraftAPI
+          const serverData = await MinecraftService.getServerStatus('play.bizzynation.co.uk');
           setServerStatus({
-            online: serverData.online,
-            playerCount: serverData.playerCount,
-            maxPlayers: serverData.maxPlayers
+            online: serverData?.online || false,
+            playerCount: serverData?.playerCount || 0,
+            maxPlayers: serverData?.maxPlayers || 0
           });
-
+          
           // Fetch real online players from API
-          const players = await MinecraftAPI.getOnlinePlayers('play.bizzynation.co.uk');
-          setOnlinePlayers(players);
+          // Use MinecraftService instead of MinecraftAPI
+          const players = await MinecraftService.getOnlinePlayers('play.bizzynation.co.uk');
+          setOnlinePlayers(players || []);
         } catch (error) {
+          console.error('Error fetching server data:', error);
           setOnlinePlayers([]);
           setOnlinePlayersError('Could not fetch online players.');
+          
+          // Set default server status on error
+          setServerStatus({
+            online: false,
+            playerCount: 0,
+            maxPlayers: 0
+          });
         } finally {
           setOnlinePlayersLoading(false);
         }
       }
     };
+    
     fetchServerData();
     let intervalId;
     if (activeTab === 'community') {
@@ -269,6 +437,12 @@ const Dashboard = () => {
   const handleGenerateLink = async (e) => {
     e.preventDefault();
     
+    // Clear any existing polling interval
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    
     if (!mcUsername) {
       setNotification({
         show: true,
@@ -282,22 +456,103 @@ const Dashboard = () => {
     console.log('Generating link code for:', mcUsername);
     
     try {
-      // Make the API call
+      // Make the API call with better error handling
       console.log('Calling linkAccount API...');
-      const response = await MinecraftService.linkAccount(mcUsername);
-      console.log('Link account API response:', response);
       setNotification({
         show: true,
-        type: 'success',
-        message: response.data.message
+        type: 'info',
+        message: 'Generating link code, please wait...'
       });
-      // Set link code from the generate endpoint response only; do NOT call getActiveLinkCode here
-      const code = response.data.linkCode || response.data.code || response.data.link_code;
-      setLinkCode(code);
-      setLinkExpiry(response.data.expiresIn);
-      const expiryDate = new Date(response.data.codeExpiry || response.data.expires);
-      setLinkExpiryDate(!isNaN(expiryDate.getTime()) ? expiryDate : null);
-      setMcUsername(response.data.mcUsername || mcUsername);
+      
+      const response = await MinecraftService.linkAccount(mcUsername);
+      console.log('Link account API response:', response);
+      
+      // Check if we received a valid response
+      if (response && (response.data.code || response.data.linkCode || response.data.data?.linkCode)) {
+        setNotification({
+          show: true,
+          type: 'success',
+          message: response.data.message || 'Link code generated successfully!'
+        });
+        
+        // Extract link code from various possible response structures
+        const code = response.data.code || 
+                    response.data.linkCode || 
+                    response.data.data?.linkCode || 
+                    response.data.link_code;
+                    
+        setLinkCode(code);
+        
+        // Handle expiry time in various formats
+        const expiryData = response.data.expires || 
+                          response.data.expiresAt || 
+                          response.data.data?.expiresAt || 
+                          response.data.codeExpiry;
+                          
+        setLinkExpiry(response.data.expiresIn);
+        
+        // Parse expiry date safely
+        let expiryDate;
+        if (expiryData) {
+          expiryDate = new Date(expiryData);
+          if (isNaN(expiryDate.getTime())) {
+            console.error('Invalid expiry date:', expiryData);
+            expiryDate = new Date(Date.now() + 15 * 60 * 1000); // Default 15 minutes
+          }
+        } else {
+          expiryDate = new Date(Date.now() + 15 * 60 * 1000); // Default 15 minutes
+        }
+        
+        setLinkExpiryDate(expiryDate);
+        setMcUsername(response.data.mcUsername || mcUsername);
+        
+        // Poll for account status every 10 seconds to check if the account has been linked
+        const pollInterval = setInterval(async () => {
+          try {
+            console.log(`[DASHBOARD] Polling for link status...`);
+            // Check if the account has been successfully linked - only use the profile endpoint
+            const profileData = await AuthService.getProfile(true);
+            const freshUserData = profileData.data || profileData;
+            
+            console.log(`[DASHBOARD] Poll result:`, freshUserData);
+            
+            // If linked status has changed to true, update the UI
+            if (freshUserData.linked) {
+              console.log(`[DASHBOARD] Account has been linked! Updating UI...`);
+              clearInterval(pollInterval);
+              pollIntervalRef.current = null;
+              
+              // Update the user profile in context
+              updateUserProfile(freshUserData);
+              
+              // Dispatch the minecraft_linked event to notify other components
+              const linkedEvent = new CustomEvent('minecraft_linked', { 
+                detail: { 
+                  mcUsername: freshUserData.mcUsername,
+                  mcUUID: freshUserData.mcUUID,
+                  userId: freshUserData._id 
+                } 
+              });
+              window.dispatchEvent(linkedEvent);
+              
+              // Show success notification
+              setNotification({
+                show: true,
+                type: 'success',
+                message: `Your Minecraft account (${freshUserData.mcUsername}) has been successfully linked!`
+              });
+              
+              // Don't make additional calls to player stats endpoints that might not exist
+              // Instead, wait for the next tab change to trigger the fetch naturally
+            }
+          } catch (error) {
+            console.error(`[DASHBOARD] Error polling for link status:`, error);
+          }
+        }, 10000); // Poll every 10 seconds
+        
+        // Store the interval ID in the ref
+        pollIntervalRef.current = pollInterval;
+      }
     } catch (error) {
       console.error('Link account error:', error);
       console.error('Error response:', error.response);
@@ -319,22 +574,31 @@ const Dashboard = () => {
           message: error.response.data.message || 'You already have an active link code'
         });
       } else {
-        setNotification({
-          show: true,
-          type: 'error',
+      setNotification({
+        show: true,
+        type: 'error',
           message: error.response?.data?.error || 'Failed to generate link code'
-        });
+      });
       }
     } finally {
       setLinkLoading(false);
     }
   };
   
+  // Clean up polling interval when component unmounts
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+  
   // Unlink account
   const handleUnlink = async () => {
     setShowUnlinkModal(true);
   };
-  
+    
   const confirmUnlink = async () => {
     setUnlinkLoading(true);
     try {
@@ -391,6 +655,292 @@ const Dashboard = () => {
       .finally(() => setRecentAchievementsLoading(false));
   }, [activeTab]);
   
+  // --- DEBUG: Log full user object and key fields on every render ---
+  useEffect(() => {
+    console.log('[DASHBOARD DEBUG] user from context:', user);
+    if (user) {
+      console.log('[DASHBOARD DEBUG] email:', user.email);
+      console.log('[DASHBOARD DEBUG] role:', user.role);
+      console.log('[DASHBOARD DEBUG] lastLogin:', user.lastLogin);
+      console.log('[DASHBOARD DEBUG] createdAt:', user.createdAt);
+      console.log('[DASHBOARD DEBUG] linked:', user.linked);
+      console.log('[DASHBOARD DEBUG] mcUsername:', user.mcUsername);
+      console.log('[DASHBOARD DEBUG] mcUUID:', user.mcUUID);
+    }
+  }, [user]);
+  
+  // Function to show celebration animation
+  const triggerCelebration = useCallback(() => {
+    setShowCelebration(true);
+  }, []);
+  
+  // Handler to close the celebration modal
+  const handleCloseCelebration = useCallback(() => {
+    setShowCelebration(false);
+  }, []);
+  
+  // Local implementation for refreshUserData
+  const refreshUserData = useCallback(async () => {
+    try {
+      console.log('[DASHBOARD] Manually refreshing user data...');
+      const profileRes = await AuthService.getProfile(true);
+      const freshData = profileRes.data || profileRes;
+      console.log('[DASHBOARD] Fresh user data received:', freshData);
+      
+      if (updateUserProfile) {
+        updateUserProfile(freshData);
+        return freshData;
+      }
+      return null;
+    } catch (error) {
+      console.error('[DASHBOARD] Error refreshing user data:', error);
+      return null;
+    }
+  }, [updateUserProfile]);
+  
+  // Listen for socket.io 'minecraft_linked' events - CRUCIAL FOR REAL-TIME UPDATES
+  useEffect(() => {
+    if (!socket || !user) return;
+    
+    console.log('[DASHBOARD] Setting up Socket.IO event listener for minecraft_linked');
+    
+    const handleLinkedEvent = async (data) => {
+      console.log('[DASHBOARD] 🎮 RECEIVED minecraft_linked event via Socket.IO:', data);
+      
+      // Verify this is for the current user
+      if (data.userId === user._id || data.userId === user.id) {
+        console.log('[DASHBOARD] Socket.IO account linking event is for current user!');
+        
+        // Update local state
+        if (data.mcUsername) {
+          setMcUsername(data.mcUsername);
+        }
+        
+        // Show celebration
+        triggerCelebration();
+        
+        // Play sound effect
+        try {
+          const audio = new Audio('/sounds/level-up.mp3');
+          audio.volume = 0.5;
+          audio.play().catch(e => console.log('[DASHBOARD] Audio play prevented by browser policy', e));
+        } catch (e) {
+          console.log('[DASHBOARD] Audio not supported', e);
+        }
+        
+        // Force refresh user data immediately
+        console.log('[DASHBOARD] Refreshing user data after Socket.IO minecraft_linked event');
+        await refreshUserData();
+        
+        // Show notification
+        setNotification({
+          show: true,
+          type: 'success',
+          message: `Your Minecraft account (${data.mcUsername}) has been successfully linked!`
+        });
+      }
+    };
+    
+    // Add real-time player stats update listener
+    const handlePlayerStatsUpdate = (data) => {
+      console.log('[DASHBOARD] 📊 RECEIVED player_stats_update event via Socket.IO:', data);
+      
+      // Verify this is for the current user
+      if (!data || !data.stats || !user) return;
+      
+      // Check if this update is for the current user
+      if (data.username === user.mcUsername || 
+          data.userId === user._id || 
+          data.userId === user.id ||
+          data.uuid === user.mcUUID) {
+        
+        console.log('[DASHBOARD] Received updated player stats for current user');
+        
+        // Save previous stats for comparison
+        const prevStats = {...playerStats};
+        
+        // Update stats with new data
+        setPlayerStats(currentStats => {
+          // Create a merged version of the stats
+          const newStats = {
+            ...currentStats,
+            ...data.stats
+          };
+          return newStats;
+        });
+        
+        // Show a subtle notification for significant stat changes
+        if (prevStats && data.stats) {
+          // Check for significant changes
+          if (data.stats.balance && prevStats.balance && data.stats.balance > prevStats.balance) {
+            showStatChangeNotification('balance', prevStats.balance, data.stats.balance);
+          } else if (data.stats.level && prevStats.level && data.stats.level > prevStats.level) {
+            showStatChangeNotification('level', prevStats.level, data.stats.level, '/sounds/level-up.mp3');
+          } else if (data.stats.achievements && prevStats.achievements && data.stats.achievements > prevStats.achievements) {
+            showStatChangeNotification('achievement', prevStats.achievements, data.stats.achievements, '/sounds/achievement.mp3');
+          }
+        }
+      }
+    };
+
+    // Add direct socket listener for minecraft_linked events
+    socket.on('minecraft_linked', handleLinkedEvent);
+    
+    // Add listener for player stats updates
+    socket.on('player_stats_update', handlePlayerStatsUpdate);
+    
+    // Also listen for broadcast events
+    socket.on('broadcast:minecraft_linked', (data) => {
+      console.log('[DASHBOARD] Received broadcast:minecraft_linked event:', data);
+      if (data.userId === user._id || data.userId === user.id) {
+        console.log('[DASHBOARD] Broadcast event is for this user, handling it');
+        handleLinkedEvent(data);
+      }
+    });
+    
+    // Listen for broadcast stats updates
+    socket.on('broadcast:player_stats_update', handlePlayerStatsUpdate);
+    
+    return () => {
+      // Clean up listeners
+      socket.off('minecraft_linked', handleLinkedEvent);
+      socket.off('broadcast:minecraft_linked');
+      socket.off('player_stats_update', handlePlayerStatsUpdate);
+      socket.off('broadcast:player_stats_update');
+      console.log('[DASHBOARD] Cleaned up socket listeners for real-time events');
+    };
+  }, [socket, user, refreshUserData, triggerCelebration, playerStats]);
+  
+  // Listen for window minecraft_linked events (from socket.io or other components)
+  useEffect(() => {
+    const handleMinecraftLinked = async (event) => {
+      console.log('[DASHBOARD] Minecraft account linked window event received:', event.detail);
+      
+      // Skip if we don't have event detail or it's not for current user
+      if (!event.detail || !user || (event.detail.userId !== user._id && event.detail.userId !== user.id)) {
+        return;
+      }
+      
+      // Show notification
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Your Minecraft account has been successfully linked!`
+      });
+      
+      // Show celebration
+      triggerCelebration();
+      
+      // Refresh data
+      await refreshUserData();
+    };
+
+    // Add event listener
+    window.addEventListener('minecraft_linked', handleMinecraftLinked);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('minecraft_linked', handleMinecraftLinked);
+    };
+  }, [refreshUserData, triggerCelebration, user]);
+  
+  // Stats periodic polling mechanism - for when WebSockets might be unreliable
+  useEffect(() => {
+    if (user?.linked && user?.mcUsername && activeTab === 'account' && realTimeMode) {
+      // Set up polling interval to refresh stats every 30 seconds when in real-time mode
+      const interval = setInterval(async () => {
+        try {
+          console.log('[DASHBOARD] Polling for player stats updates...');
+          const response = await MinecraftService.getPlayerStats(user.mcUsername);
+          
+          if (response.data && response.data.data) {
+            // Save previous stats for comparison
+            const prevStats = {...playerStats};
+            
+            // Update player stats
+            setPlayerStats(currentStats => {
+              const newStats = {
+                ...currentStats,
+                ...response.data.data
+              };
+              return newStats;
+            });
+            
+            // Update last refresh time
+            setLastStatsUpdate(new Date());
+            
+            // Check for significant changes
+            if (prevStats && response.data.data) {
+              if (response.data.data.balance && prevStats.balance && response.data.data.balance > prevStats.balance) {
+                showStatChangeNotification('balance', prevStats.balance, response.data.data.balance);
+              } else if (response.data.data.level && prevStats.level && response.data.data.level > prevStats.level) {
+                showStatChangeNotification('level', prevStats.level, response.data.data.level, '/sounds/level-up.mp3');
+              } else if (response.data.data.achievements && prevStats.achievements && response.data.data.achievements > prevStats.achievements) {
+                showStatChangeNotification('achievement', prevStats.achievements, response.data.data.achievements, '/sounds/achievement.mp3');
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[DASHBOARD] Error polling for player stats:', error);
+        }
+      }, 30000); // Poll every 30 seconds
+      
+      setStatsRefreshInterval(interval);
+      
+      return () => {
+        if (interval) {
+          clearInterval(interval);
+        }
+      };
+    } else if (statsRefreshInterval) {
+      // Clear interval if conditions are no longer met
+      clearInterval(statsRefreshInterval);
+      setStatsRefreshInterval(null);
+    }
+  }, [user, activeTab, realTimeMode, playerStats]);
+
+  // Manual refresh stats function
+  const handleManualRefresh = async () => {
+    if (!user?.linked || !user?.mcUsername) return;
+    
+    try {
+      setIsUpdatingStats(true);
+      const response = await MinecraftService.getPlayerStats(user.mcUsername);
+      
+      if (response.data && response.data.data) {
+        setPlayerStats(response.data.data);
+        setLastStatsUpdate(new Date());
+        
+        setNotification({
+          show: true,
+          type: 'success',
+          message: 'Statistics refreshed successfully!'
+        });
+      }
+    } catch (error) {
+      console.error('[DASHBOARD] Error manually refreshing stats:', error);
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to refresh statistics'
+      });
+    } finally {
+      setIsUpdatingStats(false);
+    }
+  };
+  
+  // Toggle real-time mode function
+  const toggleRealTimeMode = () => {
+    const newMode = !realTimeMode;
+    setRealTimeMode(newMode);
+    
+    setNotification({
+      show: true,
+      type: 'info',
+      message: newMode ? 'Real-time updates enabled' : 'Real-time updates disabled'
+    });
+  };
+  
   if (!user) {
     return <LoadingSpinner fullScreen />;
   }
@@ -417,12 +967,12 @@ const Dashboard = () => {
                   `Server Online: ${serverStatus.playerCount}/${serverStatus.maxPlayers} players` : 
                   'Server Offline'}
               </span>
-            </div>
+          </div>
             
             <div className="bg-white/10 rounded-full px-4 py-1 text-sm flex items-center">
               <BellIcon className="h-4 w-4 mr-2" />
               <span>3 notifications</span>
-          </div>
+        </div>
         </div>
         </motion.div>
         
@@ -468,7 +1018,7 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* User Profile Card */}
                     <motion.div
-                      className="habbo-card p-6 rounded-habbo"
+                      className="habbo-card p-6 rounded-habbo dashboard-profile-card"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.5 }}
@@ -634,7 +1184,7 @@ const Dashboard = () => {
                                 Online Now
                               </span>
                             ) : (
-                              `Last seen: ${playerStats.lastSeen}`
+                              `Last seen: ${formatTimestamp(playerStats.lastSeen)}`
                             )}
                           </span>
                         </div>
@@ -742,63 +1292,58 @@ const Dashboard = () => {
 
             {/* Quick Actions Card */}
                   <motion.div
-                    className="habbo-card p-6 rounded-habbo"
+                    className="habbo-card p-6 rounded-habbo dashboard-quick-actions quick-actions-grid"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
             >
               <h2 className="text-xl font-bold text-white mb-4">Quick Actions</h2>
-              
               <div className="grid grid-cols-2 gap-4">
-                      <QuickActionButton 
-                  icon={<MapIcon className="h-6 w-6" />}
-                  title="Server Map"
-                  description="View the live map"
-                  path="/map"
-                  color="bg-gradient-to-br from-minecraft-habbo-blue to-blue-700"
-                      />
-                      
-                      <QuickActionButton 
-                  icon={<ShoppingBagIcon className="h-6 w-6" />}
-                  title="Shop"
-                  description="Buy items & ranks"
-                  path="/shop"
-                  color="bg-gradient-to-br from-minecraft-habbo-purple to-purple-800"
-                      />
-                      
-                      <QuickActionButton 
-                  icon={<GlobeIcon className="h-6 w-6" />}
-                  title="Forums"
-                  description="Join discussions"
-                  path="https://forums.bizzynation.com"
-                  external
-                  color="bg-gradient-to-br from-minecraft-habbo-red to-red-800"
-                      />
-                      
-                      <QuickActionButton 
-                  icon={<StarIcon className="h-6 w-6" />}
-                  title="Vote"
-                  description="Get daily rewards"
-                  path="https://bizzynation.com/vote"
-                  external
-                  color="bg-gradient-to-br from-minecraft-habbo-yellow to-amber-700"
-                      />
-                    </div>
-              
-              <div className="mt-6">
-                <Changelog showLatestByDefault={false} />
-                </div>
+                <QuickActionButton icon={<ShoppingBagIcon className="h-6 w-6" />} title="Shop" description="Buy items & perks" path="/shop" color="bg-minecraft-habbo-yellow" data-title="Shop" />
+                <QuickActionButton icon={<GiftIcon className="h-6 w-6" />} title="Vote" description="Vote for rewards" path="/vote" color="bg-minecraft-habbo-blue" data-title="Vote" />
+                <QuickActionButton icon={<ChartBarIcon className="h-6 w-6" />} title="Leaderboard" description="Top players" path="/leaderboard" color="bg-minecraft-habbo-purple" data-title="Leaderboard" />
+                <QuickActionButton icon={<MapIcon className="h-6 w-6" />} title="Server Map" description="Explore the world" path="/map" color="bg-minecraft-habbo-green" data-title="Server Map" />
+              </div>
             </motion.div>
 
             {/* Player Stats Card - Only visible when user has linked account */}
             {user.linked && playerStats && (
                   <motion.div
-                className="habbo-card p-6 rounded-habbo lg:col-span-3"
+                className="habbo-card p-6 rounded-habbo player-statistics-section lg:col-span-3"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
               >
-                <h2 className="text-xl font-bold text-white mb-6">Player Statistics</h2>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-white">Player Statistics</h2>
+                  <div className="flex items-center gap-3">
+                    {lastStatsUpdate && (
+                      <span className="text-xs text-gray-400">
+                        Updated: {formatTimestamp(lastStatsUpdate)}
+                      </span>
+                    )}
+                    <div className="flex items-center">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer"
+                          checked={realTimeMode}
+                          onChange={toggleRealTimeMode}
+                        />
+                        <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-minecraft-habbo-blue"></div>
+                        <span className="ms-2 text-xs text-white">Real-time</span>
+                      </label>
+                    </div>
+                    <button 
+                      onClick={handleManualRefresh} 
+                      className="text-gray-400 hover:text-white p-1"
+                      disabled={isUpdatingStats}
+                      title="Refresh stats"
+                    >
+                      <ArrowPathIcon className={`h-4 w-4 ${isUpdatingStats ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                   <StatCard 
@@ -809,12 +1354,13 @@ const Dashboard = () => {
                   <StatCard 
                     icon={<CalendarIcon className="h-5 w-5 text-minecraft-habbo-blue" />}
                     label="Last Seen"
-                    value={playerStats.lastSeen}
+                    value={formatTimestamp(playerStats.lastSeen)}
                   />
                   <StatCard 
                     icon={<CurrencyDollarIcon className="h-5 w-5 text-minecraft-habbo-yellow" />}
                     label="Balance"
                     value={`$${playerStats.balance}`}
+                    highlightColor="text-minecraft-habbo-yellow"
                   />
                   <StatCard 
                     icon={<CubeIcon className="h-5 w-5 text-minecraft-habbo-blue" />}
@@ -825,6 +1371,7 @@ const Dashboard = () => {
                     icon={<SwordIcon className="h-5 w-5 text-minecraft-habbo-red" />}
                     label="Mobs Killed"
                     value={playerStats.mobs_killed.toLocaleString()}
+                    highlightColor="text-minecraft-habbo-red"
                   />
                   <StatCard 
                     icon={<SkullIcon className="h-5 w-5 text-gray-400" />}
@@ -851,11 +1398,13 @@ const Dashboard = () => {
                       icon={<UserIcon className="h-5 w-5 text-minecraft-habbo-yellow" />}
                       label="Rank"
                       value={playerStats.rank || "Member"}
+                      highlightColor="text-minecraft-habbo-yellow"
                     />
                     <StatCard 
                       icon={<UserIcon className="h-5 w-5 text-minecraft-habbo-purple" />}
                       label="Permission Group"
                       value={playerStats.group || "default"}
+                      highlightColor="text-minecraft-habbo-purple"
                     />
                   </div>
                 </div>
@@ -869,10 +1418,13 @@ const Dashboard = () => {
                   </div>
                   
                   <div className="habbo-progress-bar">
-                    <div style={{ width: `${(playerStats.achievements / 30) * 100}%` }}></div>
+                    <div 
+                      className="transition-all duration-1000"
+                      style={{ width: `${(playerStats.achievements / 30) * 100}%` }}
+                    ></div>
                   </div>
-                    </div>
-                  </motion.div>
+                </div>
+              </motion.div>
             )}
           </div>
         )}
@@ -881,10 +1433,10 @@ const Dashboard = () => {
         {activeTab === 'community' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Online Players */}
-            <motion.div
+                  <motion.div
               className="habbo-card p-6 rounded-habbo md:col-span-2"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
               <h2 className="text-xl font-bold text-white mb-4">Online Players</h2>
@@ -926,11 +1478,11 @@ const Dashboard = () => {
                             }`}>
                               {player.rank || 'Player'}
                             </span>
-                          </div>
+                      </div>
                           <span className="text-sm text-gray-400">
                             {player.playTime || ''}
                           </span>
-                        </div>
+                    </div>
                       </div>
                     </div>
                   ))}
@@ -1063,31 +1615,31 @@ const Dashboard = () => {
                 </div>
               )}
             </motion.div>
-            <motion.div
-              className="habbo-card p-6 rounded-habbo"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
+                  <motion.div
+                    className="habbo-card p-6 rounded-habbo"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.1 }}
+                  >
               <h2 className="text-xl font-bold text-white mb-4">Server Statistics</h2>
               {serverStatsLoading ? (
                 <div className="text-center py-4 text-gray-400">Loading server stats...</div>
               ) : serverStatsError ? (
                 <div className="text-center py-4 text-red-400">{serverStatsError}</div>
               ) : serverStats ? (
-                <div className="space-y-4">
+                    <div className="space-y-4">
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-400">Players Online</span>
                       <span className="text-minecraft-habbo-blue">{serverStats.playerCount}/{serverStats.maxPlayers}</span>
-                    </div>
-                  </div>
+                      </div>
+                      </div>
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-400">Server Version</span>
                       <span className="text-minecraft-habbo-blue">{serverStats.version || 'N/A'}</span>
-                    </div>
-                  </div>
+                      </div>
+                      </div>
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-400">MOTD</span>
@@ -1096,7 +1648,7 @@ const Dashboard = () => {
                   </div>
                 </div>
               ) : null}
-            </motion.div>
+                  </motion.div>
             <motion.div
               className="habbo-card p-6 rounded-habbo"
               initial={{ opacity: 0, y: 20 }}
@@ -1116,7 +1668,7 @@ const Dashboard = () => {
                         <div className="flex justify-between">
                           <span className="font-medium">{item.username || item.player}</span>
                           <span className="text-xs text-gray-400">{item.achievement_time || item.time || ''}</span>
-                        </div>
+                </div>
                         <p className="text-sm text-minecraft-habbo-yellow">
                           Unlocked: {item.achievement || item.achievement_name || ''}
                         </p>
@@ -1126,8 +1678,8 @@ const Dashboard = () => {
                 </div>
               )}
             </motion.div>
-          </div>
-        )}
+              </div>
+            )}
             
         {/* News & Events Tab */}
         {activeTab === 'news' && (
@@ -1246,12 +1798,31 @@ const Dashboard = () => {
               onClose={() => setNotification({ ...notification, show: false })}
             />
             <UnlinkModal isOpen={showUnlinkModal} onClose={() => setShowUnlinkModal(false)} onConfirm={confirmUnlink} loading={unlinkLoading} />
+            
+            {/* Show celebration modal when account is linked */}
+            {showCelebration && (
+              <VerificationCelebration 
+                show={showCelebration} 
+                username={user?.username}
+                mcUsername={user?.mcUsername || user?.minecraft?.mcUsername} 
+                onClose={handleCloseCelebration}
+                onStartTour={startGuidedTour}
+              />
+            )}
+            
+            {/* Show guided tour when active */}
+            {tourActive && (
+              <GuidedTour 
+                isOpen={tourActive} 
+                onClose={endTour} 
+              />
+            )}
     </div>
   );
 };
 
 // Quick Action Button component
-const QuickActionButton = ({ icon, title, description, path, color, external = false }) => {
+const QuickActionButton = ({ icon, title, description, path, color, external = false, dataTitle }) => {
   if (external) {
   return (
     <a 
@@ -1259,6 +1830,7 @@ const QuickActionButton = ({ icon, title, description, path, color, external = f
         target="_blank"
         rel="noopener noreferrer"
         className={`block p-4 rounded-habbo transition-all duration-200 hover:-translate-y-1 ${color}`}
+        data-title={dataTitle}
       >
         <div className="flex flex-col items-center text-center">
           <div className="mb-2">{icon}</div>
@@ -1273,6 +1845,7 @@ const QuickActionButton = ({ icon, title, description, path, color, external = f
     <Link 
       to={path}
       className={`block p-4 rounded-habbo transition-all duration-200 hover:-translate-y-1 ${color}`}
+      data-title={dataTitle}
     >
       <div className="flex flex-col items-center text-center">
         <div className="mb-2">{icon}</div>
@@ -1283,16 +1856,7 @@ const QuickActionButton = ({ icon, title, description, path, color, external = f
   );
 };
 
-// Stat Card component
-const StatCard = ({ icon, label, value }) => (
-  <div className="bg-white/5 p-3 rounded-habbo text-center">
-    <div className="flex items-center justify-center mb-2">
-      {icon}
-    </div>
-    <p className="text-xs text-gray-400 mb-1">{label}</p>
-    <p className="text-lg font-bold">{value}</p>
-  </div>
-);
+// StatCard is now imported from '../components/StatCard'
 
 // Quick Link component
 const QuickLink = ({ icon, label }) => (
@@ -1359,18 +1923,7 @@ const PollOption = ({ id, label, votes }) => (
 );
 
 
-// Custom icons
-const SwordIcon = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-  </svg>
-);
-
-const SkullIcon = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-  </svg>
-);
+// Custom icons now imported from ../utils/CustomIcons
 
 // UnlinkModal component
 const UnlinkModal = ({ isOpen, onClose, onConfirm, loading }) => {
