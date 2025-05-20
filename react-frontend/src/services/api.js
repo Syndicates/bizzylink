@@ -913,25 +913,23 @@ export const MinecraftService = {
     return {};
   }),
   
+  /**
+   * Get leaderboard data from the unified backend API (migrated from legacy server)
+   * Follows BizzyLink RULES.md: no mock data, single backend, robust error handling
+   */
   getLeaderboard: (category, timeFrame = 'all', limit = 10, skipCache = false) => {
     console.log(`API: Getting leaderboard for ${category}, timeFrame=${timeFrame}, limit=${limit}`);
-    
-    // Create a special axios instance for the leaderboard server
-    const leaderboardApi = axios.create({
-      baseURL: 'http://localhost:8083', // Connect to our simple leaderboard server
-      timeout: 10000
-    });
-    
-    return leaderboardApi.get(`/api/leaderboard/${category}?timeFrame=${timeFrame}&limit=${limit}`, {
+    // Use the main API instance and unified backend
+    return api.get(`/api/leaderboard/${category}?timeFrame=${timeFrame}&limit=${limit}`, {
       // Use long cache for leaderboards (5 minutes)
       maxRetries: 5,
       retryDelay: 1000,
       cacheTTL: 5 * 60 * 1000, // 5 minutes cache
       skipCache: skipCache, // Add skipCache parameter
-      withCredentials: false // Disable credentials for leaderboard requests
+      withCredentials: true // Use credentials for unified backend
     })
     .then(response => {
-      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`, 
+      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`,
         response.data?.data?.players?.length || 0, 'players');
       return response;
     })
