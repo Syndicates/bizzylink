@@ -104,6 +104,7 @@ const profileRoutes = require('./routes/profile');
 const friendsRoutes = require('./routes/friends');
 const followingRoutes = require('./routes/following');
 const notificationsRoutes = require('./routes/notifications');
+const leaderboardRoutes = require('./routes/leaderboard');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -116,6 +117,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/friends', friendsRoutes);
 app.use('/api/following', followingRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 
 // Internal endpoint to emit player_unlinked to plugin-mc (for use by other services)
 app.post('/api/internal/emit-unlink', (req, res) => {
