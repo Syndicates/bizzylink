@@ -166,7 +166,6 @@ const ForumSystem = ({
   const fetchCategories = () => {
     setIsLoading(true);
     console.log('Fetching forum categories from API...');
-    
     // Fetch from API with proper error handling
     api.get('/api/forum/categories')
       .then(response => {
@@ -187,114 +186,19 @@ const ForumSystem = ({
               date: category.updatedAt || category.createdAt
             } : null
           }));
-          console.log('API returned categories:', formattedCategories.length);
-          // Only update if we actually got categories
-          if (formattedCategories.length > 0) {
-            setCategories(formattedCategories);
-            setIsLoading(false);
-            return; // Exit early if we got categories
-          }
+          setCategories(formattedCategories);
+          setIsLoading(false);
+        } else {
+          // No categories found, show error (no mock data per RULES.md)
+          setError('No forum categories found. Please contact an administrator.');
+          setCategories([]);
+          setIsLoading(false);
         }
-        
-        // If we reach here, we didn't get any categories, try the direct endpoint
-        console.log('No categories found, trying direct endpoint...');
-        fetchCategoriesDirect();
       })
       .catch(error => {
         console.error('Error fetching forum categories from API:', error);
-        // Try the direct endpoint as a fallback
-        fetchCategoriesDirect();
-      });
-  };
-  
-  // Direct endpoint fallback for fetching categories
-  const fetchCategoriesDirect = () => {
-    console.log('Trying direct categories endpoint...');
-    
-    api.get('/api/direct-forum-categories')
-      .then(response => {
-        console.log('Direct categories API response:', response.data);
-        if (Array.isArray(response.data) && response.data.length > 0) {
-          // Map the response data to the expected format
-          const formattedCategories = response.data.map(category => ({
-            id: category._id,
-            name: category.name,
-            description: category.description,
-            threadCount: category.threadCount || 0,
-            postCount: category.postCount || 0,
-            order: category.order || 0,
-            lastUpdate: category.createdAt,
-            lastPost: category.lastThread ? {
-              title: 'Latest thread',
-              author: 'Member',
-              date: category.updatedAt || category.createdAt
-            } : null
-          }));
-          console.log('Direct API returned categories:', formattedCategories.length);
-          setCategories(formattedCategories);
-        } else {
-          // If still no categories, use hardcoded defaults
-          setCategories([
-            {
-              id: 'announcement',
-              name: 'Announcements',
-              description: 'Important server announcements',
-              threadCount: 3,
-              postCount: 15,
-              order: 1
-            },
-            {
-              id: 'general',
-              name: 'General Discussion',
-              description: 'Talk about anything Minecraft related',
-              threadCount: 12,
-              postCount: 87,
-              order: 2
-            },
-            {
-              id: 'help',
-              name: 'Help & Support',
-              description: 'Ask for help with any issues',
-              threadCount: 8,
-              postCount: 42,
-              order: 3
-            }
-          ]);
-          console.log('Using hardcoded default categories');
-        }
-      })
-      .catch(error => {
-        console.error('Error fetching from direct categories endpoint:', error);
-        // Use hardcoded defaults as last resort
-        setCategories([
-          {
-            id: 'announcement',
-            name: 'Announcements',
-            description: 'Important server announcements',
-            threadCount: 3,
-            postCount: 15,
-            order: 1
-          },
-          {
-            id: 'general',
-            name: 'General Discussion',
-            description: 'Talk about anything Minecraft related',
-            threadCount: 12,
-            postCount: 87,
-            order: 2
-          },
-          {
-            id: 'help',
-            name: 'Help & Support',
-            description: 'Ask for help with any issues',
-            threadCount: 8,
-            postCount: 42,
-            order: 3
-          }
-        ]);
-        console.log('Using hardcoded default categories');
-      })
-      .finally(() => {
+        setError('Error loading forum categories. Please try again later.');
+        setCategories([]);
         setIsLoading(false);
       });
   };
