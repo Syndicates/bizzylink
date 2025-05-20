@@ -14,7 +14,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useWebSocket } from '../contexts/WebSocketContext';
 import { useEventSource } from '../contexts/EventSourceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { MinecraftService } from '../services/api';
@@ -37,14 +36,12 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
   } = options;
   
   const { user } = useAuth();
-  const { isConnected: wsConnected, addEventListener: addWsListener, requestStatsUpdate } = useWebSocket();
-  const { addEventListener: addEventListener } = useEventSource();
+  const { addEventListener } = useEventSource();
   
-  const [stats, setStats] = useState(initialStats);
+  const [stats, setStats] = useState(initialStats || {});
   const [loading, setLoading] = useState(initialStats === null);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [isPolling, setIsPolling] = useState(false);
   const intervalRef = useRef(null);
   const abortControllerRef = useRef(null);
   
@@ -56,6 +53,24 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
   const getCacheKey = useCallback(() => {
     return mcUsername || 'default';
   }, [mcUsername]);
+  
+  // Patch setStats to log updates
+  const setStatsWithLog = (val) => {
+    console.log('[useRealTimeStats] setStats called:', val);
+    setStats(val);
+  };
+  
+  // Patch setLoading to log updates
+  const setLoadingWithLog = (val) => {
+    console.log('[useRealTimeStats] setLoading called:', val);
+    setLoading(val);
+  };
+  
+  // Patch setError to log updates
+  const setErrorWithLog = (val) => {
+    console.log('[useRealTimeStats] setError called:', val);
+    setError(val);
+  };
   
   // Update stats with validation and animation flags
   const updateStats = useCallback((newStats) => {
@@ -186,7 +201,10 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
       // Use cached data
       const cachedData = getCachedData();
       console.log('[useRealTimeStats] Using cached data for', mcUsername);
-      setStats(cachedData);
+      setStats(prevStats => ({
+        ...((typeof prevStats === 'object' && prevStats !== null) ? prevStats : {}),
+        ...cachedData
+      }));
       setLastUpdated(new Date(STATS_CACHE.timestamp[getCacheKey()]));
       setLoading(false);
       return;
@@ -205,9 +223,20 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     MinecraftService.getPlayerStats(mcUsername, false, { signal })
       .then(response => {
         if (signal.aborted) return;
-        
         const responseData = response.data;
-        updateStats(responseData);
+        setStats(prevStats => {
+          const newData = responseData && responseData.data ? responseData.data : responseData;
+          const merged = { ...prevStats };
+          for (const key in newData) {
+            if (
+              typeof newData[key] !== 'undefined' &&
+              newData[key] !== prevStats[key]
+            ) {
+              merged[key] = newData[key];
+            }
+          }
+          return merged;
+        });
         setLoading(false);
       })
       .catch(err => {
@@ -228,55 +257,42 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     };
   }, [user, initialStats, isLinked, mcUsername, updateStats, cacheData, isCacheValid, getCachedData, getCacheKey]);
   
-  // Handle WebSocket events
-  useEffect(() => {
-    if (!wsConnected || !mcUsername) return;
-    
-    // Register listener for stats updates
-    const removeListener = addWsListener('stats_update', (data) => {
-      if (data && data.type === 'player_stats_update' && data.data) {
-        console.log('[useRealTimeStats] WebSocket stats update for', mcUsername);
-        
-        // Only update if this is for the player we're tracking
-        if (!data.player || data.player === mcUsername) {
-          updateStats(data.data);
-        }
-      }
-    });
-    
-    // Also listen for general notifications
-    const removeNotificationListener = addWsListener('notification', (data) => {
-      if (data && data.type === 'player_stats_update' && data.data) {
-        console.log('[useRealTimeStats] WebSocket notification update for', mcUsername);
-        
-        // Only update if this is for the player we're tracking
-        if (!data.player || data.player === mcUsername) {
-          updateStats(data.data);
-        }
-      }
-    });
-    
-    // Request initial stats via WebSocket
-    requestStatsUpdate(mcUsername);
-    
-    return () => {
-      removeListener();
-      removeNotificationListener();
-    };
-  }, [wsConnected, mcUsername, addWsListener, requestStatsUpdate, updateStats]);
-  
   // Handle SSE events (as backup)
   useEffect(() => {
     if (!mcUsername) return;
     
     // Register SSE listener for player stats
-    const removeSseListener = addEventListener('player_stats_update', (data) => {
+    const removeSseListener = addEventListener('player_stat_update', (data) => {
       try {
-        console.log('[useRealTimeStats] SSE stats update for', mcUsername);
-        
-        // Only update if this is for the player we're tracking
-        if (data && data.data && (!data.player || data.player === mcUsername)) {
-          updateStats(data.data);
+        console.log('[useRealTimeStats] SSE stats update for', mcUsername, 'event:', data);
+
+        // Accept both flat and nested event structures
+        const eventData = data.data || data;
+        const eventPlayer = data.player || data.mcUsername;
+
+        console.log('[SSE HANDLER DEBUG]', { eventData, eventPlayer, mcUsername });
+
+        if (eventData && (!eventPlayer || eventPlayer === mcUsername)) {
+          const { statType, value } = eventData;
+          if (statType && typeof value !== 'undefined') {
+            setStats(prevStats => {
+              const newStats = {
+                ...((typeof prevStats === 'object' && prevStats !== null) ? prevStats : {}),
+                [statType]: value
+              };
+              console.log('[useRealTimeStats] setStats called, new stats:', newStats);
+              return newStats;
+            });
+            setLoading(false);
+          } else if (typeof eventData === 'object') {
+            setStats(prevStats => ({
+              ...((typeof prevStats === 'object' && prevStats !== null) ? prevStats : {}),
+              ...eventData
+            }));
+            setLoading(false);
+          }
+        } else {
+          console.log('[useRealTimeStats] Ignored event for player:', eventPlayer, 'expected:', mcUsername);
         }
       } catch (err) {
         console.error('[useRealTimeStats] Error processing SSE update:', err);
@@ -304,28 +320,8 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     
     try {
       // First try WebSocket if available
-      if (wsConnected) {
-        requestStatsUpdate(mcUsername);
-        // Set loading to false after a reasonable timeout in case WS doesn't respond
-        setTimeout(() => {
-          if (loading) {
-            setLoading(false);
-          }
-        }, 2000);
-      } else {
-        // Fall back to REST API
-        // Create a new AbortController for this request
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-        }
-        abortControllerRef.current = new AbortController();
-        
-        const response = await MinecraftService.getPlayerStats(mcUsername, false, { 
-          signal: abortControllerRef.current.signal 
-        });
-        updateStats(response.data);
-        setLoading(false);
-      }
+      // Remove all WebSocket logic, only use EventSource for real-time updates
+      // ... existing code ...
     } catch (err) {
       // Ignore aborted requests
       if (err.name === 'AbortError') return;
@@ -334,7 +330,7 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
       setError(err.message || 'Failed to refresh player stats');
       setLoading(false);
     }
-  }, [isLinked, mcUsername, wsConnected, loading, requestStatsUpdate, updateStats]);
+  }, [isLinked, mcUsername, loading, updateStats]);
   
   // Check if we're on a profile page
   const isProfilePage = typeof window !== 'undefined' && window.location.pathname.includes('/profile');
@@ -349,40 +345,25 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     }
     
     // Skip if polling is disabled, WebSockets are connected, or we're on a profile page
-    if (disablePolling || wsConnected || !isLinked || !mcUsername || isProfilePage) {
-      setIsPolling(false);
+    if (disablePolling || !isLinked || !mcUsername || isProfilePage) {
       return;
     }
     
-    // If we're already polling, don't start another interval
-    if (isPolling) {
-      return;
-    }
-    
-    console.log('[useRealTimeStats] Starting polling interval for', mcUsername, ':', pollInterval, 'ms');
-    setIsPolling(true);
-    
+    // Start polling
     intervalRef.current = setInterval(() => {
-      // Check if we still need fresh data
       if (cacheData && isCacheValid()) {
-        console.log('[useRealTimeStats] Skipping poll for', mcUsername, ', cache is fresh');
         return;
       }
-      
-      console.log('[useRealTimeStats] Polling for updates for', mcUsername);
       refreshStats();
     }, pollInterval);
     
     return () => {
       if (intervalRef.current) {
-        console.log('[useRealTimeStats] Clearing polling interval for', mcUsername);
         clearInterval(intervalRef.current);
         intervalRef.current = null;
-        setIsPolling(false);
       }
     };
-  }, [wsConnected, isLinked, mcUsername, refreshStats, disablePolling, 
-      pollInterval, isPolling, cacheData, isCacheValid, isProfilePage]);
+  }, [isLinked, mcUsername, refreshStats, disablePolling, pollInterval, cacheData, isCacheValid, isProfilePage]);
   
   // Clean up on unmount
   useEffect(() => {
@@ -399,24 +380,29 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     };
   }, []);
   
+  // Debug: Log stats state whenever it changes
+  useEffect(() => {
+    console.log('[useRealTimeStats] stats state changed:', stats);
+  }, [stats]);
+  
+  // Always return a normalized stats object (flat, not wrapped in {success, data})
+  const normalizedStats = stats && stats.data ? stats.data : (stats || {});
+
   return {
-    stats,
+    stats: normalizedStats,
     loading,
     error,
     lastUpdated,
     refreshStats,
-    
     // Helper function to clear animation flags
     clearAnimations: useCallback(() => {
       if (!stats) return;
-      
       const cleanStats = { ...stats };
       Object.keys(cleanStats).forEach(key => {
         if (key.endsWith('_changed') || key.endsWith('_old') || key.endsWith('_increased')) {
           delete cleanStats[key];
         }
       });
-      
       setStats(cleanStats);
     }, [stats])
   };
