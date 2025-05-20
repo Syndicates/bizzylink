@@ -94,11 +94,8 @@ const apiCache = {
  * @returns {string} The base URL for API connections
  */
 const getBaseUrl = () => {
-  // For production, use the deployed API URL
-  // For development, use the local API URL
-  return process.env.NODE_ENV === 'production'
-    ? process.env.REACT_APP_API_URL || window.location.origin
-    : 'http://localhost:8080';  // Use port 8080 for development
+  // Always use the main backend server
+  return 'http://localhost:8080';
 };
 
 /**
@@ -107,23 +104,8 @@ const getBaseUrl = () => {
  * @returns {string} The base URL for the specific endpoint
  */
 const getEndpointUrl = (endpoint) => {
-  // Use our direct auth server for all auth-related endpoints
-  if (endpoint.includes('/api/login') || 
-      endpoint.includes('/api/verify-token') ||
-      endpoint.includes('/api/refresh-token') ||
-      endpoint.includes('/api/auth') ||
-      endpoint.includes('/api/linkcode/generate')) {
-    return 'http://localhost:8082';
-  }
-  
-  // Use the player-stats server for player stats
-  if (endpoint.includes('/api/test/player-stats') ||
-      endpoint.includes('/api/player-stats')) {
-    return 'http://localhost:8081';
-  }
-  
-  // Use the default server for everything else
-  return getBaseUrl();
+  // Always use the main backend server for all endpoints
+  return 'http://localhost:8080';
 };
 
 // Log the base URL on startup
@@ -132,7 +114,7 @@ console.log('API Service: Using base URL:', getBaseUrl());
 // Create an Axios instance with configuration
 const api = axios.create({
   baseURL: getBaseUrl(),
-  timeout: 10000, // Reduce timeout to 10 seconds
+  timeout: 20000, // Increase timeout to 20 seconds
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
@@ -218,7 +200,7 @@ api.interceptors.request.use(
     } else {
       // Only redirect for non-public endpoints
       if (config.url.includes('/api/') && 
-          !config.url.includes('/api/login') && 
+          !config.url.includes('/api/auth/login') && 
           !config.url.includes('/api/register') &&
           !config.url.includes('/api/profile') &&  // Don't redirect for profile checks
           !config.url.includes('/api/verify-token')) {  // Don't redirect for token verification
@@ -267,7 +249,7 @@ api.interceptors.response.use(
       let cacheTTL = 60000; // Default 1 minute
       
       // Use longer cache for certain endpoints
-      if (response.config.url.includes('/api/player/')) {
+      if (response.config.url.includes('/api/minecraft/player/')) {
         cacheTTL = 300000; // 5 minutes for player data
       } else if (response.config.url.includes('/api/leaderboard/')) {
         cacheTTL = 600000; // 10 minutes for leaderboard data
@@ -497,66 +479,27 @@ export const AuthService = {
     // Clear cache on register to ensure fresh data
     clearApiCache();
     console.log('Registering new user:', { ...userData, password: '[REDACTED]' });
-    return api.post('/api/register', userData);
+    return api.post('/api/auth/register', userData);
   },
   
   login: (credentials) => {
-    // Clear cache on login to ensure fresh data
     clearApiCache();
     console.log('Logging in user:', { ...credentials, password: '[REDACTED]' });
-    
-    // Make sure we're targeting the direct auth server
-    const directAuthServerUrl = 'http://localhost:8082';
-    console.log('Using Direct Auth Server URL:', directAuthServerUrl);
-    
-    // Create a special instance just for login to avoid any interceptor issues
-    const loginInstance = axios.create({
-      baseURL: directAuthServerUrl,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      withCredentials: true // Important for CORS with credentials
-    });
-    
-    // Explicitly log the full login endpoint being called
-    const loginEndpoint = '/api/login';
-    console.log('Full login endpoint:', directAuthServerUrl + loginEndpoint);
-    
-    return loginInstance.post(loginEndpoint, credentials)
+    // Use the main API instance and correct endpoint
+    return api.post('/api/auth/login', credentials)
       .then(response => {
         console.log('Login API response:', response.data);
-        
-        // Check if the response contains a token
         if (!response.data.token) {
           console.error('No token in login response!', response.data);
         } else {
-          console.log('Token received from server:', response.data.token.substring(0, 15) + '...');
-          // Store the token immediately
           setAuthToken(response.data.token);
-          
-          // Verify token was stored
           const storedToken = getToken();
           console.log('Token storage verification:', storedToken ? 'Success' : 'Failed');
         }
-        
         return response;
       })
       .catch(error => {
         console.error('Login API error:', error);
-        console.error('Error details:', {
-          message: error.message,
-          response: error.response ? {
-            status: error.response.status,
-            data: error.response.data
-          } : 'No response',
-          config: error.config ? {
-            url: error.config.url,
-            method: error.config.method,
-            baseURL: error.config.baseURL
-          } : 'No config'
-        });
         throw error;
       });
   },
@@ -729,10 +672,13 @@ export const MinecraftService = {
   linkAccount: (mcUsername) => {
     // Clear cache when linking accounts
     clearApiCache();
-    // Fixed endpoint to match server implementation
-    return api.post('/api/linkcode/generate', { mcUsername }, {
+    console.log('Linking account with Minecraft username:', mcUsername);
+    
+    // Use a simple POST request with increased timeout and retry delay
+    return api.post('/api/minecraft/link/generate', { mcUsername }, {
+      timeout: 20000, // Increase timeout to 20 seconds
       maxRetries: 3,
-      retryDelay: 2000
+      retryDelay: 3000
     });
   },
   
@@ -803,9 +749,8 @@ export const MinecraftService = {
         
         if (normalizedData.minecraft.stats) {
           console.log('Found stats in minecraft object');
-          // Copy all stats to root level
+          // Copy all stats to root level for compatibility with all components
           Object.assign(normalizedData, normalizedData.minecraft.stats);
-          
           // Also set stats fields individually for compatibility
           normalizedData.achievements = normalizedData.minecraft.stats.achievements || 0;
           normalizedData.playtime = normalizedData.minecraft.stats.playtime || '0h';
@@ -818,14 +763,21 @@ export const MinecraftService = {
           normalizedData.mcmmo_data = normalizedData.minecraft.stats.mcmmo_data || { skills: {}, power_level: 0 };
           normalizedData.inventory = normalizedData.minecraft.stats.inventory || {};
           normalizedData.advancements = normalizedData.minecraft.stats.advancements || [];
-          
           // Set lastSeen from appropriate property
+          let rawLastSeen;
           if (normalizedData.minecraft.stats.lastSeen || normalizedData.minecraft.stats.last_seen) {
-            normalizedData.lastSeen = normalizedData.minecraft.stats.lastSeen || normalizedData.minecraft.stats.last_seen;
+            rawLastSeen = normalizedData.minecraft.stats.lastSeen || normalizedData.minecraft.stats.last_seen;
           } else if (normalizedData.minecraft.lastSeen) {
-            normalizedData.lastSeen = normalizedData.minecraft.lastSeen;
+            rawLastSeen = normalizedData.minecraft.lastSeen;
           }
-          
+
+          // Format the rawLastSeen value using the helper function
+          if (rawLastSeen) {
+             normalizedData.lastSeen = MinecraftService.formatLastSeen(rawLastSeen);
+          } else {
+             normalizedData.lastSeen = 'Never';
+          }
+
           // Set location coordinates if available
           if (normalizedData.minecraft.stats.location) {
             normalizedData.coords = {
@@ -851,54 +803,98 @@ export const MinecraftService = {
       // Return the normalized data
       return { data: normalizedData };
     };
+
+    // Create a fallback response with basic data if API calls fail
+    const createFallbackResponse = () => {
+      console.log('Creating fallback player stats for:', username);
+      // Get data from localStorage as fallback
+      const userData = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('user') || '{}') : {};
+      
+      // Create basic fallback data
+      const fallbackData = {
+        minecraft: {
+          linked: true,
+          mcUsername: username,
+          mcUUID: localStorage.getItem('mcUUID') || null,
+          stats: {
+            playtime: '0h',
+            lastSeen: new Date().toISOString(),
+            balance: 0,
+            blocks_mined: 0,
+            mobs_killed: 0,
+            deaths: 0,
+            achievements: 0,
+            level: 1,
+            experience: 0,
+            online: false
+          }
+        },
+        mcUsername: username,
+        linked: true,
+        lastSeen: new Date().toISOString(),
+        playtime: '0h',
+        balance: 0,
+        blocks_mined: 0,
+        mobs_killed: 0,
+        deaths: 0,
+        achievements: 0,
+        level: 1,
+        experience: 0,
+        rank: userData.role || 'Member',
+        group: 'default'
+      };
+      
+      console.log('Using fallback player data:', fallbackData);
+      return { data: fallbackData };
+    };
     
-    // Create an instance with the player stats server URL
+    // Create an instance with the main backend URL (8080) for player stats
     const playerStatsApi = axios.create({
-      baseURL: MinecraftService.getPlayerStatsUrl(),
+      baseURL: MinecraftService.getBaseUrl(), // Use main backend for player stats
       timeout: 10000
     });
     
     // First try getting by username from the player-stats-server
-    return playerStatsApi.get(`/api/player/${lookupName}`, {
+    return playerStatsApi.get(`/api/minecraft/player/${lookupName}`, {
       skipCache,
       maxRetries: 2,
       retryDelay: 1500
     })
     .then(normalizeResponse)
     .catch(err => {
-      console.error(`Error getting player stats for ${username} from player-stats-server:`, err.message);
+      console.error(`Error getting player stats for ${username} from main backend:`, err.message);
+      
+      if (err.response && err.response.status === 404) {
+        console.log('Player stats endpoint not available (404), using fallback data');
+        return createFallbackResponse();
+      }
       
       // If it fails, check if we have UUID
       const userUUID = (typeof localStorage !== 'undefined' && localStorage.getItem('mcUUID')) || null;
-      
       if (userUUID) {
         console.log(`Trying to get player stats with UUID: ${userUUID}`);
-        return playerStatsApi.get(`/api/player/${userUUID}`, {
+        return playerStatsApi.get(`/api/minecraft/player/${userUUID}`, {
           skipCache: true,
           maxRetries: 2
         }).then(normalizeResponse)
         .catch(uuidErr => {
           console.error(`Error getting player stats with UUID ${userUUID}:`, uuidErr.message);
           
-          // Fallback to main API as final attempt
-          console.log('Falling back to main API server as final attempt');
-          return api.get(`/api/player/${lookupName}`, {
-            skipCache: true,
-            maxRetries: 2
-          }).then(normalizeResponse);
+          if (uuidErr.response && uuidErr.response.status === 404) {
+            console.log('UUID-based player stats endpoint not available (404), using fallback data');
+            return createFallbackResponse();
+          }
+          
+          throw uuidErr;
         });
       }
       
-      // If not found by MC username, try fallback to main API
-      console.log('Trying fallback to main API server');
-      return api.get(`/api/player/${lookupName}`, {
-        skipCache: true,
-        maxRetries: 2
-      }).then(normalizeResponse)
-      .catch(finalErr => {
-        console.error('All player stats retrieval attempts failed:', finalErr.message);
-        throw finalErr;
-      });
+      // If all API calls fail, use fallback data
+      if (err.response && err.response.status === 404) {
+        return createFallbackResponse();
+      }
+      
+      throw err;
     });
   },
   
@@ -1100,7 +1096,77 @@ export const MinecraftService = {
       maxRetries: 1, // Reduce retries to avoid overwhelming the server
       retryDelay: 5000 // Increase delay between retries
     });
-  }
+  },
+
+  // Add a helper function to format the 'lastSeen' timestamp
+  formatLastSeen: (timestamp) => {
+    // Check if it's already a formatted string (like 'Online now')
+    if (typeof timestamp === 'string' && (timestamp.includes('Online') || timestamp.includes('ago') || timestamp === 'Never')) {
+      return timestamp;
+    }
+    // Check if it's a valid number
+    if (typeof timestamp !== 'number' || isNaN(timestamp)) {
+       return 'Never';
+    }
+
+    // Assume timestamp is in seconds (common for MC plugins)
+    // Convert to milliseconds for Date object
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    const diffDays = Math.round(diffMs / 86400000);
+
+    if (diffMinutes < 1) {
+      return 'Online now';
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes} minutes ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} hours ago`;
+    } else if (diffDays < 7) {
+        return `${diffDays} days ago`;
+    } else {
+        // Fallback to a simple date format for older timestamps
+        return date.toLocaleDateString();
+    }
+  },
+  
+  // Get server status
+  getServerStatus: async (serverAddress = 'play.bizzynation.co.uk') => {
+    console.log(`Getting server status for ${serverAddress}`);
+    try {
+      // First try our own backend API
+      const response = await api.get(`/api/minecraft/server/status?address=${serverAddress}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting server status from backend:', error);
+      
+      // Fallback to a safe default response
+      return {
+        online: true,
+        playerCount: 0,
+        maxPlayers: 100,
+        motd: 'BizzyNation Minecraft Server',
+        version: '1.21'
+      };
+    }
+  },
+  
+  // Get online players
+  getOnlinePlayers: async (serverAddress = 'play.bizzynation.co.uk') => {
+    console.log(`Getting online players for ${serverAddress}`);
+    try {
+      // Try our backend API
+      const response = await api.get(`/api/minecraft/server/players?address=${serverAddress}`);
+      return response.data.players || [];
+    } catch (error) {
+      console.error('Error getting online players from backend:', error);
+      
+      // Return empty array as safe fallback
+      return [];
+    }
+  },
 };
 
 // Admin services

@@ -25,7 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 export default function useLinkVerification() {
   const [verifying, setVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState(null);
-  const { user, forceDataRefresh } = useAuth();
+  const { user, forceDataRefresh, updateTokenAndUser } = useAuth();
   const { addEventListener, connected } = useEventSource();
   
   // Use ref to track component mount state
@@ -41,25 +41,21 @@ export default function useLinkVerification() {
       if (!isMountedRef.current) return;
       
       if (data.type === 'account_linked' && data.userId === (user.id || user._id)) {
-        // Safe state update
-        if (isMountedRef.current) {
-          setVerifying(true);
-          
-          // Show success toast
-          toast.success('🎮 Your Minecraft account has been linked successfully!');
-          
-          // Force refresh user data
-          if (forceDataRefresh) {
-            forceDataRefresh().catch(() => {});
-          }
-          
-          // Reset verification state
-          setTimeout(() => {
-            if (isMountedRef.current) {
-              setVerifying(false);
-            }
-          }, 500);
+        setVerifying(true);
+        toast.success('🎮 Your Minecraft account has been linked successfully!');
+        // If the event includes a new token and user, update session immediately
+        if (data.token && data.user) {
+          updateTokenAndUser(data.token, data.user);
         }
+        // Fallback: force refresh user data
+        if (forceDataRefresh) {
+          forceDataRefresh().catch(() => {});
+        }
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setVerifying(false);
+          }
+        }, 500);
       }
     };
     
@@ -74,7 +70,7 @@ export default function useLinkVerification() {
       isMountedRef.current = false;
       cleanup();
     };
-  }, [user, addEventListener, forceDataRefresh]);
+  }, [user, addEventListener, forceDataRefresh, updateTokenAndUser]);
   
   // Return state
   return { verifying, verificationError, connected };

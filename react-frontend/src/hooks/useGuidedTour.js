@@ -13,30 +13,32 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import { useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 
-/**
- * Custom hook for managing the guided tour state
- * @returns {Object} - { tourActive, startTour, endTour }
- */
-export default function useGuidedTour() {
+const GuidedTourContext = createContext();
+
+export function GuidedTourProvider({ children }) {
   const [tourActive, setTourActive] = useState(false);
 
-  // Handle starting the tour
   const startTour = useCallback(() => {
-    console.log('Starting guided tour...');
     setTourActive(true);
   }, []);
 
-  // Handle ending the tour
   const endTour = useCallback(() => {
-    console.log('Ending guided tour...');
     setTourActive(false);
   }, []);
 
-  return {
-    tourActive,
-    startTour,
-    endTour
-  };
+  return (
+    <GuidedTourContext.Provider value={{ tourActive, startTour, endTour }}>
+      {children}
+    </GuidedTourContext.Provider>
+  );
+}
+
+export default function useGuidedTour() {
+  const context = useContext(GuidedTourContext);
+  if (!context) {
+    throw new Error('useGuidedTour must be used within a GuidedTourProvider');
+  }
+  return context;
 } 

@@ -52,10 +52,17 @@ router.post('/register', [
       return true;
     })
 ], async (req, res, next) => {
+  // Debug log incoming registration attempt (hide password)
+  console.log('\x1b[36m[📝 Register Debug]\x1b[0m Registration attempt:', {
+    username: req.body.username,
+    email: req.body.email,
+    ip: req.headers['x-forwarded-for'] || req.connection.remoteAddress
+  });
   try {
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.warn('\x1b[33m[⚠️ Register Debug]\x1b[0m Validation errors:', errors.array());
       return res.status(400).json({ success: false, errors: errors.array() });
     }
     
@@ -128,6 +135,7 @@ router.post('/register', [
       }
     });
   } catch (error) {
+    console.error('\x1b[31m[❌ Register Debug]\x1b[0m Registration error:', error);
     next(error);
   }
 });
@@ -295,7 +303,7 @@ router.post('/login', [
         titles: user.titles,
         activeTitle: user.activeTitle,
         isAdmin: user.isAdmin(),
-        isLinked: user.isLinked()
+        isLinked: user.hasLinkedAccount()
       }
     });
   } catch (error) {
@@ -335,15 +343,12 @@ router.post('/logout', protect, async (req, res, next) => {
 router.get('/me', protect, async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
-    
-    // Sync player rank if they have a linked Minecraft account
     if (user.minecraftUUID) {
-      // Run in background to avoid delaying response
       LuckPermsSync.syncPlayerRank(user.minecraftUUID).catch(err => {
         console.error('Error syncing player rank during profile fetch:', err);
       });
     }
-    
+    console.log('[DEBUG] Returning /api/me user:', user);
     res.status(200).json({
       success: true,
       data: {
@@ -356,7 +361,7 @@ router.get('/me', protect, async (req, res, next) => {
         titles: user.titles,
         activeTitle: user.activeTitle,
         isAdmin: user.isAdmin(),
-        isLinked: user.isLinked(),
+        isLinked: user.hasLinkedAccount(),
         twoFactorEnabled: user.twoFactorEnabled,
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,

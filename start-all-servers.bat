@@ -4,7 +4,7 @@ start "BizzyLink Enhanced Server" cmd /c "node enhanced-server.js"
 echo Enhanced server started in a new window.
 echo.
 echo Starting main server...
-start "BizzyLink Main Server" cmd /c "node server.js"
+start "BizzyLink Main Server" cmd /c "node backend/src/server.js"
 echo Main server started in a new window.
 echo.
 echo Starting direct authentication server...

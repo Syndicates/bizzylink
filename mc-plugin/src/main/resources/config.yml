@@ -5,17 +5,17 @@
 api:
   # The URL of your BizzyLink web API
   # IMPORTANT: Change this to your actual backend URL in production
-  url: "http://localhost:8090"
+  url: "http://localhost:8080"
   
   # API Key (if your server requires authentication)
-  key: ""
+  key: "bzy_srv_2e7f8c1a-4b3e-4c2e-9d7a-8e1f2c3b4a5d"
   
   # API endpoints
   endpoints:
     # URL path to verify link codes - should match the server.js endpoint
     # This should be just the path part, without protocol or domain
     # You can uncomment and try different endpoints if one doesn't work
-    verify: "/api/linkcode/validate"   # Current endpoint that matches backend
+    verify: "/api/minecraft/link/verify"   # Correct endpoint for Minecraft plugin linking (see backend and RULES.md)
     #verify: "/api/link/verify"        # Legacy endpoint
     #verify: "/api/verify"             # Alternative 1
     #verify: "/verify"                 # Alternative 2
@@ -26,7 +26,7 @@ api:
     
     # Other API endpoints
     player_data: "/api/player/%uuid%"
-    update_player: "/api/player/update"
+    update_player: "/api/minecraft/player/update"
     group_sync: "/api/ranks/sync"
   
   # Connection timeouts (milliseconds)
@@ -253,3 +253,11 @@ messages:
   
   # Rank Messages
   rank-applied: "&6[BizzyLink] &aYour website rank &e%rank% &ahas been applied in-game!"
+
+socketio:
+  url: "http://localhost:8080" # Socket.IO backend URL
+  jwt: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwbHVnaW4iOiJtYy1wbHVnaW4iLCJyb2xlIjoibWluZWNyYWZ0IiwiaWF0IjoxNzQ3NTg4OTU4LCJleHAiOjE3NDgxOTM3NTh9.ZKWzTCR3XnlcIHdFIv0iiDHCHTNxPYI5Rn5S5P602L0"    # JWT for authenticating the plugin with the backend
+
+websocket:
+  port: 8085
+  debug: false

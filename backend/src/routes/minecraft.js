@@ -1,14 +1,14 @@
 /**
- * +-------------------------------------------------+
+ * +----+
  * |                 BIZZY NATION                    |
  * |          Crafted with ♦ by Bizzy 2025         |
- * +-------------------------------------------------+
- * 
+ * +----+
+ *
  * @file minecraft.js
- * @description 
+ * @description Minecraft integration API routes
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
- * 
+ *
  * This file is protected intellectual property of Bizzy Nation.
  * Unauthorized use, copying, or distribution is prohibited.
  */
@@ -21,6 +21,12 @@ const { SecurityLog } = require('../models/SecurityLog');
 const ErrorResponse = require('../utils/errorResponse');
 const LuckPermsSync = require('../services/LuckPermsSync');
 const { v4: uuidv4 } = require('uuid');
+
+// Add debugLog utility for conditional debug output if not already present
+const isDebug = process.env.DEBUG_LOGS === 'true';
+function debugLog(...args) {
+  if (isDebug) console.log(...args);
+}
 
 /**
  * @route   POST /api/minecraft/link/generate
@@ -126,12 +132,16 @@ router.post('/link/verify', async (req, res, next) => {
   try {
     const { linkCode, mcUsername, mcUUID } = req.body;
     
+    debugLog('[LINK VERIFY] Request received:', { linkCode, mcUsername, mcUUID });
+    
     if (!linkCode || !mcUsername || !mcUUID) {
+      debugLog('[LINK VERIFY] Missing required fields in request');
       return next(new ErrorResponse('Link code, Minecraft username, and UUID are required', 400));
     }
     
     // Find user with this link code
     const user = await User.findOne({ linkCode });
+    debugLog('[LINK VERIFY] User found:', user ? { id: user._id, username: user.username } : 'No user found with this link code');
     
     if (!user) {
       return next(new ErrorResponse('Invalid link code', 404));
@@ -139,29 +149,64 @@ router.post('/link/verify', async (req, res, next) => {
     
     // Check if link code is expired
     if (!user.isLinkCodeValid()) {
+      debugLog('[LINK VERIFY] Link code expired for user:', user.username);
       return next(new ErrorResponse('Link code has expired', 400));
     }
     
     // Check if another user already has this UUID linked
     const existingUser = await User.findOne({ minecraftUUID: mcUUID });
     if (existingUser && !existingUser._id.equals(user._id)) {
+      debugLog('[LINK VERIFY] UUID already linked to another user:', { 
+        uuid: mcUUID, 
+        existingUser: existingUser.username,
+        requestingUser: user.username
+      });
       return next(new ErrorResponse('This Minecraft account is already linked to another user', 400));
     }
     
-    // Link Minecraft account
-    user.linkMinecraftAccount(mcUUID, mcUsername);
-    // Force linked true in case of race/delay
+    debugLog('[LINK VERIFY] Link code valid, proceeding with account linking for user:', user.username);
+    
+    // --- Ensure all required fields are set for proper linking (see RULES.md & database-info.md) ---
+    user.minecraftUsername = mcUsername;
+    user.mcUsername = mcUsername;
+    user.minecraftUUID = mcUUID;
+    user.mcUUID = mcUUID;
     user.linked = true;
+    user.isLinked = true;
+    user.minecraft = user.minecraft || {};
+    user.minecraft.linked = true;
+    user.minecraft.mcUsername = mcUsername;
+    user.minecraft.mcUUID = mcUUID;
+    user.minecraft.minecraftUUID = mcUUID;
+    user.minecraft.minecraftUsername = mcUsername;
+    // --- Mark nested object as modified so Mongoose persists changes (see RULES.md & database-info.md) ---
+    user.markModified('minecraft');
+    
+    debugLog('[LINK VERIFY] Set all required fields for linking:', {
+      minecraftUsername: user.minecraftUsername,
+      mcUsername: user.mcUsername,
+      minecraftUUID: user.minecraftUUID,
+      mcUUID: user.mcUUID,
+      linked: user.linked,
+      isLinked: user.isLinked,
+      minecraft: user.minecraft
+    });
     
     // Sync player rank from LuckPerms
     try {
       await LuckPermsSync.syncPlayerRank(mcUUID);
     } catch (err) {
-      console.error('Error syncing player rank:', err);
+      debugLog('Error syncing player rank:', err);
       // Continue even if rank sync fails
     }
     
+    // Log user state before save
+    debugLog('[LINK VERIFY] User before save:', user);
     await user.save();
+    
+    // Reload user from DB to verify persistence
+    const userAfterSave = await User.findById(user._id);
+    debugLog('[LINK VERIFY] User after linking (after save):', userAfterSave);
     
     // Log account linking
     await SecurityLog.create({
@@ -173,12 +218,102 @@ router.post('/link/verify', async (req, res, next) => {
         success: true
       }
     });
+
+    // Generate new JWT token after linking
+    const token = user.getSignedToken();
+
+    // ----- EVENT EMISSION FOR REAL-TIME UPDATES -----
+    
+    // Payload for all events
+    const eventPayload = { 
+      mcUsername, 
+      mcUUID,
+      userId: user._id.toString(),
+      timestamp: Date.now() 
+    };
+    
+    // 1. Emit SSE event via eventEmitter (primary method)
+    if (global.eventEmitter) {
+      debugLog(`[LINK VERIFY] Emitting minecraft_linked event via eventEmitter for user ${user._id}`);
+      try {
+        global.eventEmitter.emit('userEvent', { 
+          userId: user._id.toString(), 
+          event: 'minecraft_linked', 
+          data: eventPayload 
+        });
+        debugLog('[LINK VERIFY] Successfully emitted event via eventEmitter');
+      } catch (emitError) {
+        debugLog('[LINK VERIFY] Error emitting event via eventEmitter:', emitError);
+      }
+    } else {
+      debugLog('[LINK VERIFY] global.eventEmitter not available!');
+    }
+    
+    // 2. Also emit traditional notification to user
+    if (global.notifyUser) {
+      debugLog(`[LINK VERIFY] Sending traditional notification to user ${user._id}`);
+      try {
+        global.notifyUser(user._id.toString(), {
+          type: 'minecraft_linked',
+          title: 'Account Linked',
+          message: `Your Minecraft account (${mcUsername}) has been successfully linked!`,
+          ...eventPayload
+        });
+        debugLog('[LINK VERIFY] Successfully sent notification via notifyUser');
+      } catch (notifyError) {
+        debugLog('[LINK VERIFY] Error sending notification via notifyUser:', notifyError);
+      }
+    } else {
+      debugLog('[LINK VERIFY] global.notifyUser not available!');
+    }
+    
+    // 3. Socket.io emit - critical for real-time dashboard updates
+    if (global.io && global.io.to) {
+      debugLog(`[LINK VERIFY] Emitting minecraft_linked to user room ${user._id} via Socket.IO`);
+      
+      try {
+        // First try direct room emit
+        global.io.to(user._id.toString()).emit('minecraft_linked', eventPayload);
+        debugLog('[LINK VERIFY] First Socket.IO emit complete (to user room)');
+        
+        // Also try a broadcast emit for robustness
+        global.io.emit('broadcast:minecraft_linked', {
+          ...eventPayload,
+          isBroadcast: true
+        });
+        debugLog('[LINK VERIFY] Broadcast Socket.IO emit complete');
+      } catch (socketError) {
+        debugLog('[LINK VERIFY] Error emitting via Socket.IO:', socketError);
+      }
+    } else {
+      debugLog('[LINK VERIFY] global.io not available or missing to() method!');
+      // Log socket.io state to help diagnose issues
+      debugLog('[LINK VERIFY] global.io state:', global.io ? 'Exists' : 'Missing');
+      if (global.io) {
+        debugLog('[LINK VERIFY] global.io methods:', Object.keys(global.io));
+        debugLog('[LINK VERIFY] Socket rooms available:', typeof global.io.sockets === 'object' ? 'Yes' : 'No');
+      }
+    }
+
+    debugLog('[LINK VERIFY] Successfully completed account linking for user', user.username);
     
     res.status(200).json({
       success: true,
-      message: 'Minecraft account linked successfully'
+      message: 'Minecraft account linked successfully',
+      token, // <-- new token for frontend
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        rank: user.webRank,
+        minecraftUsername: user.minecraftUsername,
+        minecraftUUID: user.minecraftUUID,
+        isLinked: user.hasLinkedAccount(),
+        linked: user.linked
+      }
     });
   } catch (error) {
+    debugLog('[LINK VERIFY] Unexpected error:', error);
     next(error);
   }
 });
@@ -206,7 +341,7 @@ router.delete('/link', protect, async (req, res, next) => {
     const oldMcUsername = user.minecraftUsername;
     const oldMcUUID = user.minecraftUUID;
     
-    // Unlink account (fix: use $unset for UUID fields to avoid unique index errors)
+    // --- Clear ALL Minecraft username/UUID/link fields for full unlink (see RULES.md & database-info.md) ---
     await User.updateOne(
       { _id: user._id },
       {
@@ -214,22 +349,29 @@ router.delete('/link', protect, async (req, res, next) => {
           linkCode: undefined,
           linkExpiryDate: undefined,
           minecraftUsername: null,
+          mcUsername: null,
+          minecraftUUID: null,
+          mcUUID: null,
           linked: false,
+          isLinked: false,
           'minecraft.linked': false,
           'minecraft.mcUsername': null,
-          'minecraft.mcUUID': undefined,
+          'minecraft.mcUUID': null,
           'minecraft.linkCode': undefined,
           'minecraft.linkCodeExpires': undefined,
         },
         $unset: {
           mcUUID: "",
+          minecraftUUID: "",
           'minecraft.mcUUID': "",
           'minecraft.linkCode': "",
           'minecraft.linkCodeExpires': "",
         }
       }
     );
-    // Note: $unset is required for unique sparse index on mcUUID fields (see RULES.md)
+    // Fetch and log the user after unlink to verify
+    const userAfterUnlink = await User.findById(user._id);
+    debugLog('[UNLINK] User after full unlink:', userAfterUnlink);
     
     // Log account unlinking
     await SecurityLog.create({
@@ -242,13 +384,22 @@ router.delete('/link', protect, async (req, res, next) => {
         mcUUID: oldMcUUID
       }
     });
+
+    // Emit unlink event to plugin-mc room for real-time plugin notification
+    if (global.io && global.io.to) {
+      global.io.to('plugin-mc').emit('player_unlinked', {
+        mcUUID: oldMcUUID,
+        message: 'Your Minecraft account has been unlinked.'
+      });
+      debugLog(`[SOCKET.IO] Emitted player_unlinked to plugin-mc for mcUUID: ${oldMcUUID}`);
+    }
     
     res.status(200).json({
       success: true,
       message: 'Minecraft account unlinked successfully'
     });
   } catch (error) {
-    console.error('Unlink error (DELETE /api/minecraft/link):', error.stack || error);
+    debugLog('Unlink error (DELETE /api/minecraft/link):', error.stack || error);
     next(error);
   }
 });
@@ -261,46 +412,81 @@ router.delete('/link', protect, async (req, res, next) => {
 router.get('/player/:identifier', async (req, res, next) => {
   try {
     const { identifier } = req.params;
+    debugLog('[DEBUG] /api/minecraft/player/:identifier called with identifier:', identifier);
     let user = null;
-    let lookupUsername = null;
     let isUUID = identifier.includes('-') || identifier.length === 32 || identifier.length === 36;
-
     if (isUUID) {
-      // Format UUID if needed
-      const formattedUUID = identifier.length === 32 
-        ? `${identifier.slice(0, 8)}-${identifier.slice(8, 12)}-${identifier.slice(12, 16)}-${identifier.slice(16, 20)}-${identifier.slice(20)}`
-        : identifier;
-      user = await User.findOne({ minecraftUUID: formattedUUID });
-      lookupUsername = user ? user.minecraftUsername : null;
+      // Try all possible UUID fields
+      user = await User.findOne({
+        $or: [
+          { minecraftUUID: identifier },
+          { mcUUID: identifier },
+          { 'minecraft.mcUUID': identifier }
+        ]
+      });
+      debugLog('[DEBUG] User found by UUID fields:', user);
     } else {
-      // First, try as a Minecraft username (exact, then case-insensitive)
-      user = await User.findOne({ minecraftUsername: identifier });
+      // Try all possible username fields
+      user = await User.findOne({
+        $or: [
+          { minecraftUsername: identifier },
+          { mcUsername: identifier },
+          { 'minecraft.mcUsername': identifier }
+        ]
+      });
+      debugLog('[DEBUG] User found by username fields:', user);
       if (!user) {
-        user = await User.findOne({ minecraftUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } });
+        // Fallback: try case-insensitive username
+        user = await User.findOne({
+          $or: [
+            { minecraftUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } },
+            { mcUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } },
+            { 'minecraft.mcUsername': { $regex: new RegExp(`^${identifier}$`, 'i') } }
+          ]
+        });
+        debugLog('[DEBUG] User found by username fields (case-insensitive):', user);
       }
-      lookupUsername = user ? user.minecraftUsername : null;
-      // If not found, try as a website username
       if (!user) {
+        // Fallback: try website username
         const websiteUser = await User.findOne({ username: identifier });
-        if (websiteUser && websiteUser.minecraftUsername) {
+        if (websiteUser && (websiteUser.minecraftUsername || websiteUser.mcUsername || (websiteUser.minecraft && websiteUser.minecraft.mcUsername))) {
           user = websiteUser;
-          lookupUsername = websiteUser.minecraftUsername;
+          debugLog('[DEBUG] User found by website username:', user);
         }
       }
     }
-
-    if (!user || !user.minecraftUUID || !user.minecraftUsername) {
+    if (!user || !(user.minecraftUUID || user.mcUUID || (user.minecraft && user.minecraft.mcUUID)) || !(user.minecraftUsername || user.mcUsername || (user.minecraft && user.minecraft.mcUsername))) {
+      debugLog('[DEBUG] No user found or missing UUID/username fields. User:', user);
       return next(new ErrorResponse('Player not found or not linked', 404));
     }
-
-    // Generate player stats (in a real implementation, this would fetch from Minecraft server)
-    const playerStats = generateMockPlayerStats(user);
-
+    // --- Return real stats from user.minecraft.stats, with sensible defaults ---
+    const stats = (user.minecraft && user.minecraft.stats) || {};
+    debugLog('[PLAYER GET] Returning stats:', stats);
+    const response = {
+      username: user.username,
+      mcUsername: user.minecraftUsername || user.mcUsername || (user.minecraft && user.minecraft.mcUsername),
+      minecraftUUID: user.minecraftUUID || user.mcUUID || (user.minecraft && user.minecraft.mcUUID),
+      linked: true,
+      lastUpdated: user.minecraft && user.minecraft.lastUpdated,
+      // Default values for stats
+      lastSeen: stats.lastSeen || 'Never',
+      balance: stats.balance || 0,
+      playtime: stats.playtime || '0h',
+      level: stats.level || 1,
+      experience: stats.experience || 0,
+      blocks_mined: stats.blocks_mined || 0,
+      mobs_killed: stats.mobs_killed || 0,
+      deaths: stats.deaths || 0,
+      rank: stats.rank || user.webRank || 'Member',
+      // Spread all other stats fields
+      ...stats
+    };
     res.status(200).json({
       success: true,
-      data: playerStats
+      data: response
     });
   } catch (error) {
+    debugLog('[PLAYER GET] Unexpected error:', error);
     next(error);
   }
 });
@@ -311,39 +497,71 @@ router.get('/player/:identifier', async (req, res, next) => {
  * @access  Public (with server key)
  */
 router.post('/player/update', async (req, res, next) => {
+  // --- Debug log raw headers and body ---
+  debugLog('[PLAYER UPDATE] RAW HEADERS:', JSON.stringify(req.headers, null, 2));
+  debugLog('[PLAYER UPDATE] RAW BODY:', JSON.stringify(req.body, null, 2));
+  if (!req.body.mcUUID) debugLog('[PLAYER UPDATE] Missing mcUUID');
+  if (!req.body.serverKey) debugLog('[PLAYER UPDATE] Missing serverKey');
+  if (!req.body.playerData) debugLog('[PLAYER UPDATE] Missing playerData');
+  // Add debug log for serverKey comparison
+  debugLog('[DEBUG] Received serverKey:', req.body.serverKey, 'Expected:', process.env.MINECRAFT_SERVER_KEY);
   try {
     const { mcUUID, serverKey, playerData } = req.body;
-    
     // Validate server key
-    // In a real implementation, this would be a secure key shared with the Minecraft server
     if (serverKey !== process.env.MINECRAFT_SERVER_KEY && serverKey !== 'test_server_key') {
       return next(new ErrorResponse('Invalid server key', 401));
     }
-    
     if (!mcUUID || !playerData) {
       return next(new ErrorResponse('UUID and player data are required', 400));
     }
-    
     // Find user by UUID
-    const user = await User.findOne({ minecraftUUID: mcUUID });
-    
+    const user = await User.findOne({
+      $or: [
+        { minecraftUUID: mcUUID },
+        { mcUUID: mcUUID },
+        { 'minecraft.mcUUID': mcUUID }
+      ]
+    });
     if (!user) {
       return next(new ErrorResponse('Player not found', 404));
     }
-    
-    // Only allow updates for users who are already linked
-    if (!user.linked) {
+    // --- Harden: Only allow update if user is still linked ---
+    if (!user.linked || !user.minecraftUUID) {
+      debugLog('[PLAYER UPDATE] Rejecting update: user is not linked. User:', user.username, 'linked:', user.linked, 'minecraftUUID:', user.minecraftUUID);
       return res.status(400).json({ success: false, message: 'Player is not linked to a website account' });
     }
-    
-    // In a real implementation, this would process and store the player data
-    // For now, just return success
-    
+    // --- Defensive: Remove any keys from playerData that could overwrite link state (see RULES.md & database-info.md) ---
+    const forbiddenKeys = ['linked', 'mcUsername', 'mcUUID', 'minecraftUUID', 'minecraftUsername', 'isLinked'];
+    for (const key of forbiddenKeys) {
+      if (playerData.hasOwnProperty(key)) {
+        delete playerData[key];
+      }
+    }
+    // --- Save playerData to user.minecraft.stats and update lastUpdated ---
+    user.minecraft = user.minecraft || {};
+    user.minecraft.stats = playerData;
+    user.minecraft.lastUpdated = new Date();
+    // Mark nested field as modified so Mongoose persists changes (see RULES.md)
+    user.markModified('minecraft.stats');
+    try {
+      await user.save();
+      debugLog('[PLAYER UPDATE] Successfully saved player stats:', user.minecraft.stats);
+      // Log the full user.minecraft object for debugging
+      debugLog('[PLAYER UPDATE] Full user.minecraft after save:', user.minecraft);
+    } catch (saveErr) {
+      debugLog('[PLAYER UPDATE] Error saving user:', saveErr);
+      return next(new ErrorResponse('Failed to save player stats', 500));
+    }
+    // Defensive: check if stats actually exist after save
+    if (!user.minecraft.stats || Object.keys(user.minecraft.stats).length === 0) {
+      debugLog('[PLAYER UPDATE] Stats missing or empty after save:', user.minecraft);
+    }
     res.status(200).json({
       success: true,
       message: 'Player data updated successfully'
     });
   } catch (error) {
+    debugLog('[PLAYER UPDATE] Unexpected error:', error);
     next(error);
   }
 });
@@ -361,17 +579,38 @@ router.post('/unlink', async (req, res, next) => {
       return next(new ErrorResponse('Username and UUID are required', 400));
     }
 
-    // Find user by Minecraft UUID
-    const user = await User.findOne({ minecraftUUID: uuid });
+    // --- Find user by any possible Minecraft UUID field (see RULES.md & database-info.md) ---
+    const user = await User.findOne({
+      $or: [
+        { minecraftUUID: uuid },
+        { mcUUID: uuid },
+        { 'minecraft.mcUUID': uuid }
+      ]
+    });
+    debugLog('[UNLINK] Searching for user with UUID:', uuid, 'Result:', user ? user.username : 'not found');
 
     if (!user) {
       return next(new ErrorResponse('No user found with this Minecraft account', 404));
     }
 
-    // Unlink the account
+    // --- Clear ALL Minecraft username/UUID/link fields for full unlink (see RULES.md & database-info.md) ---
     user.minecraftUsername = null;
+    user.mcUsername = null;
     user.minecraftUUID = null;
+    user.mcUUID = null;
+    user.linked = false;
+    user.isLinked = false;
+    if (!user.minecraft) user.minecraft = {};
+    user.minecraft.linked = false;
+    user.minecraft.mcUsername = null;
+    user.minecraft.mcUUID = null;
+    user.minecraft.linkCode = undefined;
+    user.minecraft.linkCodeExpires = undefined;
+    user.linkCode = undefined;
+    user.linkExpiryDate = undefined;
     await user.save();
+    // Log the user after unlink for verification
+    debugLog('[UNLINK] User after full unlink (POST /api/minecraft/unlink):', user);
 
     res.status(200).json({
       success: true,
@@ -410,6 +649,38 @@ router.get('/user/by-username/:username', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/**
+ * @route GET /api/minecraft/player/status/:identifier
+ * @desc  Returns link status for a player (by UUID or username)
+ */
+router.get('/player/status/:identifier', async (req, res) => {
+  const { identifier } = req.params;
+  let user = null;
+  // Try to find by UUID or username
+  user = await User.findOne({
+    $or: [
+      { minecraftUUID: identifier },
+      { mcUUID: identifier },
+      { 'minecraft.mcUUID': identifier },
+      { username: identifier }
+    ]
+  });
+  if (!user) {
+    debugLog(`[LINK STATUS] No user found for identifier: ${identifier}`);
+    return res.json({ success: true, linked: false, error: 'Not linked' });
+  }
+  debugLog(`[LINK STATUS] User found: ${user.username} (${user.minecraftUUID})`);
+  return res.json({ success: true, linked: true, user: { id: user._id, username: user.username, minecraftUUID: user.minecraftUUID } });
+});
+
+/**
+ * @route GET /api/player/status
+ * @desc  Returns error if no identifier is provided (for plugin compatibility)
+ */
+router.get('/player/status', (req, res) => {
+  return res.status(400).json({ success: false, error: 'Missing identifier (UUID or username)' });
 });
 
 /**

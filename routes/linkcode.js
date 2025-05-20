@@ -1,14 +1,14 @@
 /**
- * +-------------------------------------------------+
+ * +----+
  * |                 BIZZY NATION                    |
  * |          Crafted with ♦ by Bizzy 2025         |
- * +-------------------------------------------------+
- * 
+ * +----+
+ *
  * @file linkcode.js
- * @description 
+ * @description Link code management and plugin API endpoints
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
- * 
+ *
  * This file is protected intellectual property of Bizzy Nation.
  * Unauthorized use, copying, or distribution is prohibited.
  */
@@ -17,9 +17,10 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const User = require('../models/User');
-const { authenticateToken } = require('../middleware/auth');
+const User = require('../backend/src/models/User');
+const { protect } = require('../backend/src/middleware/auth');
 const mongoose = require('mongoose');
+const LinkCode = require('../backend/src/models/LinkCode');
 
 // Import the link code manager
 const linkCodeManager = require('./linkcode-manager');
@@ -31,7 +32,7 @@ const debugUtils = require('./linkcode-debug');
  * Generate a new link code for the authenticated user
  * POST /api/linkcode/generate
  */
-router.post('/generate', authenticateToken, async (req, res) => {
+router.post('/generate', protect, async (req, res) => {
   try {
     console.log(`\n===== GENERATING LINK CODE =====`);
     console.log(`Time: ${new Date().toISOString()}`);
@@ -119,7 +120,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
     
     try {
       // Check in LinkCode collection
-      const verifyCode = await mongoose.model('LinkCode').findOne({ code: linkCodeData.code });
+      const verifyCode = await LinkCode.findOne({ code: linkCodeData.code });
       if (verifyCode) {
         console.log(`✅ LinkCode DB: Link code ${linkCodeData.code} found in database`);
         console.log(`- userId: ${verifyCode.userId}`);
@@ -173,7 +174,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
  * Get active link code for the authenticated user
  * GET /api/linkcode
  */
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', protect, async (req, res) => {
   try {
     const userId = req.user.id;
     
@@ -285,7 +286,7 @@ router.post('/validate', async (req, res) => {
     console.log(`\n===== CHECKING ALL LINK CODES IN THE DATABASE =====`);
     let allCodes = [];
     try {
-      allCodes = await mongoose.model('LinkCode').find({});
+      allCodes = await LinkCode.find({});
       console.log(`Found ${allCodes.length} link codes in database`);
       allCodes.forEach(codeDoc => {
         const expiryStatus = new Date() < codeDoc.expires ? 'VALID' : 'EXPIRED';
@@ -323,7 +324,7 @@ router.post('/validate', async (req, res) => {
     console.log(`\n===== CHECKING LINK CODE IN DATABASE =====`);
     const upperCode = code.toUpperCase();
     try {
-      const codeCheck = await mongoose.model('LinkCode').findOne({ code: upperCode });
+      const codeCheck = await LinkCode.findOne({ code: upperCode });
       if (codeCheck) {
         console.log(`✅ FOUND link code in database: ${codeCheck.code}, userId: ${codeCheck.userId}, expires: ${codeCheck.expires}`);
         
@@ -491,7 +492,11 @@ router.post('/pending', async (req, res) => {
     }).limit(10);  // Limit results to avoid large queries
     
     // Get all active link codes from the manager
-    const allCodes = linkCodeManager.getAllCodes();
+    let allCodes = await linkCodeManager.getAllCodes();
+    if (!Array.isArray(allCodes)) {
+      console.error('[LINKCODE] getAllCodes() did not return an array. Value:', allCodes);
+      allCodes = [];
+    }
     let pendingCode = null;
     let pendingExpiry = null;
     
@@ -587,7 +592,7 @@ router.post('/', async (req, res) => {
 });
 
 // Manually unlink a Minecraft account
-router.delete('/', authenticateToken, async (req, res) => {
+router.delete('/', protect, async (req, res) => {
     try {
         console.log(`[UNLINK] Received unlink request for user ID: ${req.user.id}`);
         
@@ -668,7 +673,7 @@ router.delete('/', authenticateToken, async (req, res) => {
 });
 
 // Debug endpoint to list all active codes (admin only)
-router.get('/debug/codes', authenticateToken, async (req, res) => {
+router.get('/debug/codes', protect, async (req, res) => {
   try {
     // Get the user to check admin status
     const user = await User.findById(req.user.id);
@@ -701,7 +706,7 @@ router.get('/debug/codes', authenticateToken, async (req, res) => {
 });
 
 // Diagnostic endpoint to check link status for current user
-router.get('/diagnostic', authenticateToken, async (req, res) => {
+router.get('/diagnostic', protect, async (req, res) => {
   try {
     const userId = req.user.id;
     debugUtils.logMessage(`Running diagnostic for user ID: ${userId}`);
@@ -737,7 +742,7 @@ router.get('/diagnostic', authenticateToken, async (req, res) => {
 });
 
 // Fix endpoint to repair inconsistent link states
-router.post('/fix', authenticateToken, async (req, res) => {
+router.post('/fix', protect, async (req, res) => {
   try {
     const userId = req.user.id;
     debugUtils.logMessage(`Attempting to fix link state for user ID: ${userId}`);
@@ -755,7 +760,7 @@ router.post('/fix', authenticateToken, async (req, res) => {
 });
 
 // Debug: log all link statuses (admin only)
-router.get('/debug/all-links', authenticateToken, async (req, res) => {
+router.get('/debug/all-links', protect, async (req, res) => {
   try {
     // Get the user to check admin status
     const user = await User.findById(req.user.id);
@@ -778,7 +783,7 @@ router.get('/debug/all-links', authenticateToken, async (req, res) => {
 });
 
 // Special endpoint to reset a user's Minecraft status
-router.post('/reset-status', authenticateToken, async (req, res) => {
+router.post('/reset-status', protect, async (req, res) => {
   try {
     const userId = req.user.id;
     debugUtils.logMessage(`Received reset-status request for user ID: ${userId}`);

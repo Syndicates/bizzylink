@@ -39,6 +39,18 @@ const GuidedTour = ({ isOpen, onClose, startAt = 0 }) => {
       placement: 'bottom'
     },
     {
+      target: '.dashboard-profile-card',
+      title: 'Profile Card',
+      content: 'This is your account info. You can see your email, role, and edit your profile or change your password here.',
+      placement: 'bottom'
+    },
+    {
+      target: '.player-statistics-section',
+      title: 'Player Statistics',
+      content: 'This section shows your real Minecraft stats, updated live from the server. Track your playtime, balance, achievements, and more!',
+      placement: 'bottom'
+    },
+    {
       target: '.quick-actions-grid [data-title="Shop"]',
       altTarget: '.quick-actions-section [data-title="Shop"]',
       title: 'Shop',
@@ -294,11 +306,11 @@ const GuidedTour = ({ isOpen, onClose, startAt = 0 }) => {
       <AnimatePresence>
         {targetElement && (
           <motion.div
-            className="absolute pointer-events-auto bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-4 max-w-xs z-50"
+            className="absolute pointer-events-auto bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-6 max-w-xs z-50"
             style={{
               left: tooltipPosition.left,
               top: tooltipPosition.top,
-              width: 300
+              width: 320
             }}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -306,53 +318,56 @@ const GuidedTour = ({ isOpen, onClose, startAt = 0 }) => {
             transition={{ duration: 0.2 }}
           >
             {/* Header */}
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-bold text-white">{steps[currentStep].title}</h3>
               <button 
                 onClick={onClose}
-                className="text-gray-400 hover:text-white"
+                className="text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded transition-colors duration-150"
+                style={{ marginLeft: 8 }}
               >
                 <XIcon className="h-5 w-5" />
               </button>
             </div>
             
             {/* Content */}
-            <p className="text-gray-300 mb-4">{steps[currentStep].content}</p>
+            <p className="text-gray-300 mb-5 leading-relaxed">{steps[currentStep].content}</p>
             
-            {/* Footer */}
-            <div className="flex justify-between items-center">
-              <div className="flex space-x-1">
-                {steps.map((_, index) => (
-                  <div 
-                    key={index}
-                    className={`h-2 w-2 rounded-full ${
-                      index === currentStep ? 'bg-yellow-400' : 'bg-gray-600'
-                    }`}
-                  />
-                ))}
-              </div>
-              
-              <div className="flex space-x-2">
-                {currentStep > 0 && (
-                  <button
-                    onClick={handlePrevious}
-                    className="flex items-center text-gray-400 hover:text-white text-sm"
-                  >
-                    <ArrowLeftIcon className="h-4 w-4 mr-1" />
-                    Previous
-                  </button>
-                )}
-                
+            {/* Step Dots */}
+            <div className="flex justify-center mb-4 space-x-1">
+              {steps.map((_, index) => (
+                <div 
+                  key={index}
+                  className={`h-1.5 w-1.5 rounded-full transition-all duration-150 ${
+                    index === currentStep ? 'bg-yellow-400 scale-110' : 'bg-gray-600'
+                  }`}
+                />
+              ))}
+            </div>
+            
+            {/* Button Group */}
+            <div className="flex flex-row gap-2 justify-between items-center mt-2">
+              {currentStep > 0 && (
+                <button
+                  onClick={handlePrevious}
+                  className="flex items-center text-gray-400 hover:text-white text-sm px-3 py-2 rounded border border-gray-600 bg-transparent transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ minWidth: 90 }}
+                >
+                  <ArrowLeftIcon className="h-4 w-4 mr-1" />
+                  Previous
+                </button>
+              )}
+              <div className="flex-1 flex gap-2 justify-end">
                 <button
                   onClick={handleGoToFeature}
-                  className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 text-sm rounded"
+                  className="border border-green-600 text-green-600 bg-transparent hover:bg-green-600 hover:text-white px-3 py-2 text-sm rounded transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  style={{ minWidth: 120 }}
                 >
                   Go to {steps[currentStep].title}
                 </button>
-                
                 <button
                   onClick={handleNext}
-                  className="flex items-center bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 text-sm rounded"
+                  className="flex items-center bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 text-sm rounded transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ minWidth: 90 }}
                 >
                   {currentStep < steps.length - 1 ? (
                     <>

@@ -67,6 +67,13 @@ const Navigation = () => {
     // } : 'null');
     // console.log('Current path:', location.pathname);
     // console.groupEnd();
+    if (user) {
+      console.log('[NAVBAR USER DEBUG] Username:', user.username);
+      console.log('[NAVBAR USER DEBUG] MC Username:', user.mcUsername);
+      console.log('[NAVBAR USER DEBUG] MC UUID:', user.mcUUID);
+    } else {
+      console.log('[NAVBAR USER DEBUG] User object is null or undefined.');
+    }
   }, [isAuthenticated, user, location.pathname]);
 
   // Handle scroll effect
@@ -240,13 +247,29 @@ const Navigation = () => {
                     >
                       <span className="text-sm font-minecraft text-white">{user?.username}</span>
                       <div className="w-6 h-6">
-                        <MinecraftAvatar 
-                          username={user?.mcUsername || user?.username}
-                          uuid={user?.mcUUID}
-                          type="head"
-                          size={24}
-                          animate={false}
+                        {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
+                        {user?.mcUsername ? (
+                          <img
+                            src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
+                            alt="Minecraft Skin"
+                            className="w-6 h-6 rounded-md"
+                            onError={(e) => {
+                              e.target.onerror = () => {
+                                e.target.onerror = () => {
+                                  e.target.onerror = () => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'https://via.placeholder.com/32?text=Skin';
+                                  };
+                                  e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
+                                };
+                                e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
+                              };
+                              e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
+                            }}
                         />
+                        ) : (
+                          <UserCircleIcon className="w-6 h-6 text-gray-400" />
+                        )}
                       </div>
                     </button>
                     
@@ -342,13 +365,31 @@ const Navigation = () => {
                   <div className="pt-2 pb-2 mt-2 border-t border-gray-700/50">
                     <div className="flex items-center px-3 py-2">
                       <div className="flex-shrink-0 w-8 h-8">
-                        <MinecraftAvatar 
-                          username={user?.mcUsername || user?.username}
-                          uuid={user?.mcUUID}
-                          type="head"
-                          size={32}
-                          animate={false}
-                        />
+                        <div className="w-6 h-6">
+                          {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
+                          {user?.mcUsername ? (
+                            <img
+                              src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
+                              alt="Minecraft Skin"
+                              className="w-6 h-6 rounded-md"
+                              onError={(e) => {
+                                e.target.onerror = () => {
+                                  e.target.onerror = () => {
+                                    e.target.onerror = () => {
+                                      e.target.onerror = null;
+                                      e.target.src = 'https://via.placeholder.com/32?text=Skin';
+                                    };
+                                    e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
+                                  };
+                                  e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
+                                };
+                                e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
+                              }}
+                            />
+                          ) : (
+                            <UserCircleIcon className="w-6 h-6 text-gray-400" />
+                          )}
+                        </div>
                       </div>
                       <div className="ml-3">
                         <div className="text-sm font-minecraft text-white">{user?.username}</div>

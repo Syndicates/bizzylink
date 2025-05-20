@@ -1,0 +1,60 @@
+// ===========================================================
+// BIZZYLINK REAL-TIME WEBSOCKET EVENTS IMPLEMENTATION GUIDE
+// ===========================================================
+//
+// This patch file contains code that should be added to your Minecraft plugin
+// to enable real-time WebSocket updates for all player stats.
+//
+// STEP 1: Find PlayerListener.java's player death event handler
+// Search for "@EventHandler" and "PlayerDeathEvent" to find the method 
+
+// STEP 2: Add WebSocket death count update in the event handler
+// Inside the task that runs apiService.sendPlayerData(player), add these lines:
+
+// Send WebSocket real-time update for deaths
+if (socketManager != null) {
+    int deaths = player.getStatistic(org.bukkit.Statistic.DEATHS);
+    socketManager.sendPlayerStatUpdate(player, "deaths", deaths);
+    plugin.getLogger().info("DEBUG: WebSocket deaths update sent: " + deaths);
+}
+
+// STEP 3: Add a new entity death handler method to PlayerListener.java
+// This will track mob kills and send real-time updates 
+
+/**
+ * Handles entity death events to track mob kills
+ * @param event The entity death event
+ */
+@EventHandler
+public void onEntityDeath(org.bukkit.event.entity.EntityDeathEvent event) {
+    // Check if killed by player
+    if (event.getEntity().getKiller() != null) {
+        Player player = event.getEntity().getKiller();
+        UUID playerUUID = player.getUniqueId();
+        
+        // Only process for linked players
+        if (plugin.getConfigManager().isPlayerLinked(playerUUID)) {
+            // Check if cooldown passed for WebSocket updates
+            if (shouldSendWebSocketUpdate(playerUUID)) {
+                // Send WebSocket update for mob kills
+                if (socketManager != null) {
+                    int mobKills = player.getStatistic(org.bukkit.Statistic.MOB_KILLS);
+                    socketManager.sendPlayerStatUpdate(player, "mobs_killed", mobKills);
+                    plugin.getLogger().info("DEBUG: WebSocket mobs_killed update sent: " + mobKills);
+                    
+                    // Update tracking timestamp
+                    updateSyncTracking(player);
+                }
+            }
+        }
+    }
+}
+
+// STEP 4: Make sure to import EntityDeathEvent at the top of your file
+// Add this import if it's not already there:
+import org.bukkit.event.entity.EntityDeathEvent;
+
+// ===========================================================
+// After making these changes, rebuild your plugin with:
+// mvn clean package
+// ===========================================================

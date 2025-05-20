@@ -276,15 +276,8 @@ public class ConfigManager {
      * @param uuid Player UUID
      */
     public void clearCache(UUID uuid) {
-        // Remove from in-memory caches
+        linkedPlayers.remove(uuid);
         lastSyncTimes.remove(uuid);
-        
-        // Only log if the player was linked
-        if (!linkedPlayers.getOrDefault(uuid, false)) {
-            plugin.getLogger().fine("Attempted to clear cache for player " + uuid + " who is not linked");
-        } else {
-            plugin.getLogger().info("Cleared cache for player " + uuid);
-        }
     }
     
     /**

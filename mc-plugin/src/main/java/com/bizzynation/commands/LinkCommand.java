@@ -16,6 +16,7 @@
 package com.bizzynation.commands;
 
 import com.bizzynation.LinkPlugin;
+import com.bizzynation.config.ConfigManager;
 import com.bizzynation.utils.ApiService;
 import com.bizzynation.utils.MessageUtils;
 import org.bukkit.Bukkit;
@@ -73,7 +74,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
             !args[0].equalsIgnoreCase("help") &&
             !args[0].equalsIgnoreCase("unlink") &&
             !args[0].equalsIgnoreCase("reload") &&
-            plugin.getConfigManager().isPlayerLinked(playerUUID)) {
+            ((ConfigManager)plugin.getConfigManager()).isPlayerLinked(playerUUID)) {
             
             MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.already-linked", 
                     "&6[BizzyLink] &cYour account is already linked!"));
@@ -239,6 +240,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
 
     private void showStatus(Player player) {
         UUID playerUUID = player.getUniqueId();
+        plugin.getLogger().info("[DEBUG] /link status called by " + player.getName() + " (" + playerUUID + ")");
         // Always clear local cache before checking status
         plugin.getConfigManager().clearLinkData(playerUUID);
         // Show a message that we're checking
@@ -270,34 +272,23 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
      */
     private boolean checkLinkedStatusWithBackend(Player player) {
         try {
-            // Create the API URL for checking link status
-            String apiUrl = plugin.getApiUrl() + "/api/player/status";
-            
+            // Use the correct endpoint: GET /api/minecraft/player/{uuid}
+            String apiUrl = plugin.getApiUrl() + "/api/minecraft/player/" + player.getUniqueId();
             plugin.getLogger().info("Checking link status at API: " + apiUrl);
-            
+
             // Create connection
             URL url = new URL(apiUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
+            conn.setRequestMethod("GET");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("User-Agent", "BizzyLink-Plugin");
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
-            conn.setDoOutput(true);
-            
-            // Create JSON payload with player info
-            String jsonInput = "{\"username\":\"" + player.getName() + "\",\"uuid\":\"" + player.getUniqueId() + "\"}";
-            
-            // Send data to server
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
-            }
-            
+
             // Get response
             int statusCode = conn.getResponseCode();
             plugin.getLogger().info("Status check response code: " + statusCode);
-            
+
             // Read response content
             StringBuilder responseContent = new StringBuilder();
             try (BufferedReader br = new BufferedReader(
@@ -307,24 +298,23 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
                         StandardCharsets.UTF_8
                     )
                 )) {
-                
                 String responseLine;
                 while ((responseLine = br.readLine()) != null) {
                     responseContent.append(responseLine.trim());
                 }
             }
-            
+
             String jsonResponse = responseContent.toString();
             plugin.getLogger().info("Status check response: " + jsonResponse);
-            
+
             // Check if the response indicates the player is linked
             boolean isLinked = jsonResponse.contains("\"linked\":true") || jsonResponse.contains("\"isLinked\":true");
-            
+
             // If the player is linked according to the backend, update our local state
             if (isLinked) {
                 plugin.getConfigManager().setPlayerLinked(player.getUniqueId(), true);
             }
-            
+
             return isLinked;
         } catch (Exception e) {
             plugin.getLogger().warning("Error checking link status: " + e.getMessage());
@@ -336,7 +326,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
         try {
             UUID playerUUID = player.getUniqueId();
             // First check if the player is actually linked in our local data
-            boolean isLinkedLocally = plugin.getConfigManager().isPlayerLinked(playerUUID);
+            boolean isLinkedLocally = ((ConfigManager)plugin.getConfigManager()).isPlayerLinked(playerUUID);
             
             if (!isLinkedLocally) {
                 // Player is not linked according to our data
@@ -354,9 +344,11 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
                 if (success) {
                     // Only clear local data after successful backend unlink
                     plugin.getConfigManager().clearLinkData(playerUUID);
-                    MessageUtils.sendMessage(player, "&6[BizzyLink] &aYour account has been unlinked successfully!");
+                    // Also clear any cached sync times or data
+                    plugin.getConfigManager().clearCache(playerUUID);
+                    MessageUtils.sendMessage(player, "&6[BizzyLink] &aYour account has been unlinked successfully! No more data will be sent to the website until you relink.");
                     player.sendTitle("§cAccount Unlinked", "§7Your Minecraft account is no longer linked.", 10, 60, 10);
-                    plugin.getLogger().info("Player " + player.getName() + " unlinked their account");
+                    plugin.getLogger().info("Player " + player.getName() + " unlinked their account and all local sync state cleared");
                 } else {
                     // If backend unlink failed but we still thought they were linked
                     MessageUtils.sendMessage(player, "&6[BizzyLink] &cFailed to unlink your account. Please try again or contact an admin.");
@@ -460,6 +452,9 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
      * @param player The player
      */
     private void handleSync(Player player) {
+        plugin.getLogger().info("[DEBUG] /link sync called by " + player.getName() + " (" + player.getUniqueId() + ")");
+        String serverKey = plugin.getConfig().getString("api.key", "");
+        plugin.getLogger().info("[DEBUG] [BizzyLink] Loaded serverKey from config: '" + serverKey + "'");
         // Check permissions first
         if (!player.hasPermission("bizzylink.sync")) {
             MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.no-permission"));
@@ -467,7 +462,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
         }
         
         // Check if player is linked
-        boolean isLinked = plugin.getConfigManager().isPlayerLinked(player.getUniqueId());
+        boolean isLinked = ((ConfigManager)plugin.getConfigManager()).isPlayerLinked(player.getUniqueId());
         if (!isLinked) {
             MessageUtils.sendMessage(player, plugin.getConfig().getString("messages.status-not-linked"));
             return;
@@ -699,7 +694,7 @@ public class LinkCommand implements CommandExecutor, TabCompleter {
         // Tab complete for second arguments
         if (args.length == 2) {
             if (args[0].equalsIgnoreCase("unlink") && 
-                    plugin.getConfigManager().isPlayerLinked(((Player) sender).getUniqueId())) {
+                    ((ConfigManager)plugin.getConfigManager()).isPlayerLinked(((Player) sender).getUniqueId())) {
                 List<String> subCompletions = new ArrayList<>();
                 subCompletions.add("confirm");
                 return subCompletions;

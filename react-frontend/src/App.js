@@ -18,6 +18,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, TokenStorage } from './contexts/AuthContext';
 import { SocialProvider } from './contexts/SocialContext';
 import { EventSourceProvider } from './contexts/EventSourceContext';
+// Import the new WebSocket context
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import Navigation from './components/Navigation';
 import BizzyLinkHeader from './components/BizzyLinkHeader';
@@ -44,6 +45,7 @@ import TestRealTime from './pages/TestRealTime';
 import ProfilePage from './pages/ProfilePage';
 import LinkPage from './pages/LinkPage';
 import { motion } from 'framer-motion';
+import { GuidedTourProvider } from './hooks/useGuidedTour';
 
 // Modified ProtectedRoute component with protections against infinite loops
 const ProtectedRoute = ({ children }) => {
@@ -258,31 +260,26 @@ function App() {
           <WebSocketProvider>
             <EventSourceProvider>
               <SocialProvider>
-                <ToastContainer
-                  position="top-right"
-                  autoClose={5000}
-                  hideProgressBar={false}
-                  newestOnTop
-                  closeOnClick
-                  rtl={false}
-                  pauseOnHover
-                  theme="colored"
-                />
-                <div className="min-h-screen flex flex-col">
-                  <Navigation />
-                  {/* BizzyLink header included for BizzyLink pages */}
-                  <Routes>
-                    <Route path="/bizzylink/*" element={<BizzyLinkHeader playerCount={42} />} />
-                  </Routes>
-                  <main className="flex-grow pt-20">
+                <GuidedTourProvider>
+                  <div className="app">
+                    <ToastContainer
+                      position="top-right"
+                      autoClose={5000}
+                      hideProgressBar={false}
+                      newestOnTop
+                      closeOnClick
+                      rtl={false}
+                      pauseOnHover
+                      theme="colored"
+                    />
+                    <Navigation />
                     <ErrorBoundary>
                       <AppRoutes />
                     </ErrorBoundary>
-                  </main>
-                  <Footer />
-                  {/* Include AuthDebugger in development mode */}
-                  {isDevMode && <AuthDebugger />}
-                </div>
+                    <Footer />
+                    {isDevMode && <AuthDebugger />}
+                  </div>
+                </GuidedTourProvider>
               </SocialProvider>
             </EventSourceProvider>
           </WebSocketProvider>

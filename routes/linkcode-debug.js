@@ -25,6 +25,7 @@ const User = require('../models/User');
 const fs = require('fs');
 const path = require('path');
 const linkCodeManager = require('./linkcode-manager');
+const LinkCode = require('../backend/src/models/LinkCode');
 
 // Directory for logs
 const LOG_DIR = path.join(__dirname, '../logs');
@@ -53,8 +54,6 @@ async function createTestLinkCode(userId, code = "TEST123", expiryMinutes = 1440
         
         // First try to use the LinkCode model via the manager (preferred)
         try {
-            const LinkCode = require('mongoose').model('LinkCode');
-            
             // Clean up any existing test codes
             await LinkCode.deleteOne({ code });
             

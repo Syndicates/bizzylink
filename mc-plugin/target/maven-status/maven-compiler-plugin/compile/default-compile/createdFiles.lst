@@ -20,4 +20,5 @@ com\bizzynation\social\FriendManager$FriendData.class
 com\bizzynation\integrations\VaultIntegration.class
 com\bizzynation\utils\MessageUtils.class
 com\bizzynation\social\FriendManager$FriendRequest.class
+com\bizzynation\LinkPlugin$2.class
 com\bizzynation\utils\ApiService.class

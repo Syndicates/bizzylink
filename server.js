@@ -67,6 +67,12 @@ const socketClients = new Map();
 // Initialize active users map to track connected users
 const activeUsers = new Map();
 
+// Add debugLog utility for conditional debug output
+const isDebug = process.env.DEBUG_LOGS === 'true';
+function debugLog(...args) {
+  if (isDebug) console.log(...args);
+}
+
 // Helper function to get user sockets
 const getUserSockets = (userId) => {
   return Array.from(socketClients.entries())
@@ -76,22 +82,27 @@ const getUserSockets = (userId) => {
 
 // Helper function to send events to specific user - enhanced with WebSocket support
 global.notifyUser = function(userId, eventData) {
-  if (!userId) return;
-  
-  console.log(`[notifyUser] Attempting to notify user ${userId} with event:`, eventData.type);
+  if (!userId || !eventData || !eventData.type) {
+    console.error('[notifyUser] Notification rejected: Missing required fields', {
+      userId,
+      eventData
+    });
+    return;
+  }
+  debugLog(`[notifyUser] Attempting to notify user ${userId} with event:`, eventData.type);
   
   // Add specific handling for Minecraft events
   if (eventData.type && eventData.type.includes('minecraft')) {
-    console.log(`[notifyUser] Processing Minecraft event for user ${userId}:`, eventData.type);
+    debugLog(`[notifyUser] Processing Minecraft event for user ${userId}:`, eventData.type);
     
     // For minecraft_linked events, ensure all clients get updated with the latest status
     if (eventData.type === 'minecraft_linked') {
       // Make this event high priority
-      console.log(`[notifyUser] Sending high-priority minecraft_linked event to user ${userId}`);
+      debugLog(`[notifyUser] Sending high-priority minecraft_linked event to user ${userId}`);
       
       // Force update to all clients using multiple channels
       setTimeout(() => {
-        console.log(`[notifyUser] Sending delayed follow-up notification to user ${userId}`);
+        debugLog(`[notifyUser] Sending delayed follow-up notification to user ${userId}`);
         try {
           // Find all clients for this user and send again (for redundancy)
           const userSocketClients = Array.from(socketClients.entries())
@@ -108,11 +119,11 @@ global.notifyUser = function(userId, eventData) {
                 });
               }
             } catch (err) {
-              console.error(`Error sending refresh to client ${id}:`, err);
+              debugLog(`Error sending refresh to client ${id}:`, err);
             }
           });
         } catch (err) {
-          console.error('Error sending delayed notifications:', err);
+          debugLog('Error sending delayed notifications:', err);
         }
       }, 3000);
     }
@@ -123,7 +134,7 @@ global.notifyUser = function(userId, eventData) {
     .filter(([_, client]) => client.userId === userId);
   
   if (userSocketClients.length > 0) {
-    console.log(`[notifyUser] Sending WebSocket notification to ${userSocketClients.length} clients for user ${userId}`);
+    debugLog(`[notifyUser] Sending WebSocket notification to ${userSocketClients.length} clients for user ${userId}`);
     
     userSocketClients.forEach(([id, client]) => {
       try {
@@ -136,7 +147,7 @@ global.notifyUser = function(userId, eventData) {
           }
         }
       } catch (err) {
-        console.error(`[notifyUser] Error sending WebSocket notification to client ${id}:`, err);
+        debugLog(`[notifyUser] Error sending WebSocket notification to client ${id}:`, err);
         socketClients.delete(id);
       }
     });
@@ -147,12 +158,12 @@ global.notifyUser = function(userId, eventData) {
     .filter(([_, client]) => client.userId === userId);
   
   if (userClients.length === 0 && userSocketClients.length === 0) {
-    console.log(`[notifyUser] No connected clients for user ${userId}`);
+    debugLog(`[notifyUser] No connected clients for user ${userId}`);
     return;
   }
   
   if (userClients.length > 0) {
-    console.log(`[notifyUser] Sending SSE notification to ${userClients.length} clients for user ${userId}`);
+    debugLog(`[notifyUser] Sending SSE notification to ${userClients.length} clients for user ${userId}`);
     
     userClients.forEach(([id, client]) => {
       try {
@@ -160,7 +171,7 @@ global.notifyUser = function(userId, eventData) {
         const eventMessage = `data: ${JSON.stringify(eventData)}\n\n`;
         client.res.write(eventMessage);
       } catch (err) {
-        console.error(`[notifyUser] Error sending SSE notification to client ${id}:`, err);
+        debugLog(`[notifyUser] Error sending SSE notification to client ${id}:`, err);
         sseClients.delete(id);
       }
     });
@@ -264,7 +275,7 @@ app.use(cors({
         if (allowedOrigins.includes(origin)) {
             callback(null, origin); // Echo back the specific origin instead of true
         } else {
-            console.log(`CORS blocked request from: ${origin}`);
+            debugLog(`CORS blocked request from: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -366,18 +377,18 @@ app.get('/api/events', authenticateToken, (req, res) => {
   const userId = req.user.id || req.user._id || req.user;
   
   if (!userId) {
-    console.error('SSE connection failed: No user ID in token');
+    debugLog('SSE connection failed: No user ID in token');
     return res.status(401).json({ error: 'Authentication failed' });
   }
   
-  console.log(`SSE connection attempt with token:`, userId ? 'Token provided' : 'No token');
+  debugLog(`SSE connection attempt with token:`, userId ? 'Token provided' : 'No token');
   
   // Check for existing connections for this user and limit to 3 max connections per user
   const userConnections = Array.from(sseClients.values())
     .filter(client => client.userId === userId);
   
   if (userConnections.length >= 3) {
-    console.log(`User ${userId} already has ${userConnections.length} SSE connections. Closing oldest.`);
+    debugLog(`User ${userId} already has ${userConnections.length} SSE connections. Closing oldest.`);
     // Find the oldest connection and close it
     const oldestConnection = userConnections.sort((a, b) => a.connectedAt - b.connectedAt)[0];
     if (oldestConnection) {
@@ -386,9 +397,9 @@ app.get('/api/events', authenticateToken, (req, res) => {
         oldestConnection.res.write('event: close\ndata: {"reason":"Too many connections"}\n\n');
         oldestConnection.res.end();
         sseClients.delete(oldestConnection.id);
-        console.log(`Closed oldest SSE connection for user ${userId}`);
+        debugLog(`Closed oldest SSE connection for user ${userId}`);
       } catch (err) {
-        console.error(`Error closing old SSE connection:`, err);
+        debugLog(`Error closing old SSE connection:`, err);
         // Just remove from tracking if we can't close cleanly
         sseClients.delete(oldestConnection.id);
       }
@@ -407,7 +418,7 @@ app.get('/api/events', authenticateToken, (req, res) => {
     lastActivity: Date.now()
   });
   
-  console.log(`SSE connection established for user ${userId}`);
+  debugLog(`SSE connection established for user ${userId}`);
   
   // Send initial connection confirmation
   res.write(`data: ${JSON.stringify({ type: 'connected', connectionId: clientId })}\n\n`);
@@ -425,13 +436,13 @@ app.get('/api/events', authenticateToken, (req, res) => {
       }
     } catch (error) {
       // Connection might be closed
-      console.error(`Error sending heartbeat to client ${clientId}:`, error);
+      debugLog(`Error sending heartbeat to client ${clientId}:`, error);
       clearInterval(heartbeatInterval);
       
       // Clean up the client if not already removed
       if (sseClients.has(clientId)) {
         sseClients.delete(clientId);
-        console.log(`SSE connection removed due to heartbeat error: ${clientId}`);
+        debugLog(`SSE connection removed due to heartbeat error: ${clientId}`);
       }
     }
   }, 30000);
@@ -443,19 +454,19 @@ app.get('/api/events', authenticateToken, (req, res) => {
     // Remove client from the map
     if (sseClients.has(clientId)) {
       sseClients.delete(clientId);
-      console.log(`SSE connection closed for user ${userId}`);
+      debugLog(`SSE connection closed for user ${userId}`);
     }
   });
 });
 
 // Find the test endpoint and make sure it's working
 app.get('/api/test', (req, res) => {
-  console.log('Test endpoint hit');
+  debugLog('Test endpoint hit');
   res.status(200).json({ success: true, message: 'Server is working' });
 });
 
 app.post('/api/test', (req, res) => {
-  console.log('Test POST endpoint hit with body:', req.body);
+  debugLog('Test POST endpoint hit with body:', req.body);
   res.status(200).json({ 
     success: true, 
     message: 'Server is working', 
@@ -469,12 +480,12 @@ app.post('/api/test/player-stats', (req, res) => {
     const { userId, mcUsername, stats } = req.body;
     
     // Add request logging
-    console.log(`Received stats update for user ${userId} (${mcUsername})`);
-    console.log('Stats:', JSON.stringify(stats, null, 2));
+    debugLog(`Received stats update for user ${userId} (${mcUsername})`);
+    debugLog('Stats:', JSON.stringify(stats, null, 2));
     
     // Validate required fields
     if (!userId || !mcUsername || !stats) {
-      console.error('Missing required fields in player stats update:', { userId, mcUsername, hasStats: !!stats });
+      debugLog('Missing required fields in player stats update:', { userId, mcUsername, hasStats: !!stats });
       return res.status(400).json({ 
         success: false, 
         message: 'Missing required fields: userId, mcUsername, and stats are required' 
@@ -493,10 +504,10 @@ app.post('/api/test/player-stats', (req, res) => {
     if (userSockets && userSockets.length > 0) {
       userSockets.forEach(socket => {
         socket.emit('stats-update', statsEvent);
-        console.log(`Sent stats update to WebSocket client: ${socket.id}`);
+        debugLog(`Sent stats update to WebSocket client: ${socket.id}`);
       });
     } else {
-      console.log(`No connected clients for user ${userId}`);
+      debugLog(`No connected clients for user ${userId}`);
     }
     
     // Send update to SSE clients if any
@@ -507,7 +518,7 @@ app.post('/api/test/player-stats', (req, res) => {
       if (userSSEClients && userSSEClients.length > 0) {
         userSSEClients.forEach(client => {
           client.res.write(`data: ${JSON.stringify({ type: 'stats-update', data: statsEvent })}\n\n`);
-          console.log(`Sent stats update to SSE client: ${client.id}`);
+          debugLog(`Sent stats update to SSE client: ${client.id}`);
         });
       }
     }
@@ -519,7 +530,7 @@ app.post('/api/test/player-stats', (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error updating player stats:', error);
+    debugLog('Error updating player stats:', error);
     return res.status(500).json({ 
         success: false,
       message: 'Error processing stats update'
@@ -530,11 +541,11 @@ app.post('/api/test/player-stats', (req, res) => {
 // Function to get leaderboard data from the database
 const getLeaderboardData = async (category, timeFrame, limit) => {
   try {
-    console.log(`Getting leaderboard data for ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
+    debugLog(`Getting leaderboard data for ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
     
     // Create sample player data for development environment
     const generateSamplePlayers = () => {
-      console.log('Generating sample leaderboard data for development');
+      debugLog('Generating sample leaderboard data for development');
       
       const ranks = ['Member', 'VIP', 'VIP+', 'MVP', 'MVP+', 'Admin'];
       const usernames = [
@@ -609,7 +620,7 @@ const getLeaderboardData = async (category, timeFrame, limit) => {
     // Initialize MongoDB connection if needed
     const db = global.db;
     if (!db) {
-      console.error('Database connection not available');
+      debugLog('Database connection not available');
       return generateSamplePlayers();
     }
     
@@ -763,17 +774,17 @@ const getLeaderboardData = async (category, timeFrame, limit) => {
     
     // Execute the aggregation pipeline
     const players = await db.collection('users').aggregate(pipeline).toArray();
-    console.log(`Found ${players.length} players for leaderboard category: ${category}`);
+    debugLog(`Found ${players.length} players for leaderboard category: ${category}`);
     
     // If no players found, use sample data
     if (players.length === 0) {
-      console.log('No players found - using sample data');
+      debugLog('No players found - using sample data');
       return generateSamplePlayers();
     }
     
     return players;
   } catch (error) {
-    console.error(`Error retrieving leaderboard data:`, error);
+    debugLog(`Error retrieving leaderboard data:`, error);
     
     // In non-production, provide sample data on errors
     if (process.env.NODE_ENV !== 'production') {
@@ -790,7 +801,7 @@ app.get('/api/leaderboard/:category', leaderboardRateLimiter, async (req, res) =
     const { category } = req.params;
     const { timeFrame = 'all', limit = 10 } = req.query;
     
-    console.log(`Leaderboard request for category: ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
+    debugLog(`Leaderboard request for category: ${category}, timeFrame: ${timeFrame}, limit: ${limit}`);
     
     // Validate category
     const validCategories = ['playtime', 'economy', 'mcmmo', 'kills', 'mining', 'achievements'];
@@ -814,7 +825,7 @@ app.get('/api/leaderboard/:category', leaderboardRateLimiter, async (req, res) =
       }
     });
   } catch (error) {
-    console.error(`Error fetching leaderboard data:`, error);
+    debugLog(`Error fetching leaderboard data:`, error);
     return res.status(500).json({
       success: false,
       message: 'Error retrieving leaderboard data' 
@@ -825,9 +836,9 @@ app.get('/api/leaderboard/:category', leaderboardRateLimiter, async (req, res) =
 // Handle 404 for API routes (MAKE SURE THIS IS AFTER ALL API ROUTES)
 app.use('/api/*', (req, res) => {
   // Log detailed information about the 404 error
-  console.log(`❌ 404 ERROR: ${req.method} ${req.originalUrl}`);
-  console.log(`  - Headers: ${JSON.stringify(req.headers)}`);
-  console.log(`  - Body: ${JSON.stringify(req.body)}`);
+  debugLog(`❌ 404 ERROR: ${req.method} ${req.originalUrl}`);
+  debugLog(`  - Headers: ${JSON.stringify(req.headers)}`);
+  debugLog(`  - Body: ${JSON.stringify(req.body)}`);
   
   res.status(404).json({ error: "API endpoint not found" });
 });
@@ -841,13 +852,13 @@ app.get('*', (req, res) => {
     if (req.url.startsWith('/api/')) return;
     
     // Log SPA route handling
-    console.log(`📱 SPA route: ${req.originalUrl}`);
+    debugLog(`📱 SPA route: ${req.originalUrl}`);
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error('Server error:', err);
+    debugLog('Server error:', err);
     res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -877,24 +888,24 @@ setInterval(() => {
   const connectedSockets = io.sockets.sockets.size;
   const rooms = io.sockets.adapter.rooms;
   const roomsCount = rooms ? rooms.size : 0;
-  console.log(`📊 Socket.IO Stats - Connected clients: ${connectedSockets}, Active rooms: ${roomsCount}`);
+  debugLog(`📊 Socket.IO Stats - Connected clients: ${connectedSockets}, Active rooms: ${roomsCount}`);
 }, 60000); // Log every minute
 
 // Error handling for Socket.IO
 io.engine.on('connection_error', (err) => {
-  console.error('⚠️ Socket.IO connection error:', err);
+  debugLog('⚠️ Socket.IO connection error:', err);
 });
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log('New socket connection:', socket.id);
+  debugLog('New socket connection:', socket.id);
   
   // Set connection timeout options
   socket.conn.pingTimeout = 30000; // 30 seconds ping timeout
   
   // Add error handling for individual socket
   socket.on('error', (err) => {
-    console.error(`❌ Socket ${socket.id} error:`, err);
+    debugLog(`❌ Socket ${socket.id} error:`, err);
   });
   
   // Handle authentication
@@ -902,6 +913,15 @@ io.on('connection', (socket) => {
     try {
       // Verify the JWT token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // Plugin authentication support
+      if (decoded.plugin === 'mc-plugin' && decoded.role === 'minecraft') {
+        socket.isPlugin = true;
+        socket.join('plugin-mc');
+        debugLog(`✅ Socket ${socket.id} authenticated as Minecraft plugin client`);
+        socket.emit('authenticated', { plugin: 'mc-plugin', role: 'minecraft' });
+        return;
+      }
       
       // Extract userId consistently
       let userId;
@@ -928,10 +948,10 @@ io.on('connection', (socket) => {
             const user = await User.findById(userId).select('username mcUsername isActive roles');
             
             if (!user) {
-              console.log(`❌ Socket ${socket.id} user lookup error: User not found`);
+              debugLog(`❌ Socket ${socket.id} user lookup error: User not found`);
               socket.emit('warning', { message: 'User not found in database, some features may be limited' });
             } else {
-              console.log(`✅ Socket ${socket.id} authenticated for user ${user.username} (${userId})`);
+              debugLog(`✅ Socket ${socket.id} authenticated for user ${user.username} (${userId})`);
               socket.username = user.username;
               socket.mcUsername = user.mcUsername;
               
@@ -944,12 +964,12 @@ io.on('connection', (socket) => {
             }
           });
         } catch (dbError) {
-          console.error(`❌ Socket ${socket.id} user lookup error:`, dbError);
+          debugLog(`❌ Socket ${socket.id} user lookup error:`, dbError);
           // Still allow connection but with a warning
           socket.emit('warning', { message: 'Database error, some features may be limited' });
         }
       } else {
-        console.log(`⚠️ Socket ${socket.id} authenticated for user ${userId} (DB unavailable)`);
+        debugLog(`⚠️ Socket ${socket.id} authenticated for user ${userId} (DB unavailable)`);
         socket.emit('authenticated', { 
           userId,
           warning: 'Database connection unavailable, some features may be limited'
@@ -958,10 +978,10 @@ io.on('connection', (socket) => {
       
       // Add to active users list
       activeUsers.set(userId, socket.id);
-      console.log(`User ${userId} added to active users list`);
+      debugLog(`User ${userId} added to active users list`);
       
     } catch (error) {
-      console.error(`❌ Socket ${socket.id} authentication error:`, error);
+      debugLog(`❌ Socket ${socket.id} authentication error:`, error);
       socket.emit('error', { message: 'Authentication failed' });
     }
   });
@@ -1015,18 +1035,18 @@ io.on('connection', (socket) => {
           data: stats
         });
       } catch (statError) {
-        console.error('Error fetching player stats:', statError);
+        debugLog('Error fetching player stats:', statError);
         socket.emit('error', { message: 'Could not fetch player stats' });
     }
     } catch (error) {
-      console.error('Error processing stats request:', error);
+      debugLog('Error processing stats request:', error);
       socket.emit('error', { message: 'Server error processing request' });
     }
   });
   
   // Handle client disconnect
   socket.on('disconnect', () => {
-    console.log('Socket disconnected:', socket.id);
+    debugLog('Socket disconnected:', socket.id);
     
     // Clean up client map
     if (socket.secureId && socketClients.has(socket.secureId)) {
@@ -1138,7 +1158,7 @@ app.post('/api/test-insert-mcdata', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error adding test Minecraft data:', error);
+        debugLog('Error adding test Minecraft data:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1184,7 +1204,7 @@ app.post('/api/test-create-user', async (req, res) => {
             user: user
         });
     } catch (error) {
-        console.error('Test user creation error:', error);
+        debugLog('Test user creation error:', error);
         res.status(500).json({
             success: false,
             error: "Failed to create test user"
@@ -1233,7 +1253,7 @@ app.post('/api/admin/users/emergency/:userId', admin, async (req, res) => {
     // Additional validation for security
     if (!emergencyCode || emergencyCode !== process.env.EMERGENCY_ACCESS_CODE) {
       // Log attempt but don't reveal the reason
-      console.warn(`Emergency code validation failed from IP: ${req.ip}`);
+      debugLog(`Emergency code validation failed from IP: ${req.ip}`);
       return res.status(403).json({ error: 'Access denied' });
     }
     
@@ -1285,7 +1305,7 @@ app.post('/api/admin/users/emergency/:userId', admin, async (req, res) => {
     }
     
     // Log the admin user making the change
-    console.log(`Admin user ${req.user.username} (${req.user.id}) making emergency rank change for user ${userId}`);
+    debugLog(`Admin user ${req.user.username} (${req.user.id}) making emergency rank change for user ${userId}`);
     
     // Get user before update (for audit log)
     const userBefore = await User.findById(userId).select('-password');
@@ -1342,7 +1362,7 @@ app.post('/api/admin/users/emergency/:userId', admin, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error in emergency rank change:', err);
+    debugLog('Error in emergency rank change:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1462,7 +1482,7 @@ app.post('/api/admin/users/:userId/change-rank', admin, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error in rank change:', err);
+    debugLog('Error in rank change:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1536,7 +1556,7 @@ app.get('/api/admin/users', admin, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error fetching users:', err);
+    debugLog('Error fetching users:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -1544,26 +1564,26 @@ app.get('/api/admin/users', admin, async (req, res) => {
 // Direct forum category access endpoint (fallback solution)
 app.get('/api/direct-forum-categories', async (req, res) => {
   try {
-    console.log('Directly accessing forum categories from server...');
+    debugLog('Directly accessing forum categories from server...');
     
     // Force mongoose to use the correct database
     if (mongoose.connection.readyState !== 1) {
-      console.log('Mongoose connection not ready, connecting now...');
+      debugLog('Mongoose connection not ready, connecting now...');
       await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bizzylink');
     }
     
-    console.log('Fetching categories from database:', mongoose.connection.name);
+    debugLog('Fetching categories from database:', mongoose.connection.name);
     const Category = require('./models/Category');
     
     // Query with explicit collection name
     const categories = await Category.find().sort({ order: 1 });
-    console.log(`Found ${categories.length} categories directly from server endpoint`);
+    debugLog(`Found ${categories.length} categories directly from server endpoint`);
     
     if (categories.length > 0) {
-      console.log('First category:', categories[0].name);
+      debugLog('First category:', categories[0].name);
     } else {
       // Create default categories if none exist
-      console.log('No categories found, creating defaults...');
+      debugLog('No categories found, creating defaults...');
       const defaultCategories = [
         {
           name: 'Announcements',
@@ -1596,18 +1616,18 @@ app.get('/api/direct-forum-categories', async (req, res) => {
       for (const categoryData of defaultCategories) {
         const category = new Category(categoryData);
         await category.save();
-        console.log(`Created category: ${category.name}`);
+        debugLog(`Created category: ${category.name}`);
       }
       
       // Fetch again after creation
       const newCategories = await Category.find().sort({ order: 1 });
-      console.log(`Created ${newCategories.length} default categories`);
+      debugLog(`Created ${newCategories.length} default categories`);
       return res.json(newCategories);
     }
     
     res.json(categories);
   } catch (err) {
-    console.error('Error in direct forum categories endpoint:', err);
+    debugLog('Error in direct forum categories endpoint:', err);
     res.status(500).json({ 
       message: 'Server error fetching categories',
       error: err.message
@@ -1617,21 +1637,21 @@ app.get('/api/direct-forum-categories', async (req, res) => {
 
 // Add minecraft notification endpoints
 app.post('/api/minecraft/notify', (req, res) => {
-  console.log('Received notification request:', req.body);
+  debugLog('Received notification request:', req.body);
   
   try {
     const { userId, event, data } = req.body;
     
     if (!userId || !event) {
-      console.log('Notification rejected: Missing required fields');
+      debugLog('Notification rejected: Missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    console.log(`Processing minecraft notification for user ${userId}, event: ${event}`);
+    debugLog(`Processing minecraft notification for user ${userId}, event: ${event}`);
     
     // Just log the event and return success
-    console.log('Notification data:', data);
-    console.log('Notification processed successfully');
+    debugLog('Notification data:', data);
+    debugLog('Notification processed successfully');
     
     // Emit event for SSE clients if eventEmitter is available
     if (eventEmitter) {
@@ -1643,7 +1663,7 @@ app.post('/api/minecraft/notify', (req, res) => {
       
       // Also emit a generic refresh event to force UI update
       setTimeout(() => {
-        console.log(`Sending refresh event to user ${userId}`);
+        debugLog(`Sending refresh event to user ${userId}`);
         eventEmitter.emit('userEvent', { 
           userId, 
           event: 'refresh', 
@@ -1651,7 +1671,7 @@ app.post('/api/minecraft/notify', (req, res) => {
         });
       }, 1000);
     } else {
-      console.log('Event emitter not available, skipping event emission');
+      debugLog('Event emitter not available, skipping event emission');
     }
     
     // Also emit a socket.io event if available
@@ -1661,24 +1681,24 @@ app.post('/api/minecraft/notify', (req, res) => {
     
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Error processing notification:', error);
+    debugLog('Error processing notification:', error);
     res.status(500).json({ error: 'Server error when processing notification', message: error.message });
   }
 });
 
 // Add API endpoint for legacy notifications
 app.post('/api/minecraft/link/notify', async (req, res) => {
-  console.log('Received legacy link notification:', req.body);
+  debugLog('Received legacy link notification:', req.body);
   
   try {
     const { userId, mcUsername, mcUUID } = req.body;
     
     if (!userId || !mcUsername || !mcUUID) {
-      console.log('Legacy notification rejected: Missing required fields');
+      debugLog('Legacy notification rejected: Missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    console.log(`Processing legacy link notification for user ${userId}, minecraft: ${mcUsername}`);
+    debugLog(`Processing legacy link notification for user ${userId}, minecraft: ${mcUsername}`);
     
     // Emit events for SSE if available
     if (eventEmitter) {
@@ -1706,7 +1726,7 @@ app.post('/api/minecraft/link/notify', async (req, res) => {
         });
       }, 1000);
     } else {
-      console.log('Event emitter not available, skipping event emission');
+      debugLog('Event emitter not available, skipping event emission');
     }
     
     // Also emit a socket.io event if available
@@ -1734,41 +1754,41 @@ app.post('/api/minecraft/link/notify', async (req, res) => {
             { upsert: false }
           );
           
-          console.log('User Minecraft linking status updated in database');
+          debugLog('User Minecraft linking status updated in database');
         } catch (dbError) {
-          console.error('Database update error:', dbError);
+          debugLog('Database update error:', dbError);
           // Don't fail the request if DB update fails
         }
       }).catch(err => {
-        console.error('Error in withConnection:', err);
+        debugLog('Error in withConnection:', err);
       });
     } else {
-      console.log('Database not connected, skipping user update');
+      debugLog('Database not connected, skipping user update');
     }
     
-    console.log('Link notification data:', { userId, mcUsername, mcUUID });
-    console.log('Legacy notification processed successfully');
+    debugLog('Link notification data:', { userId, mcUsername, mcUUID });
+    debugLog('Legacy notification processed successfully');
     
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Error processing legacy notification:', error);
+    debugLog('Error processing legacy notification:', error);
     return res.status(500).json({ error: 'Server error when processing notification', message: error.message });
   }
 });
 
 // Add player update endpoint
 app.post('/api/player/update', (req, res) => {
-  console.log('Received player update:', req.body);
+  debugLog('Received player update:', req.body);
   
   try {
     const { mcUsername, mcUUID, stats } = req.body;
     
     if (!mcUsername || !mcUUID) {
-      console.log('Player update rejected: Missing player information');
+      debugLog('Player update rejected: Missing player information');
       return res.status(400).json({ error: 'Missing player information' });
     }
     
-    console.log(`Processing player update for ${mcUsername}`);
+    debugLog(`Processing player update for ${mcUsername}`);
     
     // Try to update user in database if connected
     if (isConnected() && stats?.userId) {
@@ -1787,7 +1807,7 @@ app.post('/api/player/update', (req, res) => {
           );
           
           if (result.value) {
-            console.log('User stats updated in database');
+            debugLog('User stats updated in database');
             
             // Emit event for real-time notification
             if (eventEmitter) {
@@ -1803,27 +1823,49 @@ app.post('/api/player/update', (req, res) => {
               io.to(stats.userId).emit('stats_updated', { mcUsername, stats });
             }
           } else {
-            console.log('No user found with ID:', stats.userId);
+            debugLog('No user found with ID:', stats.userId);
           }
         } catch (dbError) {
-          console.error('Database update error:', dbError);
+          debugLog('Database update error:', dbError);
           // Don't fail the request if DB update fails
         }
       }).catch(err => {
-        console.error('Error in withConnection:', err);
+        debugLog('Error in withConnection:', err);
       });
     } else {
-      console.log('Database not connected or userId missing, skipping user update');
+      debugLog('Database not connected or userId missing, skipping user update');
     }
     
     // Just log the request and return success
-    console.log('Player update data:', { mcUsername, mcUUID, stats });
-    console.log('Player update processed successfully');
+    debugLog('Player update data:', { mcUsername, mcUUID, stats });
+    debugLog('Player update processed successfully');
     
     res.status(200).json({ success: true });
   } catch (error) {
-    console.error('Error processing player update:', error);
+    debugLog('Error processing player update:', error);
     res.status(500).json({ error: 'Server error when processing player update', message: error.message });
+  }
+});
+
+// Internal endpoint to emit player_unlinked to plugin-mc (for use by other services)
+app.post('/api/internal/emit-unlink', (req, res) => {
+  const secret = req.headers['x-internal-secret'];
+  if (secret !== process.env.INTERNAL_EVENT_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { mcUUID, message } = req.body;
+  if (!mcUUID) {
+    return res.status(400).json({ error: 'mcUUID is required' });
+  }
+  if (io && io.to) {
+    io.to('plugin-mc').emit('player_unlinked', {
+      mcUUID,
+      message: message || 'Your Minecraft account has been unlinked.'
+    });
+    debugLog(`[INTERNAL] Emitted player_unlinked to plugin-mc for mcUUID: ${mcUUID}`);
+    return res.status(200).json({ success: true });
+  } else {
+    return res.status(500).json({ error: 'Socket.IO not available' });
   }
 });
 
@@ -1835,24 +1877,24 @@ const PORT = process.env.PORT || 8080;
   try {
     // Try to connect to database but don't block server startup
     connectDB().catch(err => {
-      console.error('Initial database connection failed, continuing without DB:', err.message);
-      console.log('Server will continue to run and retry database connection');
+      debugLog('Initial database connection failed, continuing without DB:', err.message);
+      debugLog('Server will continue to run and retry database connection');
     });
     
     // Start server immediately
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`Database connection status: ${isConnected() ? 'Connected' : 'Disconnected'}`);
+      debugLog(`🚀 Server running on port ${PORT}`);
+      debugLog(`Database connection status: ${isConnected() ? 'Connected' : 'Disconnected'}`);
       
       // Print Socket.IO stats every 5 minutes
       setInterval(() => {
         const sockets = io.sockets.sockets;
         const roomCount = io.sockets.adapter.rooms.size;
-        console.log(`📊 Socket.IO Stats - Connected clients: ${sockets.size}, Active rooms: ${roomCount}`);
+        debugLog(`📊 Socket.IO Stats - Connected clients: ${sockets.size}, Active rooms: ${roomCount}`);
       }, 300000); // 5 minutes
     });
   } catch (error) {
-    console.error('Error starting server:', error);
+    debugLog('Error starting server:', error);
     process.exit(1);
   }
 })();

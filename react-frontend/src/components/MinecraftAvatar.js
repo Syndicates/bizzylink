@@ -43,79 +43,62 @@ const MinecraftAvatar = ({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   
-  // Get avatar URL based on type with improved fallback - using consistent usernames
+  // Get avatar URL based on type with improved fallback
   const getAvatarUrl = () => {
-    const playerUuid = uuid || username;
-    
-    // Core set of reliable Minecraft usernames for consistent skin display
-    const reliableUsernames = [
-      'Notch', 'jeb_', 'Dinnerbone', 'Dream', 'GeorgeNotFound', 
-      'Technoblade', 'Ph1LzA', 'TommyInnit', 'Sapnap', 'Skeppy'
-    ];
-    
-    // If no username/uuid provided, use Steve (default skin)
-    if (!playerUuid) {
-      // Instead of random username which causes flickering, use Steve or a specified default
-      return `https://mc-heads.net/avatar/MHF_Steve/${size}`;
-    }
-    
-    // If the provided username is one of our reliable ones, use it directly
-    // Otherwise, if it's a generic value like "player_head", use Steve
-    const finalUsername = reliableUsernames.includes(playerUuid) ? 
-      playerUuid : 
-      (playerUuid === 'player_head' ? 'MHF_Steve' : playerUuid);
-    
-    // Direct URL to better Minecraft skin services
+    const playerIdentifier = uuid || username || 'MHF_Steve'; // Use MHF_Steve if no identifier
+
+    // Use Visage as the primary source, adjust endpoint based on type
     switch (type) {
       case 'head':
-        return `https://mc-heads.net/avatar/${finalUsername}/${size}`;
+      case 'face': // Allow 'face' as an alias for 'head' type
+        return `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`;
+      case 'avatar': // Visage's generic avatar endpoint
+        return `https://visage.surgeplay.com/avatar/${size}/${playerIdentifier}`;
       case 'bust':
-        return `https://mc-heads.net/head/${finalUsername}/${size}`;
+        return `https://visage.surgeplay.com/bust/${size}/${playerIdentifier}`;
       case 'full':
-        return `https://mc-heads.net/body/${finalUsername}/${size}`;
+        return `https://visage.surgeplay.com/full/${size}/${playerIdentifier}`;
       default:
-        return `https://mc-heads.net/avatar/${finalUsername}/${size}`;
+        return `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`; // Default to face
     }
   };
   
   // Handle image errors with consistent fallbacks
   const handleError = (e) => {
-    // Remove console spam
-    // console.log('Failed to load avatar from primary source, trying fallbacks');
+    setIsLoading(false); // Stop loading indicator on error
     setHasError(true);
-    
-    // Directly use Steve skin as main fallback - much more reliable than random usernames
-    const DEFAULT_SKIN = 'MHF_Steve';
-    
-    // Get consistent fallback username - either the one provided or a default
-    const getFallbackUsername = () => {
-      // If a specific popular username was provided, try to use it
-      if (username && ['Notch', 'jeb_', 'Dinnerbone', 'Dream', 'GeorgeNotFound', 
-                       'Technoblade', 'Ph1LzA', 'TommyInnit', 'Sapnap', 'Skeppy'].includes(username)) {
-        return username;
-      }
-      
-      // Otherwise use the default skin (Steve)
-      return DEFAULT_SKIN;
-    };
-    
-    const fallbackUsername = getFallbackUsername();
-    
-    // Try alternative services in sequence with consistent username
-    if (e.target.src.includes('mc-heads.net')) {
-      // console.log('Trying minotar fallback');
-      e.target.src = `https://minotar.net/avatar/${fallbackUsername}/${size}.png`;
-      
-      e.target.onerror = (e2) => {
-        // console.log('Trying crafatar fallback');
-        e2.target.src = `https://crafatar.com/avatars/${fallbackUsername}?size=${size}&overlay=true`;
-        
-        e2.target.onerror = (e3) => {
-          // console.log('Using final skin fallback');
-          // Use the default Steve skin as final fallback - most reliable option
-          e3.target.src = `https://minotar.net/helm/${DEFAULT_SKIN}/${size}.png`;
-        };
+
+    const currentSrc = e.target.src;
+    const playerIdentifier = uuid || username; // Use the actual identifier for fallbacks if available
+
+    if (!playerIdentifier) { // If no identifier, just use a placeholder or Steve directly
+      e.target.src = `https://mc-heads.net/avatar/MHF_Steve/${size}`; // Default to Steve if no username/UUID
+      e.target.onerror = () => { // Final placeholder if Steve also fails (unlikely for mc-heads)
+        e.target.src = `https://via.placeholder.com/${size}?text=MC`;
+        e.target.onerror = null;
       };
+      return;
+    }
+
+    // Fallback chain
+    if (currentSrc.includes('visage.surgeplay.com')) {
+      console.log('Visage failed, trying PlayerDB for:', playerIdentifier);
+      e.target.src = `https://playerdb.co/api/player/minecraft/${playerIdentifier}/avatar?size=${size}`;
+    } else if (currentSrc.includes('playerdb.co')) {
+      console.log('PlayerDB failed, trying mc-heads for:', playerIdentifier);
+      e.target.src = `https://mc-heads.net/avatar/${playerIdentifier}/${size}`;
+    } else if (currentSrc.includes('mc-heads.net')) {
+      console.log('mc-heads failed, trying Minotar for:', playerIdentifier);
+      e.target.src = `https://minotar.net/avatar/${playerIdentifier}/${size}.png`;
+    } else if (currentSrc.includes('minotar.net')) {
+      console.log('Minotar failed, using placeholder for:', playerIdentifier);
+      e.target.src = `https://via.placeholder.com/${size}?text=MC`;
+      e.target.onerror = null; // Stop the error loop
+    } else {
+      // If it's an unknown source or something went wrong, just use placeholder
+      console.log('Unknown source failed, using placeholder for:', playerIdentifier);
+      e.target.src = `https://via.placeholder.com/${size}?text=MC`;
+      e.target.onerror = null;
     }
   };
   

@@ -523,16 +523,7 @@ public class FriendManager {
     }
     
     /**
-     * Gets a list of players that have sent friend requests to a player
-     * @param player The player to get requests for
-     * @return The list of players that have sent requests
-     */
-    public List<FriendRequest> getReceivedRequests(Player player) {
-        return requestCache.getOrDefault(player.getUniqueId(), new ArrayList<>());
-    }
-    
-    /**
-     * Checks if a player is friends with another player
+     * Checks if two players are friends
      * @param player The player to check
      * @param otherPlayer The other player to check
      * @return Whether the players are friends
@@ -543,9 +534,28 @@ public class FriendManager {
     }
     
     /**
-     * Clears the friend cache for a player when they log out
-     * @param player The player logging out
+     * Gets a list of players that have sent friend requests to a player
+     * @param player The player to get requests for
+     * @return The list of received friend requests
      */
+    public List<FriendRequest> getReceivedRequests(Player player) {
+        return requestCache.getOrDefault(player.getUniqueId(), new ArrayList<>());
+    }
+    
+    /**
+     * Gets a list of players that have sent friend requests to a player
+     * @param player The player to get requests for
+     * @return The list of players that have sent requests
+    }
+    
+    public FriendRequest(UUID sender, UUID receiver, Type type) {
+        this.sender = sender;
+        this.receiver = receiver;
+        this.type = type;
+    }
+    
+    public UUID getSender() {
+        return sender;
     public void clearCache(Player player) {
         friendCache.remove(player.getUniqueId());
         requestCache.remove(player.getUniqueId());

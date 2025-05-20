@@ -36,8 +36,8 @@ export const useEventSource = () => {
 // Debug flag - disabled in production to reduce console logs
 const DEBUG = false;
 
-// EMERGENCY FIX: Completely disable EventSource connections until fixed
-const DISABLE_EVENT_SOURCE = true;
+// Re-enable EventSource (SSE) fallback for real-time updates
+const DISABLE_EVENT_SOURCE = false;
 
 // Create a mock EventSource that can be used as a safe no-op implementation
 class MockEventSource {
@@ -74,33 +74,102 @@ class MockEventSource {
 
 // EMERGENCY FIX LEVEL 2: Completely replace EventSourceProvider with a stub
 export const EventSourceProvider = ({ children }) => {
-  logger('EventSourceProvider rendered', { disabled: DISABLE_EVENT_SOURCE });
-  
-  // Track each render
+  const { user } = useAuth();
+  const [eventSource, setEventSource] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastEvent, setLastEvent] = useState(null);
+  const [error, setError] = useState(null);
+  const reconnectAttempts = useRef(0);
+  const reconnectTimeout = useRef(null);
+
+  // NOTE: cleanup is defined inside the effect to avoid dependency loops.
+  // Only re-run this effect when the user changes, not on every render or eventSource change.
   useEffect(() => {
-    trackRender('EventSourceProvider');
-  });
-  
-  // Create a mock event source object
-  const mockEventSourceRef = useRef(new MockEventSource());
-  
-  // Create a proper implementation that handles events consistently
+    if (!user || !user.id) return;
+
+    let es;
+    let stopped = false;
+
+    const cleanup = () => {
+      if (es) es.close();
+      setIsConnected(false);
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
+    };
+
+    const connect = () => {
+      if (stopped) return;
+      // Get the JWT token from TokenStorage
+      const token = TokenStorage.getToken();
+      let url = `/api/events?userId=${user.id}`;
+      if (token) {
+        url += `&token=${encodeURIComponent(token)}`;
+      }
+      es = new window.EventSource(url);
+      setEventSource(es);
+
+      es.onopen = () => {
+        console.log('[SSE] Connection opened');
+        setIsConnected(true);
+        setError(null);
+        reconnectAttempts.current = 0; // Reset attempts on success
+      };
+      es.onerror = (err) => {
+        console.error('[SSE] Connection error:', err);
+        setError(err);
+        setIsConnected(false);
+        es.close();
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+        const attempt = reconnectAttempts.current + 1;
+        reconnectAttempts.current = attempt;
+        if (attempt <= 5) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+          console.log(`[SSE] Attempting reconnect #${attempt} in ${delay / 1000}s`);
+          reconnectTimeout.current = setTimeout(connect, delay);
+        } else {
+          setError(new Error('Unable to reconnect to real-time server. Please refresh the page.'));
+        }
+      };
+      es.onmessage = (event) => {
+        console.log('[SSE] Raw event:', event);
+        try {
+          const parsed = JSON.parse(event.data);
+          console.log('[SSE] Parsed event data:', parsed);
+          // Dispatch a custom event for listeners
+          if (parsed.type) {
+            window.dispatchEvent(new CustomEvent(parsed.type, { detail: parsed }));
+          }
+        } catch (e) {
+          console.warn('[SSE] Could not parse event data:', event.data);
+        }
+        setLastEvent(event);
+      };
+    };
+
+    connect();
+
+    return () => {
+      stopped = true;
+      cleanup();
+    };
+  }, [user]);
+
+  const addEventListener = useCallback((event, callback) => {
+    const handler = (e) => callback(e.detail);
+    window.addEventListener(event, handler);
+    return () => window.removeEventListener(event, handler);
+  }, []);
+
   const value = useMemo(() => ({
-    eventSource: mockEventSourceRef.current,
-    isConnected: false,
-    lastEvent: null,
-    error: null,
-    reconnect: () => {
-      logger('Reconnect called but EventSource is completely disabled');
-    },
-    addEventListener: (event, callback) => {
-      logger(`Adding event listener for ${event} (mock implementation)`);
-      mockEventSourceRef.current.addEventListener(event, callback);
-      // Return a cleanup function
-      return () => mockEventSourceRef.current.removeEventListener(event, callback);
-    }
-  }), []);
-  
+    eventSource,
+    isConnected,
+    lastEvent,
+    error,
+    addEventListener,
+  }), [eventSource, isConnected, lastEvent, error, addEventListener]);
+
   return (
     <EventSourceContext.Provider value={value}>
       {children}

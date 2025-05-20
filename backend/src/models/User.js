@@ -1,14 +1,14 @@
 /**
- * +-------------------------------------------------+
+ * +----+
  * |                 BIZZY NATION                    |
  * |          Crafted with ♦ by Bizzy 2025         |
- * +-------------------------------------------------+
- * 
+ * +----+
+ *
  * @file User.js
- * @description 
+ * @description User model and schema for BizzyLink
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
- * 
+ *
  * This file is protected intellectual property of Bizzy Nation.
  * Unauthorized use, copying, or distribution is prohibited.
  */
@@ -95,6 +95,10 @@ const UserSchema = new mongoose.Schema({
     type: Date, 
     default: Date.now 
   },
+  // Social features
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   
   // Minecraft integration
   minecraftUUID: { 
@@ -109,13 +113,16 @@ const UserSchema = new mongoose.Schema({
     sparse: true,
     trim: true
   },
-  linkCode: { 
-    type: String,
-    trim: true
-  },
-  linkExpiryDate: { 
-    type: Date 
-  },
+  // --- Added for compatibility with previous server schema ---
+  linked: { type: Boolean, default: false },
+  isLinked: { type: Boolean, default: false },
+  mcUUID: { type: String, unique: true, sparse: true },
+  mcUsername: { type: String },
+  linkCode: { type: String },
+  linkCodeExpiry: { type: Date },
+  mcLinkedAt: { type: Date },
+  codeExpiry: { type: Date },
+  verified: { type: Boolean, default: false },
   
   // Rank system
   webRank: { 
@@ -153,11 +160,8 @@ const UserSchema = new mongoose.Schema({
 
   // Minecraft integration (nested)
   minecraft: {
-    mcUsername: { type: String, trim: true },
-    mcUUID: { type: String, trim: true },
-    linkCode: { type: String, trim: true },
-    linkCodeExpires: { type: Date }
-    // Add more fields as needed for player profile
+    type: mongoose.Schema.Types.Mixed, // Allow any fields (mcUsername, mcUUID, stats, etc.)
+    default: {}
   },
 });
 
@@ -195,7 +199,7 @@ UserSchema.methods.getSignedToken = function() {
       username: this.username,
       rank: this.webRank,
       isAdmin: this.webRank === 'admin' || this.webRank === 'owner',
-      isLinked: !!this.minecraftUUID
+      isLinked: this.hasLinkedAccount()
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE }
@@ -208,7 +212,7 @@ UserSchema.methods.isAdmin = function() {
 };
 
 // Add method to check if user has minecraft account linked
-UserSchema.methods.isLinked = function() {
+UserSchema.methods.hasLinkedAccount = function() {
   return !!this.minecraftUUID;
 };
 
@@ -220,17 +224,19 @@ UserSchema.methods.generateLinkCode = function() {
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  
   // Set link code and expiry (30 minutes)
+  const expiry = new Date(Date.now() + 30 * 60 * 1000);
   this.linkCode = code;
-  this.linkExpiryDate = new Date(Date.now() + 30 * 60 * 1000);
-  
+  this.linkExpiryDate = expiry;
+  this.linkCodeExpiry = expiry; // Set both for compatibility (see RULES.md & database-info.md)
   return code;
 };
 
 // Add method to check if link code is valid
 UserSchema.methods.isLinkCodeValid = function() {
-  return this.linkCode && this.linkExpiryDate && this.linkExpiryDate > new Date();
+  // Accept if either expiry field is in the future (for compatibility)
+  const now = new Date();
+  return this.linkCode && ((this.linkExpiryDate && this.linkExpiryDate > now) || (this.linkCodeExpiry && this.linkCodeExpiry > now));
 };
 
 // Add method to link minecraft account
@@ -238,12 +244,14 @@ UserSchema.methods.linkMinecraftAccount = function(uuid, username) {
   this.minecraftUUID = uuid;
   this.minecraftUsername = username;
   this.linked = true;
+  this.isLinked = true;
   this.linkCode = undefined;
   this.linkExpiryDate = undefined;
   // Also set nested fields for compatibility
   if (!this.minecraft) this.minecraft = {};
   this.minecraft.mcUUID = uuid;
   this.minecraft.mcUsername = username;
+  this.minecraft.linked = true;
   this.minecraft.linkCode = undefined;
   this.minecraft.linkCodeExpires = undefined;
 };

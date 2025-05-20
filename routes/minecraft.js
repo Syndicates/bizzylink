@@ -20,7 +20,6 @@ const { authenticateToken } = require('../middleware/auth');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const eventEmitter = require('../eventEmitter');
-const io = require('../io');
 
 // GET current user's Minecraft link status
 router.get('/link', authenticateToken, async (req, res) => {
@@ -161,16 +160,18 @@ router.delete('/link', authenticateToken, async (req, res) => {
         $set: {
           linked: false,
           mcUsername: null,
-          mcUUID: null,
           linkCode: null,
           linkCodeExpiry: null,
           'minecraft.linked': false,
           'minecraft.mcUsername': null,
-          'minecraft.mcUUID': null,
           'minecraft.linkCode': null,
           'minecraft.linkCodeExpires': null,
           'minecraft.stats': {},
           'minecraft.lastLinked': null
+        },
+        $unset: {
+          mcUUID: "",
+          'minecraft.mcUUID': ""
         }
       }
     );
@@ -198,15 +199,22 @@ router.delete('/link', authenticateToken, async (req, res) => {
     }
     
     // Notify any connected clients via socket.io (real-time unlink event)
-    if (typeof io !== 'undefined' && io.to) {
-      io.to(user._id.toString()).emit('player_unlinked', {
-        type: 'player_unlinked',
-        userId: user._id.toString(),
-        mcUsername: previousMcUsername,
-        mcUUID: mcUUID,
-        timestamp: new Date().toISOString(),
-        message: 'Your Minecraft account has been unlinked.'
-      });
+    // (Removed direct io usage - see RULES.md: emit events from main server context)
+    // Use global.notifyUser for real-time notifications
+    
+    // Emit unlink event to all plugin clients (plugin-mc room) via main server
+    const mcUUID = user.minecraft?.mcUUID || user.mcUUID;
+    if (mcUUID) {
+      try {
+        await axios.post(
+          'http://localhost:8080/api/internal/emit-unlink',
+          { mcUUID, message: 'Your Minecraft account has been unlinked.' },
+          { headers: { 'x-internal-secret': process.env.INTERNAL_EVENT_SECRET } }
+        );
+        console.log(`[INTERNAL] Requested player_unlinked emission for mcUUID: ${mcUUID}`);
+      } catch (err) {
+        console.error('[INTERNAL] Failed to request player_unlinked emission:', err.message);
+      }
     }
     
     return res.status(200).json({
@@ -546,15 +554,17 @@ router.post('/unlink', async (req, res) => {
         $set: {
           linked: false,
           mcUsername: null,
-          mcUUID: null,
           linkCode: null,
           linkCodeExpiry: null,
           'minecraft.linked': false,
           'minecraft.mcUsername': null,
-          'minecraft.mcUUID': null,
           'minecraft.linkCode': null,
           'minecraft.linkCodeExpires': null,
           'minecraft.lastLinked': null
+        },
+        $unset: {
+          mcUUID: "",
+          'minecraft.mcUUID': ""
         }
       }
     );
@@ -582,15 +592,22 @@ router.post('/unlink', async (req, res) => {
     }
     
     // Notify any connected clients via socket.io (real-time unlink event)
-    if (typeof io !== 'undefined' && io.to) {
-      io.to(user._id.toString()).emit('player_unlinked', {
-        type: 'player_unlinked',
-        userId: user._id.toString(),
-        mcUsername: username,
-        mcUUID: uuid,
-        timestamp: new Date().toISOString(),
-        message: 'Your Minecraft account has been unlinked.'
-      });
+    // (Removed direct io usage - see RULES.md: emit events from main server context)
+    // Use global.notifyUser for real-time notifications
+    
+    // Emit unlink event to all plugin clients (plugin-mc room) via main server
+    const mcUUID = user.minecraft?.mcUUID || user.mcUUID;
+    if (mcUUID) {
+      try {
+        await axios.post(
+          'http://localhost:8080/api/internal/emit-unlink',
+          { mcUUID, message: 'Your Minecraft account has been unlinked.' },
+          { headers: { 'x-internal-secret': process.env.INTERNAL_EVENT_SECRET } }
+        );
+        console.log(`[INTERNAL] Requested player_unlinked emission for mcUUID: ${mcUUID}`);
+      } catch (err) {
+        console.error('[INTERNAL] Failed to request player_unlinked emission:', err.message);
+      }
     }
     
     return res.status(200).json({
@@ -668,16 +685,18 @@ router.post('/unlink', async (req, res) => {
         $set: {
           linked: false,
           mcUsername: null,
-          mcUUID: null,
           linkCode: null,
           linkCodeExpiry: null,
           mcStats: {}, // Clear stats when unlinking
           'minecraft.linked': false,
           'minecraft.mcUsername': null,
-          'minecraft.mcUUID': null,
           'minecraft.linkCode': null,
           'minecraft.linkCodeExpires': null,
-          'minecraft.stats': {}
+          'minecraft.lastLinked': null
+        },
+        $unset: {
+          mcUUID: "",
+          'minecraft.mcUUID': ""
         }
       }
     );
@@ -705,16 +724,8 @@ router.post('/unlink', async (req, res) => {
     }
     
     // Notify any connected clients via socket.io (real-time unlink event)
-    if (typeof io !== 'undefined' && io.to) {
-      io.to(user._id.toString()).emit('player_unlinked', {
-        type: 'player_unlinked',
-        userId: user._id.toString(),
-        mcUsername: previousMcUsername,
-        mcUUID: uuid,
-        timestamp: new Date().toISOString(),
-        message: 'Your Minecraft account has been unlinked.'
-      });
-    }
+    // (Removed direct io usage - see RULES.md: emit events from main server context)
+    // Use global.notifyUser for real-time notifications
     
     // Emit event for other server components
     eventEmitter.emit('minecraft_account_unlinked', {
@@ -722,6 +733,21 @@ router.post('/unlink', async (req, res) => {
       mcUsername: previousMcUsername,
       mcUUID: uuid
     });
+    
+    // Emit unlink event to all plugin clients (plugin-mc room) via main server
+    const mcUUID = user.minecraft?.mcUUID || user.mcUUID;
+    if (mcUUID) {
+      try {
+        await axios.post(
+          'http://localhost:8080/api/internal/emit-unlink',
+          { mcUUID, message: 'Your Minecraft account has been unlinked.' },
+          { headers: { 'x-internal-secret': process.env.INTERNAL_EVENT_SECRET } }
+        );
+        console.log(`[INTERNAL] Requested player_unlinked emission for mcUUID: ${mcUUID}`);
+      } catch (err) {
+        console.error('[INTERNAL] Failed to request player_unlinked emission:', err.message);
+      }
+    }
     
     return res.status(200).json({ 
       success: true, 

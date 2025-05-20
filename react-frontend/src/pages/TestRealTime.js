@@ -15,20 +15,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useWebSocket } from '../contexts/WebSocketContext';
 import AnimatedPlayerStats from '../components/AnimatedPlayerStats';
+import { useEventSource } from '../contexts/EventSourceContext';
 
 const TestRealTime = () => {
   const { user } = useAuth();
-  const { isConnected, lastMessage, requestStatsUpdate } = useWebSocket();
+  const { lastEvent, isConnected } = useEventSource();
   const [messages, setMessages] = useState([]);
   
-  // Add new messages to the list
+  // Add new SSE events to the list
   useEffect(() => {
-    if (lastMessage) {
-      setMessages(prev => [...prev, lastMessage].slice(-10)); // Keep last 10 messages
+    if (lastEvent) {
+      setMessages(prev => [...prev, lastEvent].slice(-10)); // Keep last 10 events
     }
-  }, [lastMessage]);
+  }, [lastEvent]);
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -53,14 +53,6 @@ const TestRealTime = () => {
         ) : (
           <p className="text-yellow-500">Not logged in. Please log in to see real-time updates.</p>
         )}
-        
-        <button 
-          onClick={requestStatsUpdate}
-          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
-          disabled={!isConnected}
-        >
-          Request Stats Update
-        </button>
       </div>
       
       {user?.mcUsername && (

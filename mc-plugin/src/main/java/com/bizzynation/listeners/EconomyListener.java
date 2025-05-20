@@ -16,6 +16,7 @@
 package com.bizzynation.listeners;
 
 import com.bizzynation.LinkPlugin;
+import com.bizzynation.config.ConfigManager;
 import com.bizzynation.utils.ApiService;
 import com.bizzynation.utils.MessageUtils;
 import org.bukkit.Bukkit;
@@ -23,12 +24,14 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Collections;
 
 /**
  * Listener for economy-related events and balance changes
@@ -137,7 +140,7 @@ public class EconomyListener implements Listener {
             UUID playerUUID = player.getUniqueId();
             
             // Skip if player isn't linked
-            if (!plugin.getConfigManager().isPlayerLinked(playerUUID)) {
+            if (!((ConfigManager)plugin.getConfigManager()).isPlayerLinked(playerUUID)) {
                 continue;
             }
             
@@ -171,9 +174,15 @@ public class EconomyListener implements Listener {
                                 "🔄 Force triggering update - values different");
                         }
                         
-                        // If the balance has changed AT ALL
-                        // Changed condition from >= to > for more sensitivity
-                        if (difference > 0.0) {
+                        // If the balance has changed AT ALL - ALWAYS send WebSocket updates like XP
+                        if (true) { // Always evaluate this block to be more like XP/level updates
+                            // Send WebSocket events for balance (just like we do with XP)
+                            apiService.notifyRealtimeUpdate(playerUUID.toString(), "balance", currentBalance);
+                            
+                            MessageUtils.log(java.util.logging.Level.INFO, 
+                                "Balance WebSocket update sent for " + player.getName() + ": " + currentBalance);
+                            
+                            // Only do the API update if it meets the minimum change requirements
                             double minChange = plugin.getConfig().getDouble("data.min_balance_change", 1.0);
                             int minInterval = plugin.getConfig().getInt("data.min_balance_sync_interval", 10); // seconds
                             if (Math.abs(difference) >= minChange) {
@@ -274,6 +283,60 @@ public class EconomyListener implements Listener {
 
     // Add a public getter for moneySpentToday
     public Map<UUID, Double> getMoneySpentToday() {
-        return moneySpentToday;
+        return Collections.unmodifiableMap(moneySpentToday);
+    }
+    
+    /**
+     * Listen for economy-related commands to update balance immediately
+     * This captures commands like /eco, /money, /pay, etc. that modify player balances
+     * Works EXACTLY like XP with real-time updates
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        String command = event.getMessage().toLowerCase();
+        
+        // Only process economy-related commands
+        if (command.startsWith("/eco ") || 
+            command.startsWith("/economy ") ||
+            command.startsWith("/money ") ||
+            command.startsWith("/bal ") ||
+            command.startsWith("/balance ") ||
+            command.startsWith("/pay ")) {
+            
+            Player player = event.getPlayer();
+            UUID playerUUID = player.getUniqueId();
+            
+            // Schedule a delayed check to allow the command to complete first
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline() && ((com.bizzynation.config.ConfigManager)plugin.getConfigManager()).isPlayerLinked(playerUUID)) {
+                    // Get the current balance from Vault EXACTLY like the XP system
+                    double currentBalance = 0.0;
+                    if (plugin.getVaultIntegration() != null) {
+                        // Use the getBalance method instead of accessing economy directly
+                        currentBalance = plugin.getVaultIntegration().getBalance(player);
+                    }
+                    
+                    // CRITICAL FIX: This MUST use the exact same structure as XP updates
+                    // Use ONLY the socketManager's sendPlayerStatUpdate method which has the proper debug output
+                    plugin.getLogger().info("DEBUG: sendPlayerStatUpdate called - Player: " + player.getName() + " (UUID: " + player.getUniqueId() + "), Stat: balance, Value: " + currentBalance);
+                    
+                    // Use Socket.IO manager first - this is what works for XP updates!
+                    apiService.notifyRealtimeUpdate(playerUUID.toString(), "balance", currentBalance);
+                    
+                    // Store for tracking purposes
+                    double previousBalance = lastKnownBalances.getOrDefault(playerUUID, currentBalance);
+                    lastKnownBalances.put(playerUUID, currentBalance);
+                    
+                    // Track spending/earning if balance changed
+                    if (currentBalance > previousBalance) {
+                        double earned = currentBalance - previousBalance;
+                        moneyEarnedToday.put(playerUUID, moneyEarnedToday.getOrDefault(playerUUID, 0.0) + earned);
+                    } else if (currentBalance < previousBalance) {
+                        double spent = previousBalance - currentBalance;
+                        moneySpentToday.put(playerUUID, moneySpentToday.getOrDefault(playerUUID, 0.0) + spent);
+                    }
+                }
+            }, 5L); // 5 tick delay (0.25 seconds) to ensure command processes first
+        }
     }
 }

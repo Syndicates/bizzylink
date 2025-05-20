@@ -18,6 +18,11 @@ const User = require('../models/User');
 const { SecurityLog } = require('../models/SecurityLog');
 const ErrorResponse = require('../utils/errorResponse');
 
+// Ensure JWT_SECRET is set to the provided value
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'Q7v!pZ2rT9@xL6$wB1^sF4&nM8*eC3zY5hJ0!kR8@wV2^';
+}
+
 // Protect routes
 exports.protect = async (req, res, next) => {
   try {
@@ -35,12 +40,16 @@ exports.protect = async (req, res, next) => {
     
     // Check if token exists
     if (!token) {
-      return next(new ErrorResponse('Not authorized to access this route', 401));
+      console.error('[AUTH] No token provided');
+      return res.status(401).json({ error: 'No token, authorization denied' });
     }
+    
+    console.log('[AUTH] Incoming token:', token.substring(0, 20) + '...');
     
     try {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log('[AUTH] Decoded token:', decoded);
       
       // Get user from database (excluding password)
       const user = await User.findById(decoded.id);
@@ -58,14 +67,8 @@ exports.protect = async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
-      if (error.name === 'JsonWebTokenError') {
-        return next(new ErrorResponse('Invalid token', 401));
-      } else if (error.name === 'TokenExpiredError') {
-        return next(new ErrorResponse('Token expired', 401));
-      } else {
-        console.error('Authentication error:', error);
-        return next(new ErrorResponse('Not authorized to access this route', 401));
-      }
+      console.error('[AUTH] Token verification error:', error.message);
+      return res.status(401).json({ error: 'Invalid token' });
     }
   } catch (error) {
     next(error);

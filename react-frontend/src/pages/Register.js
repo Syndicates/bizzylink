@@ -164,7 +164,8 @@ const Register = () => {
       // Create the user data object
       const userData = {
         username,
-        password
+        password,
+        confirmPassword
       };
       
       // Only include email if it's provided

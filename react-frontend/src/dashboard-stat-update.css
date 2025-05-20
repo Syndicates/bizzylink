@@ -1,0 +1,83 @@
+/**
+ * +-------------------------------------------------+
+ * |                 BIZZY NATION                    |
+ * |          Crafted with ♦ by Bizzy 2025         |
+ * +-------------------------------------------------+
+ * 
+ * @file dashboard-stat-update.css
+ * @description CSS animations for real-time stat updates
+ * @copyright © Bizzy Nation - All Rights Reserved
+ * @license Proprietary - Not for distribution
+ */
+
+/* Real-time stat update animation */
+@keyframes stat-update-pulse {
+  0% {
+    transform: scale(1);
+    background-color: rgba(84, 170, 84, 0);
+    color: inherit;
+  }
+  30% {
+    transform: scale(1.1);
+    background-color: rgba(84, 170, 84, 0.3);
+    color: #fff;
+  }
+  100% {
+    transform: scale(1);
+    background-color: rgba(84, 170, 84, 0);
+    color: inherit;
+  }
+}
+
+/* Animation for level stat updates */
+@keyframes level-update-pulse {
+  0% {
+    transform: scale(1);
+    text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+  }
+  30% {
+    transform: scale(1.15);
+    text-shadow: 0 0 10px rgba(255, 215, 0, 1);
+    color: gold;
+  }
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 0px rgba(255, 215, 0, 0);
+  }
+}
+
+/* Apply the animations to different stat types */
+.stat-updated {
+  animation: stat-update-pulse 1.2s ease-in-out;
+  border-radius: 4px;
+}
+
+.stat-level-updated {
+  animation: level-update-pulse 1.2s ease-in-out;
+  border-radius: 4px;
+}
+
+/* Make numeric values stand out more */
+.stat-value {
+  font-weight: 600;
+  transition: all 0.3s ease-in-out;
+}
+
+/* Special style for specific stats */
+#player-stat-level .stat-value,
+[id^="player-stat-level"] .stat-value {
+  color: #ffaa00;
+  font-weight: 700;
+}
+
+#player-stat-total_experience .stat-value,
+[id^="player-stat-total_experience"] .stat-value {
+  color: #00aaff;
+  font-weight: 600;
+}
+
+#player-stat-balance .stat-value,
+[id^="player-stat-balance"] .stat-value {
+  color: #33cc33;
+  font-weight: 600;
+}

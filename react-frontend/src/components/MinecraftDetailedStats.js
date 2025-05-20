@@ -485,7 +485,7 @@ const CombatStatsPanel = ({ stats, derivedStats }) => {
 // Mining stats panel
 const MiningStatsPanel = ({ stats, derivedStats }) => {
   // Get relevant mining stats with fallbacks
-  const blocksMined = stats.blocks_mined || stats.blocksMined || 0;
+  const blocksMined = stats.blocks_mined || 0;
   const itemsCrafted = stats.items_crafted || 0;
   
   return (

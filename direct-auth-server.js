@@ -37,7 +37,7 @@ app.use(cors({
 app.use(bodyParser.json());
 
 // JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'bizzylink-secure-jwt-key-for-authentication';
+const JWT_SECRET = process.env.JWT_SECRET || 'Q7v!pZ2rT9@xL6$wB1^sF4&nM8*eC3zY5hJ0!kR8@wV2^';
 
 // MongoDB Connection
 let db;

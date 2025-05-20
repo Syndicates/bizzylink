@@ -1,14 +1,14 @@
 /**
- * +-------------------------------------------------+
+ * +----+
  * |                 BIZZY NATION                    |
  * |          Crafted with ♦ by Bizzy 2025         |
- * +-------------------------------------------------+
- * 
+ * +----+
+ *
  * @file linkcode-manager.js
- * @description 
+ * @description Link code manager for Minecraft account linking
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
- * 
+ *
  * This file is protected intellectual property of Bizzy Nation.
  * Unauthorized use, copying, or distribution is prohibited.
  */
@@ -20,17 +20,7 @@
  */
 const crypto = require('crypto');
 const mongoose = require('mongoose');
-
-// Define a schema for link codes
-const linkCodeSchema = new mongoose.Schema({
-  code: { type: String, required: true, unique: true },
-  userId: { type: String, required: true },
-  expires: { type: Date, required: true },
-  created: { type: Date, default: Date.now }
-});
-
-// Create a model if it doesn't exist already
-const LinkCode = mongoose.models.LinkCode || mongoose.model('LinkCode', linkCodeSchema);
+const LinkCode = require('../backend/src/models/LinkCode');
 
 class LinkCodeManager {
   constructor() {
@@ -45,40 +35,44 @@ class LinkCodeManager {
    * @returns {Object} The generated code and expiry information
    */
   async generateCode(userId, expiryMinutes = 1440) {
+    const start = Date.now();
+    console.log(`[${new Date().toISOString()}] [generateCode] START for user ${userId}`);
     // Generate a random 6-character code
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
     const expiryTime = Date.now() + (expiryMinutes * 60 * 1000);
     const expiryDate = new Date(expiryTime);
     
-    console.log(`Generating new link code: ${code} for user ${userId}, expires at ${expiryDate.toISOString()}`);
+    console.log(`[${new Date().toISOString()}] [generateCode] Generated code: ${code}, expires at ${expiryDate.toISOString()}`);
     
     // Store the code in MongoDB
     try {
       // First, delete any existing active codes for this user
-      console.log(`Deleting any existing link codes for user ${userId}`);
+      const deleteStart = Date.now();
+      console.log(`[${new Date().toISOString()}] [generateCode] Deleting any existing link codes for user ${userId}`);
       const deleteResult = await LinkCode.deleteMany({ userId });
+      console.log(`[${new Date().toISOString()}] [generateCode] Deleted old codes in ${Date.now() - deleteStart}ms`);
       if (deleteResult.deletedCount > 0) {
-        console.log(`Deleted ${deleteResult.deletedCount} existing link codes for user ${userId}`);
+        console.log(`[${new Date().toISOString()}] [generateCode] Deleted ${deleteResult.deletedCount} existing link codes for user ${userId}`);
       }
       
       // Create the new code in MongoDB
-      console.log(`Creating new link code in MongoDB: ${code}`);
+      const createStart = Date.now();
+      console.log(`[${new Date().toISOString()}] [generateCode] Creating new link code in MongoDB: ${code}`);
       const newLinkCode = await LinkCode.create({
         code,
         userId,
         expires: expiryDate
       });
-      
-      console.log(`✅ Successfully created link code in MongoDB with ID: ${newLinkCode._id}`);
+      console.log(`[${new Date().toISOString()}] [generateCode] Created new code in ${Date.now() - createStart}ms (ID: ${newLinkCode._id})`);
       
       // Also store in memory map for backward compatibility
+      const memStart = Date.now();
       this.activeCodes.set(code, {
         userId,
         expires: expiryTime
       });
-      
-      console.log(`✅ Link code also stored in memory map`);
-      console.log(`Generated link code ${code} for user ${userId}, expires in ${expiryMinutes} minutes`);
+      console.log(`[${new Date().toISOString()}] [generateCode] Stored code in memory map in ${Date.now() - memStart}ms`);
+      console.log(`[${new Date().toISOString()}] [generateCode] Total time: ${Date.now() - start}ms`);
       
       return {
         code,
@@ -86,15 +80,15 @@ class LinkCodeManager {
         expiryMinutes
       };
     } catch (error) {
-      console.error(`Error storing link code in database: ${error.message}`);
+      console.error(`[${new Date().toISOString()}] [generateCode] Error storing link code in database: ${error.message}`);
       // Fallback to in-memory storage if database fails
+      const memStart = Date.now();
       this.activeCodes.set(code, {
         userId,
         expires: expiryTime
       });
-      
-      console.log(`⚠️ Link code stored only in memory due to database error`);
-      
+      console.log(`[${new Date().toISOString()}] [generateCode] Stored code in memory map in ${Date.now() - memStart}ms (DB error)`);
+      console.log(`[${new Date().toISOString()}] [generateCode] Total time (DB error): ${Date.now() - start}ms`);
       return {
         code,
         expires: expiryDate.toISOString(),
@@ -380,7 +374,6 @@ class LinkCodeManager {
       return codeInfo;
     } catch (error) {
       console.error(`Error getting all codes from database: ${error.message}`);
-      
       // Fallback to memory only
       const codeInfo = [];
       for (const [code, data] of this.activeCodes.entries()) {
@@ -394,6 +387,8 @@ class LinkCodeManager {
       }
       return codeInfo;
     }
+    // Defensive: always return an array
+    return [];
   }
 }
 

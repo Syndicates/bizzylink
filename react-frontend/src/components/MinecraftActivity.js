@@ -97,6 +97,15 @@ const MinecraftActivity = ({
         });
       }
       
+      // Only add crafting activity if user has crafted items
+      if (playerStats.items_crafted && playerStats.items_crafted > 0) {
+        activityList.push({
+          type: 'crafting',
+          location: `${playerStats.world || 'world'} crafting area`,
+          timestamp: miningTime
+        });
+      }
+      
       // Add any swimming, flying, or sprint activities from flags
       if (activityData.swimming) {
         activityList.push({
@@ -238,7 +247,7 @@ const MinecraftActivity = ({
                 <ActivityBar type="mining" percentage={5} />
               )}
               
-              {playerStats.distance_traveled ? (
+              {playerStats.distance_traveled && playerStats.distance_traveled > 0 ? (
                 <ActivityBar 
                   type="exploring" 
                   percentage={Math.min(Math.round((playerStats.distance_traveled / 10000) * 20), 100) || 10} 
@@ -256,7 +265,7 @@ const MinecraftActivity = ({
                 <ActivityBar type="combat" percentage={8} />
               )}
               
-              {playerStats.items_crafted ? (
+              {playerStats.items_crafted && playerStats.items_crafted > 0 ? (
                 <ActivityBar 
                   type="crafting" 
                   percentage={Math.min(Math.round((playerStats.items_crafted / 200) * 10), 100) || 5} 

@@ -90,6 +90,33 @@ const debug = (message, data) => {
   }
 };
 
+// --- DEBUG: Log all profile API calls and responses ---
+const debugProfileFetch = async (token) => {
+  console.log('[DEBUG] Fetching /api/profile with token:', token ? token.substring(0, 12) + '...' : 'none');
+  try {
+    const response = await api.get('/api/profile', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    console.log('[DEBUG] /api/profile response:', response.data);
+    return response;
+  } catch (err) {
+    console.error('[DEBUG] /api/profile error:', err);
+    throw err;
+  }
+};
+
+// Helper to extract user object from any API response
+function extractUser(obj) {
+  if (!obj) return obj;
+  if (obj.data && typeof obj.data === 'object') {
+    // If obj.data looks like a user object
+    if (obj.data.email || obj.data.username || obj.data._id) return obj.data;
+    // If obj.data is another API response wrapper
+    if (obj.data.data) return obj.data.data;
+  }
+  return obj;
+}
+
 // Provider component
 export const AuthProvider = ({ children }) => {
   logger('AuthProvider rendering');
@@ -119,6 +146,8 @@ export const AuthProvider = ({ children }) => {
 
   // Function to update user with proper ID normalization
   const updateUser = useCallback((userData) => {
+    userData = extractUser(userData);
+    console.log('[DEBUG] updateUser called with:', userData);
     if (!userData) {
       setUser(null);
       return null;
@@ -159,6 +188,7 @@ export const AuthProvider = ({ children }) => {
     
     logger('Setting normalized user', normalizedUser);
     setUser(normalizedUser);
+    console.log('[DEBUG] setUser called with normalized:', normalizedUser);
     return normalizedUser;
   }, []);
 
@@ -452,7 +482,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const response = await api.post('/api/login', { username, password });
+      const response = await api.post('/api/auth/login', { username, password });
       console.log('Login successful, received response:', response.data);
       
       const { token, user } = response.data;
@@ -545,7 +575,7 @@ export const AuthProvider = ({ children }) => {
       
       // Make the API request with proper error handling
       debug('Sending registration request to server...');
-      const response = await api.post('/api/register', userData, {
+      const response = await api.post('/api/auth/register', userData, {
         headers: {
           'Content-Type': 'application/json'
         },
@@ -668,24 +698,20 @@ export const AuthProvider = ({ children }) => {
   // Function to manually refresh auth state
   const refreshAuth = () => {
     debug('Manually refreshing authentication state');
-
-    // Check if we have a token first
     if (!TokenStorage.hasToken()) {
       debug('No token exists, cannot refresh authentication');
       return Promise.reject(new Error('No token exists'));
     }
-
-    // Return a promise for better control flow
     return AuthService.getCurrentUser()
       .then(userData => {
         debug('Successfully refreshed user data:', userData);
-        setUser(userData);
+        const userObj = extractUser(userData);
+        setUser(userObj);
         setLoading(false);
-        return userData;
+        return userObj;
       })
       .catch(error => {
         debug('Error refreshing authentication:', error);
-        // If we get a 401, clear the token and user
         if (error.response && error.response.status === 401) {
           debug('Unauthorized, clearing auth state');
           TokenStorage.clearToken();
@@ -741,7 +767,7 @@ export const AuthProvider = ({ children }) => {
 
   // Update user profile
   const updateUserProfile = (updatedUser) => {
-    updateUser(updatedUser);
+    updateUser(extractUser(updatedUser));
   };
 
   // Log authentication state changes
@@ -761,22 +787,15 @@ export const AuthProvider = ({ children }) => {
   // Listen for force_refresh_user events
   useEffect(() => {
     const handleForceRefresh = async () => {
-      console.log('Force refreshing user data...');
-      
       const token = localStorage.getItem('token');
       if (!token) return;
-      
       try {
-        const response = await api.get('/api/profile', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        if (response && response.data) {
-          console.log('User data refreshed:', response.data);
-          setUser(response.data);
-        }
+        const response = await debugProfileFetch(token);
+        const userObj = extractUser(response.data);
+        console.log('[DEBUG] setUser called with:', userObj);
+        setUser(userObj);
       } catch (error) {
-        console.error('Error refreshing user data:', error);
+        console.error('[DEBUG] Error refreshing user data:', error);
       }
     };
     
@@ -788,6 +807,17 @@ export const AuthProvider = ({ children }) => {
       window.removeEventListener('minecraft_linked', handleForceRefresh);
     };
   }, []);
+
+  // Add a method to update token and user after linking
+  const updateTokenAndUser = (token, userObj) => {
+    if (token) {
+      TokenStorage.setToken(token);
+    }
+    if (userObj) {
+      setUser(userObj);
+      setIsAuthenticated(true);
+    }
+  };
 
   // Auth context value - COMPUTED PROPERTIES NOT STORED STATE
   const value = {
@@ -802,8 +832,9 @@ export const AuthProvider = ({ children }) => {
     refreshAuth,
     refreshUserData,
     forceDataRefresh,
-    // Compute isAuthenticated from current state and token
-    isAuthenticated: !!user && TokenStorage.hasToken(),
+    isAuthenticated,
+    setUser,
+    updateTokenAndUser,
     isAdmin: user?.role === 'admin' || user?.forum_rank === 'admin',
     hasLinkedAccount: user ? (
       // Check if user has linked Minecraft account
@@ -812,6 +843,8 @@ export const AuthProvider = ({ children }) => {
        (!!user.mcUUID || !!user.minecraft?.mcUUID))
     ) : false
   };
+
+  console.log('[DEBUG] AuthContext.Provider value:', value);
 
   return (
     <AuthContext.Provider value={value}>

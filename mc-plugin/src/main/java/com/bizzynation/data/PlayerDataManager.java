@@ -16,6 +16,7 @@
 package com.bizzynation.data;
 
 import com.bizzynation.LinkPlugin;
+import com.bizzynation.config.ConfigManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.json.simple.JSONObject;
@@ -1471,140 +1472,15 @@ public class PlayerDataManager {
     public boolean syncPlayerData(Player player) {
         // Check if we should show detailed debug messages
         boolean debugSync = plugin.getConfig().getBoolean("data.debug_sync", false);
-        
-        // Use shorter connection timeouts for faster response
-        int connectTimeout = plugin.getConfig().getInt("api.connect_timeout", 3000); // 3 seconds default
-        int readTimeout = plugin.getConfig().getInt("api.read_timeout", 5000);       // 5 seconds default
-        
         // Check if player is linked
-        if (!plugin.getConfigManager().isPlayerLinked(player.getUniqueId())) {
+        if (!((ConfigManager) plugin.getConfigManager()).isPlayerLinked(player.getUniqueId())) {
             if (debugSync) {
                 plugin.getLogger().info("Player " + player.getName() + " is not linked, aborting sync");
             }
             return false;
         }
-        
-        try {
-            // Collect player data - this is the most time-consuming part
-            long startTime = System.currentTimeMillis();
-            Map<String, Object> playerData = collectPlayerData(player);
-            long dataCollectionTime = System.currentTimeMillis() - startTime;
-            
-            if (debugSync) {
-                plugin.getLogger().info("Collected data for " + player.getName() + " in " + dataCollectionTime + "ms");
-            }
-            
-            // Ensure groups is properly formatted
-            Object groups = playerData.get("groups");
-            if (groups != null && groups.getClass().isArray()) {
-                // Convert array to List
-                String[] groupsArray = (String[]) groups;
-                List<String> groupsList = new ArrayList<>(Arrays.asList(groupsArray));
-                playerData.put("groups", groupsList);
-            }
-            
-            // Convert to JSON - use the built-in JSON converter
-            JSONObject jsonData = new JSONObject(playerData);
-            String jsonString = jsonData.toJSONString();
-            
-            // Format API URL correctly
-            String apiUrl = plugin.getApiUrl();
-            String endpoint = plugin.getPlayerUpdateEndpoint();
-            
-            String fullUrl;
-            if (apiUrl.endsWith("/") && endpoint.startsWith("/")) {
-                fullUrl = apiUrl + endpoint.substring(1);
-            } else if (!apiUrl.endsWith("/") && !endpoint.startsWith("/")) {
-                fullUrl = apiUrl + "/" + endpoint;
-            } else {
-                fullUrl = apiUrl + endpoint;
-            }
-            
-            if (debugSync) {
-                plugin.getLogger().info("Sending data to: " + fullUrl);
-            }
-            
-            // Create connection with shorter timeouts
-            long connectionStartTime = System.currentTimeMillis();
-            URL url = new URL(fullUrl);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("User-Agent", "BizzyLink-Plugin/1.0");
-            conn.setRequestProperty("X-API-KEY", plugin.getConfig().getString("api.key", ""));
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setConnectTimeout(connectTimeout); 
-            conn.setReadTimeout(readTimeout);
-            conn.setDoOutput(true);
-            
-            // Set cache control to force fresh data
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("Pragma", "no-cache");
-            
-            // Send JSON data
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = jsonString.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
-            }
-            
-            // Read response code - we really just need the response code, not the full content
-            int responseCode = conn.getResponseCode();
-            long apiCallTime = System.currentTimeMillis() - connectionStartTime;
-            
-            if (debugSync) {
-                plugin.getLogger().info("API response code: " + responseCode + " (took " + apiCallTime + "ms)");
-                
-                // Read the full response content only in debug mode
-                StringBuilder responseContent = new StringBuilder();
-                BufferedReader br = null;
-                try {
-                    // First try the input stream
-                    try {
-                        br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                    } catch (Exception e) {
-                        // If that fails, try the error stream
-                        br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8));
-                    }
-                    
-                    if (br != null) {
-                        String responseLine;
-                        while ((responseLine = br.readLine()) != null) {
-                            responseContent.append(responseLine.trim());
-                        }
-                        br.close();
-                    }
-                    
-                    plugin.getLogger().info("API response: " + responseContent.toString());
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Error reading API response: " + e.getMessage());
-                }
-            }
-            
-            // Check if the sync was successful based on response code
-            boolean success = responseCode >= 200 && responseCode < 300;
-            
-            if (success) {
-                if (debugSync) {
-                    long totalTime = System.currentTimeMillis() - startTime;
-                    plugin.getLogger().info("Successfully synced player data for " + player.getName() + 
-                                           " in " + totalTime + "ms (Collection: " + dataCollectionTime + 
-                                           "ms, API: " + apiCallTime + "ms)");
-                }
-            } else {
-                plugin.getLogger().warning("Error syncing player data for " + player.getName() +
-                                          ": Response code " + responseCode);
-            }
-            
-            return success;
-        } catch (Exception e) {
-            plugin.getLogger().warning("Exception syncing player data for " + player.getName() + ": " + e.getMessage());
-            
-            if (debugSync) {
-                e.printStackTrace();
-            }
-            return false;
-        }
+        // Use ApiService to send player data with correct payload structure
+        return plugin.getApiService().sendPlayerData(player);
     }
     
     /**

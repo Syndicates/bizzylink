@@ -23,7 +23,6 @@ import com.bizzynation.config.ConfigManager;
 import com.bizzynation.data.PlayerDataManager;
 import com.bizzynation.integrations.EssentialsIntegration;
 import com.bizzynation.integrations.LuckPermsIntegration;
-import com.bizzynation.integrations.SocketIOClientManager;
 import com.bizzynation.integrations.VaultIntegration;
 import com.bizzynation.listeners.EconomyListener;
 import com.bizzynation.listeners.PlayerListener;
@@ -32,6 +31,9 @@ import com.bizzynation.social.FriendManager;
 import com.bizzynation.utils.ApiService;
 import com.bizzynation.utils.MessageUtils;
 import org.bukkit.Bukkit;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -50,7 +52,6 @@ public class LinkPlugin extends JavaPlugin {
     private BukkitTask reminderTask;
     private BukkitTask dataSyncTask;
     private EconomyListener economyListener;
-    private SocketIOClientManager socketIOClientManager;
     
     @Override
     public void onEnable() {
@@ -83,11 +84,6 @@ public class LinkPlugin extends JavaPlugin {
         
         // Initialize forum notification handler
         forumNotificationHandler = new ForumNotificationHandler(this);
-        
-        // Initialize and start Socket.IO client for real-time unlink alerts
-        String socketServerUrl = getConfig().getString("socketio.url", "http://localhost:8080");
-        socketIOClientManager = new SocketIOClientManager(this, socketServerUrl);
-        socketIOClientManager.start();
         
         // Test the configuration values and show them in console
         String apiUrl = getApiUrl();
@@ -122,6 +118,14 @@ public class LinkPlugin extends JavaPlugin {
         // Register event listeners
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         
+        // Register PlayerJoinEvent to authenticate each player for real-time events
+        getServer().getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onPlayerJoin(PlayerJoinEvent event) {
+                // No longer needed: socketIOClientManager.setCurrentPlayerUUID(event.getPlayer().getUniqueId());
+            }
+        }, this);
+        
         // Start tasks
         startTasks();
         
@@ -136,11 +140,6 @@ public class LinkPlugin extends JavaPlugin {
     public void onDisable() {
         // Cancel any active tasks
         stopTasks();
-        
-        // Stop Socket.IO client cleanly
-        if (socketIOClientManager != null) {
-            socketIOClientManager.stop();
-        }
         
         // Log shutdown message
         MessageUtils.log(Level.INFO, "BizzyLink Plugin Disabled!");

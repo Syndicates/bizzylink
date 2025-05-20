@@ -334,27 +334,29 @@ const Profile = () => {
           playtime: '0h', lastSeen: 'Never', balance: 0, blocksMined: 0, mobsKilled: 0, deaths: 0, joinDate: websiteUser ? formatDate(websiteUser.createdAt) : 'N/A', achievements: 0, level: 1, experience: 0, rank: 'Member', group: 'default', groups: ['default'], world: 'world', gamemode: 'SURVIVAL', online: false
         };
         try {
-          const headers = new Headers({ 'Cache-Control': 'max-age=60' });
-          const fetchPromise = MinecraftService.getPlayerStats(mcUsernameToUse, false, { signal, headers });
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 5000));
-          const statsResponse = await Promise.race([fetchPromise, timeoutPromise]);
-          const normalizedStats = { ...statsResponse.data };
-          completeStats = { ...completeStats, ...normalizedStats };
-          const isLinked = statsResponse.data.linked || false;
-          if (!isLinked) {
-            setNotification({ show: true, type: 'warning', message: 'This Minecraft player has not registered on BizzyLink yet' });
+          const playerStatsRes = await MinecraftService.getPlayerStats(mcUsernameToUse);
+          console.log('Player Stats API Response:', playerStatsRes.data);
+          // Merge API data, prioritizing API values
+          completeStats = {
+            ...completeStats,
+            ...playerStatsRes.data.data, // Access the nested 'data' object
+            // Ensure specific fields are handled correctly after merge if needed
+            // Example: playtime might need specific formatting
+          };
+          console.log('Using completeStats:', completeStats);
+          if (isMounted) {
+            setPlayerStats(completeStats);
           }
-        } catch (statsError) {
-          if (statsError.response && statsError.response.status === 404) {
-            if (isMounted) {
-              setNotFound(true);
-              setLoading(false);
-            }
-            return;
+        } catch (playerStatsError) {
+          console.error('Failed to fetch player stats:', playerStatsError);
+          // Use fallback stats if API fails
+          if (isMounted) {
+            setPlayerStats({
+              playtime: '0h', lastSeen: 'Never', balance: 0, blocksMined: 0, mobsKilled: 0, deaths: 0, joinDate: websiteUser ? formatDate(websiteUser.createdAt) : 'N/A', achievements: 0, level: 1, experience: 0, rank: 'Member', group: 'default'
+            });
           }
-          completeStats = { ...completeStats, username: mcUsernameToUse, mcUsername: mcUsernameToUse, error: statsError.message };
         }
-        setPlayerStats(completeStats);
+        setCoverImage(getDefaultCover(targetUsername));
         // Set profile user data
         let userProfileData;
         if (isOwn && user) {
@@ -1785,11 +1787,11 @@ const Profile = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Blocks Mined:</span>
-                    <span>{(playerStats?.blocks_mined || playerStats?.blocksMined || 0).toLocaleString()}</span>
+                    <span>{(playerStats?.blocks_mined || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Mobs Killed:</span>
-                    <span>{(playerStats?.mobs_killed || playerStats?.mobsKilled || 0).toLocaleString()}</span>
+                    <span>{(playerStats?.mobs_killed || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Deaths:</span>
