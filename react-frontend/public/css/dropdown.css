@@ -1,0 +1,42 @@
+/* Dropdown menu specific styles */
+.dropdown-menu-container {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  z-index: 100;
+  transform-origin: top;
+  transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px) scale(0.95);
+}
+
+.dropdown-menu-container:hover .dropdown-menu,
+.dropdown-menu:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+/* Add a delay before the dropdown disappears */
+.dropdown-menu-container:not(:hover) .dropdown-menu {
+  transition-delay: 0.3s; /* Delay closing by 300ms */
+}
+
+/* But make it appear immediately on hover */
+.dropdown-menu-container:hover .dropdown-menu {
+  transition-delay: 0s;
+}
+
+/* Extend hover area above dropdown to make it easier to reach */
+.dropdown-menu::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  background: transparent;
+} 

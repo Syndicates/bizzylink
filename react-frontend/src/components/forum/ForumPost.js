@@ -74,11 +74,32 @@ const getRankTooltip = (rank) => {
 const wallpaperCache = new Map();
 
 // Allowed wallpaper IDs
-const ALLOWED_WALLPAPERS = ['herobrine_hill', 'quick_hide', 'malevolent'];
+const ALLOWED_WALLPAPERS = [
+  // Remote wallpapers
+  'herobrine_hill', 
+  'quick_hide', 
+  'malevolent',
+  // Local wallpapers
+  'wallpaper_1',
+  'wallpaper_2',
+  'wallpaper_3',
+  'sunset_lake',
+  'pink_sky',
+  'night_adventure'
+];
 
 // Helper to get wallpaper URL for a given id and username
-const getWallpaperUrl = (id, username) =>
-  `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+const getWallpaperUrl = (id, username) => {
+  // Check if this is one of our local wallpapers
+  const localWallpapers = ['wallpaper_1', 'wallpaper_2', 'wallpaper_3', 'sunset_lake', 'pink_sky', 'night_adventure'];
+  if (localWallpapers.includes(id)) {
+    // Handle special case for wallpaper_3 which is a PNG
+    const extension = id === 'wallpaper_3' ? 'png' : 'jpg';
+    return `/minecraft-assets/wallpapers/${id}.${extension}`;
+  }
+  // Use the external service for standard wallpapers
+  return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+};
 
 /**
  * ForumPost component
@@ -103,9 +124,18 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
   // Determine wallpaperId and username for background
   const author = post.author || {};
   let wallpaperId = author.wallpaperId;
+  
+  // First check if the selected wallpaper is allowed
   if (!ALLOWED_WALLPAPERS.includes(wallpaperId)) {
-    wallpaperId = 'herobrine_hill';
+    // If not allowed, try to use one of our local wallpapers first
+    wallpaperId = 'wallpaper_1'; // Default to a local wallpaper
+    
+    // If for some reason the local wallpaper doesn't work, fall back to remote
+    if (!document.querySelector(`img[src="/minecraft-assets/wallpapers/${wallpaperId}.jpg"]`)) {
+      wallpaperId = 'herobrine_hill';
+    }
   }
+  
   const playerName = author.mcUsername || author.username || 'Steve';
   const wallpaperUrl = getWallpaperUrl(wallpaperId, playerName);
   const wallpaperKey = `${wallpaperId}:${playerName}`;
@@ -344,7 +374,7 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
   };
 
   return (
-    <div className="forum-post-container relative">
+    <div id={`post-${post.id}`} className="forum-post-container relative">
       <div className="flex flex-col md:flex-row">
         {/* Author info sidebar - LeakForums style */}
         <div className="bg-gray-800 p-4 md:w-56 flex flex-col border-b md:border-b-0 md:border-r border-gray-600">

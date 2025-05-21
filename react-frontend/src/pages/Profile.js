@@ -253,24 +253,108 @@ const Profile = () => {
   const [savingWallpaper, setSavingWallpaper] = useState(false);
   // Add state for wallpaper loading
   const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
+  // Add state to track available wallpapers
+  const [availableWallpapers, setAvailableWallpapers] = useState([]);
+  // Add state for wallpaper confirmation modal
+  const [showWallpaperModal, setShowWallpaperModal] = useState(false);
+  const [pendingWallpaperId, setPendingWallpaperId] = useState(null);
   
   // Predefined cover banner options
   const coverOptions = [];
   
   // Predefined wallpaper options (id, label)
-  const WALLPAPERS = [
-    { id: 'herobrine_hill', label: 'Herobrine Hill' },
-    { id: 'quick_hide', label: 'Quick Hide' },
-    { id: 'malevolent', label: 'Malevolent' }
-  ];
+const WALLPAPERS = [
+  { id: 'herobrine_hill', label: 'Herobrine Hill' },
+  { id: 'quick_hide', label: 'Quick Hide' },
+  { id: 'malevolent', label: 'Malevolent' },
+  { id: 'sunset_lake', label: 'Sunset Lake', custom: true },
+  { id: 'pink_sky', label: 'Pink Sky', custom: true },
+  { id: 'night_adventure', label: 'Night Adventure', custom: true },
+  { id: 'wallpaper_1', label: 'Forest View', custom: true, extension: 'jpg' },
+  { id: 'wallpaper_2', label: 'Mountain Sunset', custom: true, extension: 'jpg' },
+  { id: 'wallpaper_3', label: 'Night Sky', custom: true, extension: 'png' }
+];
+  
+  // Check which wallpapers are available
+useEffect(() => {
+  const checkWallpaperAvailability = async () => {
+    // First detect which local wallpapers actually exist
+    const localWallpapers = WALLPAPERS.filter(wp => wp.custom);
+    const availableLocalWallpapers = [];
+    
+    // Reset available wallpapers array to start fresh
+    setAvailableWallpapers([]);
+    
+    // Check each local wallpaper and add it if it exists
+    for (const wallpaper of localWallpapers) {
+      const img = new Image();
+      const src = getWallpaperUrl(wallpaper.id, 'Steve');
+      console.log(`Checking wallpaper: ${wallpaper.id} at ${src}`);
+      img.onload = () => {
+        console.log(`Wallpaper ${wallpaper.id} loaded successfully`);
+        setAvailableWallpapers(prev => {
+          if (!prev.some(wp => wp.id === wallpaper.id)) {
+            return [...prev, wallpaper];
+          }
+          return prev;
+        });
+      };
+      img.onerror = () => {
+        console.warn(`Wallpaper ${wallpaper.id} failed to load`);
+      };
+      img.src = src;
+    }
+    
+    // In parallel, check external wallpapers
+    const checkExternalWallpapers = async () => {
+      const externalWallpapers = WALLPAPERS.filter(wp => !wp.custom);
+      if (externalWallpapers.length === 0) return;
+      
+      try {
+        const testUrl = getWallpaperUrl(externalWallpapers[0].id, 'Steve');
+        const response = await fetch(testUrl, { method: 'HEAD', timeout: 3000 });
+        
+        if (response.ok) {
+          // Add external wallpapers to the available list
+          setAvailableWallpapers(prev => [...prev, ...externalWallpapers]);
+        }
+      } catch (error) {
+        console.warn('External wallpapers not available:', error);
+      }
+    };
+    
+    // Start checking external wallpapers without awaiting
+    checkExternalWallpapers();
+  };
+  
+  checkWallpaperAvailability();
+}, []);
   
   // Helper to get wallpaper URL for a given id and username
-  const getWallpaperUrl = (id, username) =>
-    `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+const getWallpaperUrl = (id, username) => {
+  // Check if this is one of our custom wallpapers
+  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
+  if (wallpaper && wallpaper.custom) {
+    // Use the specified extension if available, otherwise default to jpg
+    const extension = wallpaper.extension || 'jpg';
+    return `/minecraft-assets/wallpapers/${id}.${extension}`;
+  }
+  // Use the external service for standard wallpapers
+  return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+};
   
   // Helper to get thumbnail (use a default player for preview)
-  const getWallpaperThumb = (id) =>
-    `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/Steve?thumb=1`;
+const getWallpaperThumb = (id) => {
+  // Check if this is one of our custom wallpapers
+  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
+  if (wallpaper && wallpaper.custom) {
+    // Use the specified extension if available, otherwise default to jpg
+    const extension = wallpaper.extension || 'jpg';
+    return `/minecraft-assets/wallpapers/${id}.${extension}`;
+  }
+  // Use the external service for standard wallpapers
+  return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/Steve?thumb=1`;
+};
   
   // Map usernames to default covers to make each profile feel unique
   const getDefaultCover = (username) => {
@@ -801,12 +885,36 @@ const Profile = () => {
   // Change wallpaper handler
   const handleWallpaperSelect = async (id) => {
     if (savingWallpaper || wallpaperId === id) return;
+    
+    // Show confirmation dialog instead of immediately changing
+    setPendingWallpaperId(id);
+    setShowWallpaperModal(true);
+  };
+  
+  // Confirm wallpaper change
+  const confirmWallpaperChange = async () => {
+    const id = pendingWallpaperId;
+    setShowWallpaperModal(false);
+    
+    if (!id) return;
+    
     setWallpaperId(id);
     const uname = profileUser.mcUsername || profileUser.username || 'Steve';
     setCoverImage(getWallpaperUrl(id, uname));
     setSavingWallpaper(true);
+    
     try {
       await API.put('/api/user/profile', { wallpaperId: id });
+      
+             // Play sound effect on successful change
+       try {
+         const audio = new Audio('/sounds/level-up.mp3');
+         audio.volume = 0.3; // Lower volume for this sound
+         audio.play().catch(e => console.log('Audio play prevented by browser policy', e));
+       } catch (e) {
+         console.log('Audio not supported', e);
+       }
+      
       setNotification({ show: true, type: 'success', message: 'Wallpaper updated!' });
     } catch (err) {
       setNotification({ show: true, type: 'error', message: 'Failed to update wallpaper.' });
@@ -815,6 +923,7 @@ const Profile = () => {
       setCoverImage(getWallpaperUrl(profileUser.wallpaperId || WALLPAPERS[0].id, uname));
     } finally {
       setSavingWallpaper(false);
+      setPendingWallpaperId(null);
     }
   };
   
@@ -954,17 +1063,21 @@ const Profile = () => {
                   </button>
                   <div className="dropdown-menu mt-2 bg-minecraft-navy-dark border border-white/20 p-3 rounded-md w-72 z-50 shadow-xl">
                     <div className="grid grid-cols-3 gap-2">
-                      {WALLPAPERS.map((wp) => (
-                        <button 
-                          key={wp.id}
-                          className={`block w-full h-16 bg-cover bg-center rounded border-2 transition-all duration-150 ${wallpaperId === wp.id ? 'border-green-400 ring-2 ring-green-400' : 'border-transparent'} ${savingWallpaper ? 'opacity-50 pointer-events-none' : 'hover:border-white'}`}
-                          style={{ backgroundImage: `url(${getWallpaperThumb(wp.id)})` }}
-                          onClick={() => handleWallpaperSelect(wp.id)}
-                          aria-label={`Select ${wp.label} wallpaper`}
-                          disabled={savingWallpaper}
-                          title={wp.label}
-                        />
-                      ))}
+                      {availableWallpapers.length > 0 ? (
+                        availableWallpapers.map((wp) => (
+                          <button 
+                            key={wp.id}
+                            className={`block w-full h-16 bg-cover bg-center rounded border-2 transition-all duration-150 ${wallpaperId === wp.id ? 'border-green-400 ring-2 ring-green-400' : 'border-transparent'} ${savingWallpaper ? 'opacity-50 pointer-events-none' : 'hover:border-white'}`}
+                            style={{ backgroundImage: `url(${getWallpaperThumb(wp.id)})` }}
+                            onClick={() => handleWallpaperSelect(wp.id)}
+                            aria-label={`Select ${wp.label} wallpaper`}
+                            disabled={savingWallpaper}
+                            title={wp.label}
+                          />
+                        ))
+                      ) : (
+                        <p className="text-gray-400 col-span-3 text-center py-4">Loading available wallpapers...</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1939,6 +2052,32 @@ const Profile = () => {
       {(process.env.NODE_ENV === 'development' || (user && user.role === 'admin')) && (
         <div className="fixed bottom-4 right-4 z-50">
           {/* Test celebration button removed to ensure it only shows when verified on Minecraft */}
+        </div>
+      )}
+      
+      {/* Wallpaper Confirmation Modal */}
+      {showWallpaperModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-minecraft-navy-dark rounded-md p-5 max-w-md w-full border border-minecraft-habbo-blue shadow-lg">
+            <h3 className="text-lg font-minecraft text-minecraft-habbo-blue mb-3">Change Wallpaper?</h3>
+            <p className="text-gray-300 mb-4">
+              This will change your profile wallpaper and also affect how your posts appear in forums.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => setShowWallpaperModal(false)}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmWallpaperChange}
+                className="habbo-btn px-4 py-2"
+              >
+                Change Wallpaper
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
