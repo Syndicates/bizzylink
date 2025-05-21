@@ -13,7 +13,7 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -98,6 +98,9 @@ const ForumSystem = ({
   const [donationRecipient, setDonationRecipient] = useState(null);
   const [categoryTopics, setCategoryTopics] = useState([]);
   
+  // Track latest request to prevent race conditions
+  const latestRequestId = useRef(0);
+
   // Initialize the component
   useEffect(() => {
     // Always fetch categories on mount
@@ -139,8 +142,7 @@ const ForumSystem = ({
       case 'threads':
         // This view is for displaying threads within a category
         if (activeCategory) {
-          // Don't re-fetch if we already have data, just make sure loading is false
-          setIsLoading(false);
+          fetchThreads(activeCategory); // Always refetch when sortOrder or pageNumber changes
         } else {
           setError('No category selected');
           setIsLoading(false);
@@ -168,10 +170,14 @@ const ForumSystem = ({
   // Fetch forum categories from the database via API
   const fetchCategories = () => {
     setIsLoading(true);
-    console.log('Fetching forum categories from API...');
-    // Fetch from API with proper error handling
-    api.get('/api/forum/categories')
+    latestRequestId.current += 1;
+    const thisRequest = latestRequestId.current;
+    console.log('[FORUM DEBUG] fetchCategories called');
+    api.get('/api/forum/categories', {
+      headers: { 'Cache-Control': 'no-cache' }
+    })
       .then(response => {
+        if (thisRequest !== latestRequestId.current) return;
         console.log('[FORUM DEBUG] Raw API response:', response.data);
         // Log the actual data property
         if (Array.isArray(response.data.data) && response.data.data.length > 0) {
@@ -191,28 +197,32 @@ const ForumSystem = ({
           }));
           console.log('[FORUM DEBUG] Formatted categories:', formattedCategories);
           setCategories(formattedCategories);
-          setIsLoading(false);
+          setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
         } else {
           // No categories found, show error (no mock data per RULES.md)
           console.log('[FORUM DEBUG] No categories found, error triggered.');
           setError('No forum categories found. Please contact an administrator.');
-          setCategories([]);
-          setIsLoading(false);
+          setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
         }
       })
       .catch(error => {
+        if (thisRequest !== latestRequestId.current) return;
         console.error('[FORUM DEBUG] Error fetching forum categories from API:', error);
         setError('Error loading forum categories. Please try again later.');
-        setCategories([]);
-        setIsLoading(false);
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       });
   };
   
   // Fetch threads within a category directly from database
   const fetchTopics = (categoryId) => {
     setIsLoading(true);
-    api.get(`/api/forum/categories/${categoryId}/threads`)
+    latestRequestId.current += 1;
+    const thisRequest = latestRequestId.current;
+    api.get(`/api/forum/categories/${categoryId}/threads`, {
+      headers: { 'Cache-Control': 'no-cache' }
+    })
       .then(response => {
+        if (thisRequest !== latestRequestId.current) return;
         if (response.data && response.data.threads) {
           const formattedThreads = response.data.threads.map(thread => ({
             id: thread.id || thread._id,
@@ -232,29 +242,34 @@ const ForumSystem = ({
           }));
           setThreads(formattedThreads);
           setTotalPages(response.data.totalPages || 1);
-        } else {
-          setThreads([]);
-          setTotalPages(1);
         }
-        setIsLoading(false);
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       })
       .catch(error => {
+        if (thisRequest !== latestRequestId.current) return;
         setError('Error loading threads. Please try again later.');
-        setIsLoading(false);
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       });
   };
   
   // Fetch threads within a category (renamed function) - using real API
   const fetchThreads = (categoryId) => {
     setIsLoading(true);
+    latestRequestId.current += 1;
+    const thisRequest = latestRequestId.current;
+    console.log('[FORUM DEBUG] fetchThreads called for categoryId:', categoryId);
     api.get(`/api/forum/categories/${categoryId}/threads`, {
       params: {
         page: pageNumber,
         limit: 10,
-        sort: sortOrder === 'newest' ? '-updatedAt' : (sortOrder === 'oldest' ? 'createdAt' : '-views')
-      }
+        sort: sortOrder,
+        _cb: Date.now() // cache-busting param
+      },
+      headers: { 'Cache-Control': 'no-cache' }
     })
       .then(response => {
+        if (thisRequest !== latestRequestId.current) return;
+        console.log('[FORUM DEBUG] Threads returned for categoryId', categoryId, ':', response.data.threads);
         if (response.data && response.data.threads && response.data.threads.length > 0) {
           const formattedThreads = response.data.threads.map(thread => ({
             id: thread.id || thread._id,
@@ -270,20 +285,19 @@ const ForumSystem = ({
             replyCount: thread.replyCount || 0,
             views: thread.views || 0,
             pinned: thread.pinned || false,
-            locked: thread.locked || false
+            locked: thread.locked || false,
+            thanksCount: thread.thanksCount ?? 0,
           }));
+          // Debug: Log formatted thread titles and dates
+          console.log('[FORUM DEBUG] Formatted threads:', formattedThreads.map(t => ({ title: t.title, createdAt: t.createdAt })));
           setThreads(formattedThreads);
           setTotalPages(response.data.totalPages || 1);
-        } else {
-          setThreads([]);
-          setTotalPages(1);
         }
-        setIsLoading(false);
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       })
       .catch(error => {
-        setThreads([]);
-        setTotalPages(1);
-        setIsLoading(false);
+        if (thisRequest !== latestRequestId.current) return;
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       });
   };
   
@@ -309,6 +323,8 @@ const ForumSystem = ({
   // Patch: Update fetchThreadPosts to accept either slug or id
   const fetchThreadPosts = (threadRef) => {
     setIsLoading(true);
+    latestRequestId.current += 1;
+    const thisRequest = latestRequestId.current;
     let url = '';
     if (threadRef.slug) {
       url = `/api/forum/thread/${threadRef.slug}`;
@@ -318,16 +334,18 @@ const ForumSystem = ({
       url = `/api/forum/threads/${threadRef}`;
     } else {
       setError('Invalid thread reference');
-      setIsLoading(false);
+      setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       return;
     }
     api.get(url, {
       params: {
         page: pageNumber,
         limit: 20
-      }
+      },
+      headers: { 'Cache-Control': 'no-cache' }
     })
       .then(response => {
+        if (thisRequest !== latestRequestId.current) return;
         console.log('Thread posts response:', response.data);
         if (response.data) {
           if (response.data.thread) {
@@ -359,21 +377,17 @@ const ForumSystem = ({
             }));
             setPosts(formattedPosts);
             setTotalPages(response.data.totalPages || 1);
-          } else {
-            setPosts([]);
-            setTotalPages(1);
           }
+          setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
         } else {
-          console.error('Invalid response format for thread posts');
-          setPosts([]);
-          setTotalPages(1);
+          setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
         }
-        setIsLoading(false);
       })
       .catch(error => {
+        if (thisRequest !== latestRequestId.current) return;
         console.error('Error fetching thread posts:', error);
         setError('Error loading thread posts. Please try again later.');
-        setIsLoading(false);
+        setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
       });
   };
   
@@ -627,6 +641,8 @@ const ForumSystem = ({
       {/* Navigation breadcrumbs */}
       <div className="bg-gray-800 p-4 rounded-t-md mb-1 flex items-center">
         <div className="flex-1 flex items-center space-x-2">
+          {/* DEBUG: Breadcrumb state */}
+          {console.log('[FORUM DEBUG] Breadcrumb: activeCategory', activeCategory, 'categories', categories)}
           <button 
             onClick={() => setView('categories')}
             className={`text-sm px-3 py-1 rounded-md ${view === 'categories' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
@@ -697,211 +713,210 @@ const ForumSystem = ({
       
       {/* Main content area */}
       <div className="bg-gray-800 p-6 rounded-b-md mb-4">
-        {/* Categories view */}
-        {view === 'categories' && (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold text-white mb-6">Forum Categories</h2>
-            
-            <div className="grid gap-4 md:grid-cols-2">
-              {categories.map(category => (
-                <ForumCategory 
-                  key={category.id}
-                  category={category}
-                  onClick={() => handleCategorySelect(category.id)}
-                />
-              ))}
+        <motion.div
+          style={{ position: 'relative', width: '100%' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+        >
+          {/* Categories view */}
+          {view === 'categories' && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-white mb-6">Forum Categories</h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                {categories.map(category => (
+                  <ForumCategory 
+                    key={category.id}
+                    category={category}
+                    onClick={() => handleCategorySelect(category.id)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-        
-        {/* Topics view */}
-        {view === 'topics' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                {categories.find(c => c.id === activeCategory)?.name || 'Topics'}
-              </h2>
+          )}
+          {/* Topics view */}
+          {view === 'topics' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">
+                  {categories.find(c => c.id === activeCategory)?.name || 'Topics'}
+                </h2>
+              </div>
+              <div className="space-y-3">
+                {topics.map(topic => (
+                  <ForumTopicList 
+                    key={topic.id}
+                    topic={topic}
+                    onClick={() => handleTopicSelect(topic.id)}
+                  />
+                ))}
+              </div>
             </div>
-            
-            <div className="space-y-3">
-              {topics.map(topic => (
-                <ForumTopicList 
-                  key={topic.id}
-                  topic={topic}
-                  onClick={() => handleTopicSelect(topic.id)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {/* Threads view */}
-        {view === 'threads' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center flex-wrap gap-2 mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                {categories.find(c => c.id === activeCategory)?.name || 'Threads'}
-              </h2>
-              
-              <div className="flex items-center space-x-2">
-                <div className="bg-gray-700 rounded-md p-1 flex text-sm">
+          )}
+          {/* Threads view */}
+          {view === 'threads' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center flex-wrap gap-2 mb-6">
+                <h2 className="text-2xl font-bold text-white">
+                  {categories.find(c => c.id === activeCategory)?.name || 'Threads'}
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <div className="bg-gray-700 rounded-md p-1 flex text-sm">
+                    <button 
+                      onClick={() => handleSortChange('newest')}
+                      className={`px-3 py-1 rounded-md ${sortOrder === 'newest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                    >
+                      Newest
+                    </button>
+                    <button 
+                      onClick={() => handleSortChange('oldest')}
+                      className={`px-3 py-1 rounded-md ${sortOrder === 'oldest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                    >
+                      Oldest
+                    </button>
+                    <button 
+                      onClick={() => handleSortChange('popular')}
+                      className={`px-3 py-1 rounded-md ${sortOrder === 'popular' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                    >
+                      Popular
+                    </button>
+                  </div>
                   <button 
-                    onClick={() => handleSortChange('newest')}
-                    className={`px-3 py-1 rounded-md ${sortOrder === 'newest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                    onClick={handleCreateThread}
+                    className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
                   >
-                    Newest
-                  </button>
-                  <button 
-                    onClick={() => handleSortChange('oldest')}
-                    className={`px-3 py-1 rounded-md ${sortOrder === 'oldest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
-                  >
-                    Oldest
-                  </button>
-                  <button 
-                    onClick={() => handleSortChange('popular')}
-                    className={`px-3 py-1 rounded-md ${sortOrder === 'popular' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
-                  >
-                    Popular
+                    New Thread
                   </button>
                 </div>
-                
-                <button 
-                  onClick={handleCreateThread}
-                  className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
-                >
-                  New Thread
-                </button>
               </div>
-            </div>
-            
-            {threads.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-400">No threads found in {categories.find(c => c.id === activeCategory)?.name || 'this category'}.</p>
-                <p className="text-gray-500 mt-2 mb-4">Be the first to start a discussion!</p>
-                <button 
-                  onClick={handleCreateThread}
-                  className="mt-4 px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
-                >
-                  Create the First Thread
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  {threads
+              {/* Animated thread list */}
+              {threads.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">No threads found in {categories.find(c => c.id === activeCategory)?.name || 'this category'}.</p>
+                  <p className="text-gray-500 mt-2 mb-4">Be the first to start a discussion!</p>
+                  <button 
+                    onClick={handleCreateThread}
+                    className="mt-4 px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
+                  >
+                    Create the First Thread
+                  </button>
+                </div>
+              ) : (
+                <AnimatePresence initial={false} key={sortOrder + '-' + pageNumber}>
+                  {[...threads]
+                    .sort((a, b) => (b.pinned === a.pinned ? 0 : a.pinned ? -1 : 1))
                     .slice((pageNumber - 1) * 10, pageNumber * 10)
                     .map(thread => (
-                      <ForumThread 
-                        key={getThreadKey(thread)}
-                        thread={thread}
-                        onClick={() => handleThreadSelect(thread)}
-                      />
+                      <motion.div
+                        key={thread.id + (thread.slug ? '-' + thread.slug : '')}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <ForumThread 
+                          thread={thread}
+                          onClick={() => handleThreadSelect(thread)}
+                          currentUser={loggedInUser}
+                        />
+                      </motion.div>
                     ))}
-                </div>
-                
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center mt-6">
-                    <div className="inline-flex items-center rounded-md bg-gray-700">
+                </AnimatePresence>
+              )}
+              {/* Pagination */}
+              {totalPages > 1 && !isLoading && (
+                <div className="flex justify-center mt-6">
+                  <div className="inline-flex items-center rounded-md bg-gray-700">
+                    <button 
+                      onClick={() => handlePageChange(Math.max(1, pageNumber - 1))}
+                      disabled={pageNumber === 1}
+                      className={`px-3 py-2 rounded-l-md ${pageNumber === 1 ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
+                    >
+                      Previous
+                    </button>
+                    {[...Array(totalPages).keys()].map(i => (
                       <button 
-                        onClick={() => handlePageChange(Math.max(1, pageNumber - 1))}
-                        disabled={pageNumber === 1}
-                        className={`px-3 py-2 rounded-l-md ${pageNumber === 1 ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
+                        key={i + 1}
+                        onClick={() => handlePageChange(i + 1)}
+                        className={`px-3 py-2 ${pageNumber === i + 1 ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
                       >
-                        Previous
+                        {i + 1}
                       </button>
-                      
-                      {[...Array(totalPages).keys()].map(i => (
-                        <button 
-                          key={i + 1}
-                          onClick={() => handlePageChange(i + 1)}
-                          className={`px-3 py-2 ${pageNumber === i + 1 ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
-                        >
-                          {i + 1}
-                        </button>
-                      ))}
-                      
-                      <button 
-                        onClick={() => handlePageChange(Math.min(totalPages, pageNumber + 1))}
-                        disabled={pageNumber === totalPages}
-                        className={`px-3 py-2 rounded-r-md ${pageNumber === totalPages ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
-                      >
-                        Next
-                      </button>
-                    </div>
+                    ))}
+                    <button 
+                      onClick={() => handlePageChange(Math.min(totalPages, pageNumber + 1))}
+                      disabled={pageNumber === totalPages}
+                      className={`px-3 py-2 rounded-r-md ${pageNumber === totalPages ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
+                    >
+                      Next
+                    </button>
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-        
-        {/* Thread view */}
-        {view === 'thread' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl md:text-2xl font-bold text-white break-words">
-                {threads.find(t => t.id === activeThread)?.title || 'Thread'}
-              </h2>
-              <button
-                onClick={() => fetchThreadPosts(activeThread)}
-                className="ml-4 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm"
-              >
-                Refresh
-              </button>
+                </div>
+              )}
             </div>
-            
-            <div className="space-y-4">
-              <AnimatePresence initial={false}>
-                {posts.map((post, index) => (
-                  <motion.div
-                    key={post.id}
-                    className="forum-post"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <ForumPost
-                      post={post}
-                      currentUser={loggedInUser}
-                      onReply={() => {}}
-                      threadAuthorId={threads[0]?.author?.id || threads[0]?.author?._id}
-                      threadId={threads[0]?.id}
-                      onThreadDeleted={handleThreadDeleted}
-                      onPostDeleted={handlePostDeleted}
-                      onPostEdited={handlePostEdited}
-                    />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-            
-            {/* Reply form */}
-            <div className="bg-gray-700 rounded-md p-4 mt-6">
-              <h3 className="text-lg font-semibold text-white mb-3">Post a Reply</h3>
-              
-              <textarea 
-                className="forum-reply-textarea w-full bg-gray-800 text-white rounded-md p-3 min-h-32 focus:outline-none focus:ring-2 focus:ring-green-500 border border-gray-600"
-                placeholder="Write your reply here..."
-              ></textarea>
-              
-              <div className="flex justify-end mt-3">
-                <button 
-                  onClick={handlePostReply}
-                  className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
+          )}
+          {/* Thread view */}
+          {view === 'thread' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl md:text-2xl font-bold text-white break-words">
+                  {threads.find(t => t.id === activeThread)?.title || 'Thread'}
+                </h2>
+                <button
+                  onClick={() => fetchThreadPosts(activeThread)}
+                  className="ml-4 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm"
                 >
-                  Post Reply
+                  Refresh
                 </button>
               </div>
+              <div className="space-y-4">
+                <AnimatePresence initial={false}>
+                  {posts.map((post, index) => (
+                    <motion.div
+                      key={post.id}
+                      className="forum-post"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <ForumPost
+                        post={post}
+                        currentUser={loggedInUser}
+                        onReply={() => {}}
+                        threadAuthorId={threads[0]?.author?.id || threads[0]?.author?._id}
+                        threadId={threads[0]?.id}
+                        onThreadDeleted={handleThreadDeleted}
+                        onPostDeleted={handlePostDeleted}
+                        onPostEdited={handlePostEdited}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+              {/* Reply form */}
+              <div className="bg-gray-700 rounded-md p-4 mt-6">
+                <h3 className="text-lg font-semibold text-white mb-3">Post a Reply</h3>
+                <textarea 
+                  className="forum-reply-textarea w-full bg-gray-800 text-white rounded-md p-3 min-h-32 focus:outline-none focus:ring-2 focus:ring-green-500 border border-gray-600"
+                  placeholder="Write your reply here..."
+                ></textarea>
+                <div className="flex justify-end mt-3">
+                  <button 
+                    onClick={handlePostReply}
+                    className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
+                  >
+                    Post Reply
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-        
-        {/* Create thread view */}
-        {view === 'create' && (
-          <CreateThread onSubmit={handleSubmitThread} onCancel={handleBack} activeCategory={activeCategory} topics={categoryTopics} />
-        )}
+          )}
+          {/* Create thread view */}
+          {view === 'create' && (
+            <CreateThread onSubmit={handleSubmitThread} onCancel={handleBack} activeCategory={activeCategory} topics={categoryTopics} />
+          )}
+        </motion.div>
       </div>
     </div>
   );

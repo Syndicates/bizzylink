@@ -13,18 +13,22 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import MinecraftAvatar from '../MinecraftAvatar';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
 
 /**
  * ForumThread component
  * 
  * Displays a thread item in the forum with statistics and status indicators
  */
-const ForumThread = ({ thread, onClick }) => {
+const ForumThread = ({ thread, onClick, currentUser }) => {
   const navigate = useNavigate();
+  const [isPinned, setIsPinned] = useState(thread.pinned);
+  const [loading, setLoading] = useState(false);
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return 'Unknown';
@@ -48,6 +52,24 @@ const ForumThread = ({ thread, onClick }) => {
     }
   };
 
+  // Handler for pin/unpin
+  const handlePinToggle = async (e) => {
+    e.stopPropagation();
+    if (!currentUser || currentUser.webRank !== 'owner') return;
+    setLoading(true);
+    try {
+      const res = await api.put(`/api/forum/admin/thread/${thread.id}`, { isPinned: !isPinned });
+      if (res.data && res.data.data) {
+        setIsPinned(res.data.data.isPinned);
+      }
+    } catch (err) {
+      // Optionally show error
+      alert('Failed to update pin status.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <motion.div
       whileHover={{ scale: 1.01 }}
@@ -57,7 +79,7 @@ const ForumThread = ({ thread, onClick }) => {
         bg-gray-700 rounded-md border border-gray-600 
         hover:border-green-600 transition-colors duration-200 
         overflow-hidden cursor-pointer flex flex-col sm:flex-row
-        ${thread.pinned ? 'bg-gradient-to-r from-gray-700 to-gray-700 via-gray-800' : ''}
+        ${isPinned ? 'bg-gradient-to-r from-gray-700 to-gray-700 via-gray-800' : ''}
       `}
     >
       <div className="flex-1 p-4">
@@ -85,7 +107,7 @@ const ForumThread = ({ thread, onClick }) => {
           </div>
           <div className="flex-1">
             <div className="flex items-center">
-              {thread.pinned && (
+              {isPinned && (
                 <span className="mr-2 text-amber-400 text-xs bg-amber-900 px-2 py-0.5 rounded">
                   PINNED
                 </span>
@@ -98,6 +120,17 @@ const ForumThread = ({ thread, onClick }) => {
               <h3 className="text-white font-semibold">
                 {thread.title}
               </h3>
+              {/* Pin/unpin button for Owner */}
+              {currentUser && currentUser.webRank === 'owner' && (
+                <button
+                  className={`ml-2 px-2 py-1 rounded text-xs font-bold ${isPinned ? 'bg-yellow-600 text-white' : 'bg-gray-600 text-yellow-200'} ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  onClick={handlePinToggle}
+                  disabled={loading}
+                  title={isPinned ? 'Unpin thread' : 'Pin thread'}
+                >
+                  {isPinned ? 'Unpin' : 'Pin'}
+                </button>
+              )}
             </div>
             <p className="text-gray-400 text-sm mt-1">
               Posted by <span 
@@ -129,6 +162,12 @@ const ForumThread = ({ thread, onClick }) => {
               <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
             </svg>
             <span>{thread.views || 0} {(thread.views || 0) === 1 ? 'view' : 'views'}</span>
+          </div>
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-pink-400" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
+            </svg>
+            <span>{thread.thanksCount || 0} Thanks</span>
           </div>
         </div>
       </div>

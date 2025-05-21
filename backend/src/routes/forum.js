@@ -294,6 +294,9 @@ router.get('/thread/:slug', async (req, res, next) => {
     if (!thread) {
       return res.status(404).json({ success: false, message: 'Thread not found' });
     }
+    // Increment views
+    thread.views = (thread.views || 0) + 1;
+    await thread.save();
     // Get posts for this thread
     const posts = await ForumPost.find({ thread: thread._id })
       .sort({ createdAt: 1 })
@@ -346,6 +349,8 @@ router.get('/thread/:slug', async (req, res, next) => {
     if (formattedPosts.length > 0) {
       formattedPosts[0].isOriginalPost = true;
     }
+    const thanksCount = Array.isArray(formattedPosts[0]?.thanks) ? formattedPosts[0].thanks.length : 0;
+    threadObj.thanksCount = thanksCount;
     res.status(200).json({
       success: true,
       thread: threadObj,
@@ -724,7 +729,7 @@ router.post('/admin/topic', protect, authorize('admin', 'owner', 'moderator'), [
  * @desc    Update thread (pin/unpin, lock/unlock)
  * @access  Private (Admin/Moderator only)
  */
-router.put('/admin/thread/:id', protect, authorize('admin', 'owner', 'moderator'), async (req, res, next) => {
+router.put('/admin/thread/:id', protect, authorize('owner'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { isPinned, isLocked } = req.body;
@@ -781,6 +786,7 @@ router.put('/admin/thread/:id', protect, authorize('admin', 'owner', 'moderator'
 router.get('/categories/:categoryId/threads', async (req, res, next) => {
   try {
     const { categoryId } = req.params;
+    const { sort = 'newest' } = req.query;
     // Convert categoryId to ObjectId if valid
     const categoryObjectId = mongoose.Types.ObjectId.isValid(categoryId)
       ? new mongoose.Types.ObjectId(categoryId)
@@ -788,6 +794,10 @@ router.get('/categories/:categoryId/threads', async (req, res, next) => {
     // Find all topics for this category
     const topics = await ForumTopic.find({ category: categoryObjectId }).select('_id');
     const topicIds = topics.map(t => t._id);
+    // Determine sort option
+    let sortOption = { createdAt: -1 };
+    if (sort === 'oldest') sortOption = { createdAt: 1 };
+    else if (sort === 'popular') sortOption = { views: -1 };
     // Find all threads for these topics OR directly linked to the category (legacy)
     const threads = await ForumThread.find({
       $or: [
@@ -796,12 +806,15 @@ router.get('/categories/:categoryId/threads', async (req, res, next) => {
       ]
     })
       .populate('author', 'username mcUsername mcUUID webRank')
-      .sort({ createdAt: -1 });
+      .sort(sortOption);
     // Format threads for frontend
     const formattedThreads = await Promise.all(threads.map(async thread => {
       // Calculate replyCount as number of posts minus one (the original post)
       const postCount = await ForumPost.countDocuments({ thread: thread._id });
       const replyCount = Math.max(0, postCount - 1); // Never negative
+      // Find the first post and get thanks count
+      const firstPost = await ForumPost.findOne({ thread: thread._id, isOriginalPost: true });
+      const thanksCount = Array.isArray(firstPost?.thanks) ? firstPost.thanks.length : 0;
       return {
         id: thread._id,
         slug: thread.slug,
@@ -812,7 +825,8 @@ router.get('/categories/:categoryId/threads', async (req, res, next) => {
         replyCount,
         views: thread.views || 0,
         pinned: thread.isPinned || false,
-        locked: thread.isLocked || false
+        locked: thread.isLocked || false,
+        thanksCount
       };
     }));
     res.status(200).json({
@@ -841,6 +855,9 @@ router.get('/threads/:id', async (req, res, next) => {
     if (!thread) {
       return res.status(404).json({ success: false, message: 'Thread not found' });
     }
+    // Increment views
+    thread.views = (thread.views || 0) + 1;
+    await thread.save();
     // Get posts for this thread
     const posts = await ForumPost.find({ thread: thread._id })
       .sort({ createdAt: 1 })
@@ -891,6 +908,8 @@ router.get('/threads/:id', async (req, res, next) => {
     if (formattedPosts.length > 0) {
       formattedPosts[0].isOriginalPost = true;
     }
+    const thanksCount = Array.isArray(formattedPosts[0]?.thanks) ? formattedPosts[0].thanks.length : 0;
+    threadObj.thanksCount = thanksCount;
     res.status(200).json({
       success: true,
       thread: threadObj,
