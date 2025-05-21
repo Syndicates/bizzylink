@@ -189,7 +189,7 @@ const Navigation = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
                           </svg>
                         </button>
-                        <div className="absolute mt-1 w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden opacity-0 scale-95 transition-all duration-200 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible border border-gray-800" style={{ zIndex: 9999 }}>
+                        <div className="absolute mt-1 w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden opacity-0 scale-95 transition-all duration-200 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible border border-gray-800 z-[100]">
                           <div className="py-1">
                             <DropdownLink to="/map" icon={<MapIcon className="h-3.5 w-3.5" />}>Map</DropdownLink>
                             <DropdownLink to="/shop" icon={<ShoppingCartIcon className="h-3.5 w-3.5" />}>Shop</DropdownLink>
@@ -274,7 +274,7 @@ const Navigation = () => {
                     </button>
                     
                     {/* Dropdown menu with absolute positioning and high z-index */}
-                    <div className="absolute mt-1 w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden opacity-0 scale-95 transition-all duration-200 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible border border-gray-800" style={{ zIndex: 9999, right: '0' }}>
+                    <div className="absolute mt-1 w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden opacity-0 scale-95 transition-all duration-200 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible border border-gray-800 z-[100]" style={{ right: '0' }}>
                       <div className="py-1">
                         <Link 
                           to="/edit-profile" 

@@ -650,7 +650,7 @@ public class ApiService {
         if (!plugin.getConfig().getBoolean("api.realtime_updates", true)) {
             return false;
         }
-
+        
         try {
             // 1. Look up userId from backend
             JSONObject playerData = getPlayerData(UUID.fromString(uuid));
@@ -687,7 +687,7 @@ public class ApiService {
             } else {
                 webhookUrl = webhookUrl + updateEndpoint;
             }
-
+            
             URL url = new URL(webhookUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -697,12 +697,12 @@ public class ApiService {
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);
             conn.setDoOutput(true);
-
+            
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] input = payload.toJSONString().getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
             }
-
+            
             int statusCode = conn.getResponseCode();
             if (statusCode >= 200 && statusCode < 300) {
                 if (plugin.getConfig().getBoolean("data.debug_sync", false)) {

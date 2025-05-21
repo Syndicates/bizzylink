@@ -153,7 +153,7 @@ const Admin = () => {
   // If not admin, show access denied
   if (user && user.role !== 'admin' && user.forum_rank !== 'admin') {
     return (
-      <div className="min-h-screen py-12 flex items-center justify-center minecraft-grid-bg">
+      <div className="min-h-screen flex items-center justify-center minecraft-grid-bg">
         <div className="glass-panel p-8 rounded-lg max-w-md text-center">
           <h1 className="text-2xl font-minecraft text-red-500 mb-4">Access Denied</h1>
           <p className="text-gray-300 mb-6">
@@ -165,7 +165,7 @@ const Admin = () => {
   }
 
   return (
-    <div className="min-h-screen py-12 minecraft-grid-bg">
+    <div className="min-h-screen minecraft-grid-bg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.h1 
           className="text-3xl font-minecraft text-minecraft-green mb-8"

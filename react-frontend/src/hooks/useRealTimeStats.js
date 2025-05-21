@@ -265,7 +265,7 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
     const removeSseListener = addEventListener('player_stat_update', (data) => {
       try {
         console.log('[useRealTimeStats] SSE stats update for', mcUsername, 'event:', data);
-
+        
         // Accept both flat and nested event structures
         const eventData = data.data || data;
         const eventPlayer = data.player || data.mcUsername;
@@ -387,7 +387,7 @@ export default function useRealTimeStats(initialStats = null, options = {}) {
   
   // Always return a normalized stats object (flat, not wrapped in {success, data})
   const normalizedStats = stats && stats.data ? stats.data : (stats || {});
-
+  
   return {
     stats: normalizedStats,
     loading,

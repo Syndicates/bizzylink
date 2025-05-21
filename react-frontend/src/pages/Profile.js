@@ -787,7 +787,7 @@ const Profile = () => {
   
   if (notFound) {
     return (
-      <div className="min-h-screen py-20 minecraft-grid-bg bg-habbo-pattern text-center">
+      <div className="min-h-screen pt-24 py-20 minecraft-grid-bg bg-habbo-pattern text-center">
         <div className="max-w-2xl mx-auto px-4">
           <h1 className="text-3xl font-minecraft text-minecraft-habbo-blue mb-6">User Not Found</h1>
           <p className="text-gray-300 mb-8">The user profile you are looking for does not exist.</p>
@@ -811,7 +811,7 @@ const Profile = () => {
   );
   
   return (
-    <div className="relative min-h-screen bg-gray-100 dark:bg-gray-900 pb-20">
+    <div className="relative min-h-screen ...">
       {/* Celebration overlay */}
       {showCelebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
@@ -888,7 +888,7 @@ const Profile = () => {
         onClose={() => setNotification({ ...notification, show: false })}
       />
       
-      <div className="min-h-screen pt-20 pb-12 minecraft-grid-bg bg-habbo-pattern">
+      <div className="min-h-screen ...">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Cover Banner with 3D Model */}
           <div className="relative rounded-t-md overflow-hidden mb-0 h-64 bg-cover bg-center" 

@@ -594,7 +594,7 @@ const Home = () => {
       {/* Container for floating player heads - removed since we're only keeping n0t_awake */}
       
       {/* Hero Section */}
-      <section className="relative pt-24 pb-32 hero-waves">
+      <section className="relative pb-32 hero-waves">
         <div className="absolute inset-0 minecraft-grid-bg opacity-20"></div>
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">

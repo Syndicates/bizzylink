@@ -234,6 +234,16 @@ const DynamicImport = ({ importFunc }) => {
   return Component ? <Component /> : <LoadingSpinner />;
 };
 
+// Add this global layout wrapper inside the .app div:
+function GlobalLayout({ children }) {
+  // Adjust this value to match the height of your fixed navbar (e.g., 4rem = pt-16)
+  return (
+    <div className="pt-16 min-h-screen bg-inherit">
+      {children}
+    </div>
+  );
+}
+
 // Main App component
 function App() {
   // Check for persisted tokens on application startup
@@ -273,9 +283,11 @@ function App() {
                       theme="colored"
                     />
                     <Navigation />
-                    <ErrorBoundary>
-                      <AppRoutes />
-                    </ErrorBoundary>
+                    <GlobalLayout>
+                      <ErrorBoundary>
+                        <AppRoutes />
+                      </ErrorBoundary>
+                    </GlobalLayout>
                     <Footer />
                     {isDevMode && <AuthDebugger />}
                   </div>

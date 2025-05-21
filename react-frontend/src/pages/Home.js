@@ -603,7 +603,7 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-minecraft-navy flex flex-col relative">
       {/* New Navbar */}
-      <header className="bg-minecraft-navy-dark border-b border-minecraft-green/30 fixed w-full z-50">
+      <header className="bg-minecraft-navy-dark border-b border-minecraft-green/30 fixed w-full z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-3">
             <div className="flex items-center">
@@ -632,13 +632,8 @@ const Home = () => {
         </div>
       </header>
 
-      {/* Add padding to account for fixed navbar */}
-      <div className="pt-14"></div>
-      
-      {/* Container for floating player heads - removed since we're only keeping n0t_awake */}
-      
       {/* Hero Section */}
-      <section className="relative pt-28 pb-32 hero-waves">
+      <section className="relative pt-0 pb-32 hero-waves">
         <div className="absolute inset-0 minecraft-grid-bg opacity-20"></div>
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
