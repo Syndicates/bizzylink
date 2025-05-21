@@ -94,6 +94,7 @@ const adminLimiter = rateLimit({
 app.use('/api/admin', adminLimiter);
 
 // Route files
+const userRoutes = require('./routes/user');
 const authRoutes = require('./routes/auth');
 const minecraftRoutes = require('./routes/minecraft');
 const forumRoutes = require('./routes/forum');
@@ -107,6 +108,7 @@ const notificationsRoutes = require('./routes/notifications');
 const leaderboardRoutes = require('./routes/leaderboard');
 
 // Mount routes
+app.use('/api/user', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/minecraft', minecraftRoutes);
 app.use('/api/forum', forumRoutes);

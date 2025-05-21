@@ -136,7 +136,7 @@ router.get('/category/:slug', async (req, res, next) => {
       const lastPost = await ForumPost.findOne({ thread: { $in: threadIds } })
         .sort({ createdAt: -1 })
         .populate('thread', 'title')
-        .populate('author', 'username mcUsername mcUUID webRank')
+        .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
         .lean();
         
       let lastPostInfo = null;
@@ -224,7 +224,7 @@ router.get('/topic/:slug', async (req, res, next) => {
       isPinned: true
     })
     .sort(sortOption)
-    .populate('author', 'username mcUsername mcUUID webRank')
+    .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
     .lean();
     
     // Get regular threads with pagination
@@ -235,8 +235,8 @@ router.get('/topic/:slug', async (req, res, next) => {
     .sort(sortOption)
     .skip(skipNum)
     .limit(limitNum)
-    .populate('author', 'username mcUsername mcUUID webRank')
-    .populate('lastPost.author', 'username mcUsername mcUUID webRank')
+    .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
+    .populate('lastPost.author', 'username mcUsername mcUUID webRank wallpaperId')
     .lean();
     
     // Get total thread count for pagination
@@ -289,7 +289,7 @@ router.get('/thread/:slug', async (req, res, next) => {
     const skipNum = (pageNum - 1) * limitNum;
     // Find thread by slug (case-insensitive)
     const thread = await ForumThread.findOne({ slug: { $regex: `^${slug}$`, $options: 'i' } })
-      .populate('author', 'username mcUsername mcUUID webRank')
+      .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
       .populate({ path: 'topic', populate: { path: 'category' } });
     if (!thread) {
       return res.status(404).json({ success: false, message: 'Thread not found' });
@@ -302,7 +302,7 @@ router.get('/thread/:slug', async (req, res, next) => {
       .sort({ createdAt: 1 })
       .skip(skipNum)
       .limit(limitNum)
-      .populate('author', 'username mcUsername mcUUID webRank');
+      .populate('author', 'username mcUsername mcUUID webRank wallpaperId');
     // Map thread and posts to use id and slug
     const threadObj = thread.toObject();
     // Always set mcUsername for thread author and attach counts BEFORE remapping _id
@@ -805,7 +805,7 @@ router.get('/categories/:categoryId/threads', async (req, res, next) => {
         { category: categoryObjectId }
       ]
     })
-      .populate('author', 'username mcUsername mcUUID webRank')
+      .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
       .sort(sortOption);
     // Format threads for frontend
     const formattedThreads = await Promise.all(threads.map(async thread => {
@@ -847,7 +847,7 @@ router.get('/categories/:categoryId/threads', async (req, res, next) => {
 router.get('/threads/:id', async (req, res, next) => {
   try {
     const thread = await ForumThread.findById(req.params.id)
-      .populate('author', 'username mcUsername mcUUID webRank')
+      .populate('author', 'username mcUsername mcUUID webRank wallpaperId')
       .populate({
         path: 'topic',
         populate: { path: 'category' }
@@ -861,7 +861,7 @@ router.get('/threads/:id', async (req, res, next) => {
     // Get posts for this thread
     const posts = await ForumPost.find({ thread: thread._id })
       .sort({ createdAt: 1 })
-      .populate('author', 'username mcUsername mcUUID webRank');
+      .populate('author', 'username mcUsername mcUUID webRank wallpaperId');
     // Map thread and posts to use 'id' instead of '_id', and always provide slug
     const threadObj = thread.toObject();
     // Always set mcUsername for thread author and attach counts BEFORE remapping _id

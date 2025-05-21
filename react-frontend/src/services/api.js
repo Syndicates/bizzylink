@@ -929,7 +929,7 @@ export const MinecraftService = {
       withCredentials: true // Use credentials for unified backend
     })
     .then(response => {
-      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`,
+      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`, 
         response.data?.data?.players?.length || 0, 'players');
       return response;
     })

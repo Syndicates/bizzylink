@@ -99,10 +99,10 @@ class LuckPermsSync {
       // If player is operator, force admin web rank
       if (isOperator) {
         user.webRank = 'admin';
-      } else {
-        // Use mapped rank or default to 'user'
-        user.webRank = this.rankMapping[highestRank] || 'user';
-      }
+      } else if (this.rankMapping[highestRank]) {
+        // Only overwrite if mapping exists
+        user.webRank = this.rankMapping[highestRank];
+      } // else, leave user.webRank unchanged
       
       // Log rank change if different
       if (previousRank !== user.webRank) {

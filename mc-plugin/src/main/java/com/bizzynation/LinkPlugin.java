@@ -135,7 +135,7 @@ public class LinkPlugin extends JavaPlugin {
         // Final console message
         getLogger().info("========================================");
     }
-    
+
     @Override
     public void onDisable() {
         // Cancel any active tasks

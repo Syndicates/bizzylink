@@ -267,34 +267,34 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter basename="/">
         <AuthProvider>
-          <WebSocketProvider>
-            <EventSourceProvider>
-              <SocialProvider>
-                <GuidedTourProvider>
-                  <div className="app">
-                    <ToastContainer
-                      position="top-right"
-                      autoClose={5000}
-                      hideProgressBar={false}
-                      newestOnTop
-                      closeOnClick
-                      rtl={false}
-                      pauseOnHover
-                      theme="colored"
-                    />
-                    <Navigation />
+            <WebSocketProvider>
+              <EventSourceProvider>
+                <SocialProvider>
+                  <GuidedTourProvider>
+                    <div className="app">
+                      <ToastContainer
+                        position="top-right"
+                        autoClose={5000}
+                        hideProgressBar={false}
+                        newestOnTop
+                        closeOnClick
+                        rtl={false}
+                        pauseOnHover
+                        theme="colored"
+                      />
+                      <Navigation />
                     <GlobalLayout>
                       <ErrorBoundary>
                         <AppRoutes />
                       </ErrorBoundary>
                     </GlobalLayout>
-                    <Footer />
-                    {isDevMode && <AuthDebugger />}
-                  </div>
-                </GuidedTourProvider>
-              </SocialProvider>
-            </EventSourceProvider>
-          </WebSocketProvider>
+                      <Footer />
+                      {isDevMode && <AuthDebugger />}
+                    </div>
+                  </GuidedTourProvider>
+                </SocialProvider>
+              </EventSourceProvider>
+            </WebSocketProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

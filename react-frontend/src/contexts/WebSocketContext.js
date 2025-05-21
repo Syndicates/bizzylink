@@ -44,6 +44,6 @@ export const WebSocketProvider = ({ children }) => (
     reconnect: () => {},
     socket: null
   }}>
-    {children}
-  </WebSocketContext.Provider>
-);
+      {children}
+    </WebSocketContext.Provider>
+  );

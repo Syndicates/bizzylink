@@ -81,7 +81,7 @@ export const EventSourceProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef(null);
-
+  
   // NOTE: cleanup is defined inside the effect to avoid dependency loops.
   // Only re-run this effect when the user changes, not on every render or eventSource change.
   useEffect(() => {
@@ -169,7 +169,7 @@ export const EventSourceProvider = ({ children }) => {
     error,
     addEventListener,
   }), [eventSource, isConnected, lastEvent, error, addEventListener]);
-
+  
   return (
     <EventSourceContext.Provider value={value}>
       {children}

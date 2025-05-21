@@ -15,11 +15,11 @@
 
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const User = require('../models/User');
 
 // Get current user profile
-router.get('/profile', auth, async (req, res) => {
+router.get('/profile', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password');
@@ -36,11 +36,12 @@ router.get('/profile', auth, async (req, res) => {
 });
 
 // Update user profile
-router.put('/profile', auth, async (req, res) => {
+router.put('/profile', protect, async (req, res) => {
   try {
     const { 
       avatar, 
-      settings 
+      settings, 
+      wallpaperId
     } = req.body;
     
     const updateFields = {};
@@ -48,6 +49,7 @@ router.put('/profile', auth, async (req, res) => {
     // Only update fields that were provided
     if (avatar) updateFields.avatar = avatar;
     if (settings) updateFields.settings = settings;
+    if (wallpaperId !== undefined) updateFields.wallpaperId = wallpaperId;
     
     const user = await User.findByIdAndUpdate(
       req.user.id,
@@ -67,7 +69,7 @@ router.put('/profile', auth, async (req, res) => {
 });
 
 // Update user privacy settings
-router.put('/settings/privacy', auth, async (req, res) => {
+router.put('/settings/privacy', protect, async (req, res) => {
   try {
     const { 
       showBalance,
@@ -114,7 +116,7 @@ router.put('/settings/privacy', auth, async (req, res) => {
 });
 
 // Update user notification settings
-router.put('/settings/notifications', auth, async (req, res) => {
+router.put('/settings/notifications', protect, async (req, res) => {
   try {
     const { 
       friendRequests,
@@ -163,7 +165,7 @@ router.put('/settings/notifications', auth, async (req, res) => {
 });
 
 // Get user's balance and transaction history
-router.get('/balance', auth, async (req, res) => {
+router.get('/balance', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('balance transactions')
@@ -190,7 +192,7 @@ router.get('/balance', auth, async (req, res) => {
 });
 
 // Get user's reputation history
-router.get('/reputation', auth, async (req, res) => {
+router.get('/reputation', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('reputation reputationFrom')
@@ -216,7 +218,7 @@ router.get('/reputation', auth, async (req, res) => {
 });
 
 // Get user's vouches history
-router.get('/vouches', auth, async (req, res) => {
+router.get('/vouches', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('vouches vouchesFrom')
@@ -238,6 +240,20 @@ router.get('/vouches', auth, async (req, res) => {
   } catch (err) {
     console.error('Error fetching vouches history:', err);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get user by username (for profile/forum sync)
+router.get('/by-username/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('-password');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Error fetching user by username:', err);
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 });
 

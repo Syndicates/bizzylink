@@ -73,6 +73,13 @@ const getRankTooltip = (rank) => {
 // Simple in-memory cache for wallpaper images (key: wallpaperId:mcUsername)
 const wallpaperCache = new Map();
 
+// Allowed wallpaper IDs
+const ALLOWED_WALLPAPERS = ['herobrine_hill', 'quick_hide', 'malevolent'];
+
+// Helper to get wallpaper URL for a given id and username
+const getWallpaperUrl = (id, username) =>
+  `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+
 /**
  * ForumPost component
  * 
@@ -93,12 +100,15 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
     };
   });
 
-  // Wallpaper loading and retry logic
-  const wallpaperId = 'herobrine_hill'; // Default wallpaper for all users
-  const wallpaperUrl = post.author.mcUsername
-    ? `https://starlightskins.lunareclipse.studio/render/wallpaper/${wallpaperId}/${post.author.mcUsername}`
-    : null;
-  const wallpaperKey = `${wallpaperId}:${post.author.mcUsername}`;
+  // Determine wallpaperId and username for background
+  const author = post.author || {};
+  let wallpaperId = author.wallpaperId;
+  if (!ALLOWED_WALLPAPERS.includes(wallpaperId)) {
+    wallpaperId = 'herobrine_hill';
+  }
+  const playerName = author.mcUsername || author.username || 'Steve';
+  const wallpaperUrl = getWallpaperUrl(wallpaperId, playerName);
+  const wallpaperKey = `${wallpaperId}:${playerName}`;
   const [wallpaperLoaded, setWallpaperLoaded] = useState(() => wallpaperCache.has(wallpaperKey));
   const [wallpaperError, setWallpaperError] = useState(false);
   const [wallpaperRetry, setWallpaperRetry] = useState(0);
@@ -334,89 +344,64 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
   };
 
   return (
-    <div 
-      className={`
-        bg-gray-700 rounded-md overflow-hidden border 
-        ${post.isOriginalPost ? 'border-green-700' : 'border-gray-600'}
-      `}
-    >
+    <div className="forum-post-container relative">
       <div className="flex flex-col md:flex-row">
         {/* Author info sidebar - LeakForums style */}
         <div className="bg-gray-800 p-4 md:w-56 flex flex-col border-b md:border-b-0 md:border-r border-gray-600">
           {/* Username and avatar section */}
-          <div className="flex flex-col items-center text-center mb-4 pb-4 border-b border-gray-700">
+          <div
+            className="relative mb-6 cursor-pointer w-full h-44 flex items-center justify-center"
+            onClick={() => {
+              const username = typeof post.author === 'object' ? post.author.username : post.author;
+              if (username && username !== 'Unknown') {
+                navigate(`/profile/${username}`);
+              }
+            }}
+          >
+            {/* Wallpaper background only behind avatar */}
             <div
-              className="relative mb-6 cursor-pointer w-full h-44 flex items-center justify-center"
-              onClick={() => {
-                const username = typeof post.author === 'object' ? post.author.username : post.author;
-                if (username && username !== 'Unknown') {
-                  navigate(`/profile/${username}`);
-                }
+              className="absolute inset-0 w-full h-full rounded-2xl z-0"
+              style={{ backgroundImage: `url(${wallpaperUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.85) blur(0.5px)' }}
+            />
+            <motion.div
+              className="relative z-10"
+              animate={{
+                y: [0, -10, 0, 10, 0],
+                boxShadow: [
+                  '0 4px 16px rgba(0,0,0,0.18)',
+                  '0 12px 32px rgba(0,0,0,0.28)',
+                  '0 4px 16px rgba(0,0,0,0.18)',
+                  '0 -12px 32px rgba(0,0,0,0.22)',
+                  '0 4px 16px rgba(0,0,0,0.18)'
+                ]
               }}
+              transition={{
+                duration: 5,
+                repeat: Infinity,
+                ease: 'easeInOut'
+              }}
+              style={{ marginBottom: '-1.5rem' }}
             >
-              {/* Wallpaper loading skeleton */}
-              {!wallpaperLoaded && !wallpaperError && (
-                <div className="absolute inset-0 w-full h-full rounded-2xl bg-gradient-to-br from-minecraft-habbo-blue/30 to-minecraft-habbo-purple/20 animate-pulse z-0" />
-              )}
-              {/* Wallpaper image with retry logic */}
-              {wallpaperUrl && !wallpaperError && (
-                <motion.img
-                  key={wallpaperRetry} // force re-render on retry
-                  src={wallpaperCache.get(wallpaperKey) || wallpaperUrl}
-                  alt="Wallpaper"
-                  className="absolute inset-0 w-full h-full object-cover rounded-2xl z-0"
-                  style={{ filter: 'brightness(0.85) blur(0.5px)' }}
-                  initial={{ scale: 1.05 }}
-                  animate={{ scale: [1.05, 1.1, 1.05] }}
-                  transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-                  onLoad={handleWallpaperLoad}
-                  onError={handleWallpaperError}
+              <div className="rounded-xl bg-gray-900/70 shadow-2xl p-1"
+                   style={{
+                     boxShadow: '0 0 32px 6px rgba(84,170,255,0.18), 0 2px 8px rgba(0,0,0,0.18)'
+                   }}>
+                <MinecraftAvatar
+                  username={typeof post.author === 'object' ? (post.author.mcUsername || post.author.username) : post.author}
+                  size={88}
+                  type="head"
+                  animate={true}
+                  className="rounded-xl"
+                  style={{
+                    border: '2px solid rgba(255,255,255,0.18)',
+                    boxShadow: '0 0 16px 2px rgba(84,170,255,0.12)'
+                  }}
                 />
-              )}
-              {/* Fallback if wallpaper fails */}
-              {wallpaperError && (
-                <div className="absolute inset-0 w-full h-full rounded-2xl bg-minecraft-habbo-blue/30 flex items-center justify-center z-0">
-                  <span className="text-white text-xs opacity-60">Wallpaper unavailable</span>
-                </div>
-              )}
-              <motion.div
-                className="relative z-10"
-                animate={{
-                  y: [0, -10, 0, 10, 0],
-                  boxShadow: [
-                    '0 4px 16px rgba(0,0,0,0.18)',
-                    '0 12px 32px rgba(0,0,0,0.28)',
-                    '0 4px 16px rgba(0,0,0,0.18)',
-                    '0 -12px 32px rgba(0,0,0,0.22)',
-                    '0 4px 16px rgba(0,0,0,0.18)'
-                  ]
-                }}
-                transition={{
-                  duration: 5,
-                  repeat: Infinity,
-                  ease: 'easeInOut'
-                }}
-                style={{ marginBottom: '-1.5rem' }}
-              >
-                <div className="rounded-xl bg-gray-900/70 shadow-2xl p-1"
-                     style={{
-                       boxShadow: '0 0 32px 6px rgba(84,170,255,0.18), 0 2px 8px rgba(0,0,0,0.18)'
-                     }}>
-                  <MinecraftAvatar
-                    username={typeof post.author === 'object' ? (post.author.mcUsername || post.author.username) : post.author}
-                    size={88}
-                    type="head"
-                    animate={true}
-                    className="rounded-xl"
-                    style={{
-                      border: '2px solid rgba(255,255,255,0.18)',
-                      boxShadow: '0 0 16px 2px rgba(84,170,255,0.12)'
-                    }}
-                  />
-                </div>
-              </motion.div>
-            </div>
-            
+              </div>
+            </motion.div>
+          </div>
+          {/* --- Restore all original sidebar content below this line --- */}
+          <div className="flex flex-col items-center text-center mb-4 pb-4 border-b border-gray-700">
             {/* Username and OP tag */}
             <div className="flex items-center justify-center gap-2">
               <div
@@ -431,14 +416,12 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
                 {typeof post.author === 'object' ? post.author.username : post.author}
               </div>
             </div>
-            
             {/* Add this mapping near the top of the file (after imports): */}
             {post.author.webRank && (
               <div className="relative group mt-1 mb-2 flex flex-col items-center">
                 <div
                   className={`font-minecraft text-sm ${getDashboardRankColor(post.author.webRank)} cursor-help`}
-                  style={{letterSpacing: '0.5px', textShadow: '0 1px 0 #222, 0 0 2px #000'}}
-                >
+                  style={{letterSpacing: '0.5px', textShadow: '0 1px 0 #222, 0 0 2px #000'}}>
                   {post.author.webRank.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                 </div>
                 {/* Tooltip with robust edge handling */}
@@ -450,7 +433,6 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
                 </div>
               </div>
             )}
-            
             <div className="text-xs text-gray-400">
               {post.author.forum_rank && (
                 <span className="px-2 py-0.5 rounded bg-gray-700 text-gray-300">
@@ -464,7 +446,6 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
               </div>
             </div>
           </div>
-          
           {/* User stats section - grid layout */}
           <div className="grid grid-cols-2 gap-x-2 gap-y-3 text-xs">
             {/* Join date */}
@@ -472,43 +453,36 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
               <span className="block text-gray-500">Joined:</span>
               <span>{formatJoinDate(post.author.createdAt || post.author.joinDate)}</span>
             </div>
-            
             {/* Post count */}
             <div className="text-gray-400">
               <span className="block text-gray-500">Posts:</span>
               <span>{post.author.postCount || 0}</span>
             </div>
-            
             {/* Thread count */}
             <div className="text-gray-400">
               <span className="block text-gray-500">Threads:</span>
               <span>{post.author.threadCount || 0}</span>
             </div>
-            
             {/* Reputation */}
             <div className={getReputationColor(post.author.reputation)}>
               <span className="block text-gray-500">Reputation:</span>
               <span className="font-bold">{post.author.reputation || 0}</span>
             </div>
-            
             {/* Vouches received */}
             <div className="text-gray-400">
               <span className="block text-gray-500">Vouches:</span>
               <span className="text-green-400 font-bold">{post.author.vouches || 0}</span>
             </div>
-            
             {/* Last active */}
             <div className="text-gray-400">
               <span className="block text-gray-500">Last seen:</span>
               <span>{formatDate(post.author.lastActive || post.author.lastSeen || 'Just now')}</span>
             </div>
           </div>
-          
           {/* Action buttons */}
           <div className="mt-4 flex flex-col gap-2 border-t border-gray-700 pt-4">
             {/* User Reputation Component - use MinimalUserReputation as fallback */}
             <MinimalUserReputation user={post.author} />
-            
             <button 
               onClick={() => {
                 // Open donation modal - integrated with parent component
@@ -519,10 +493,8 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
                       detail: { recipient: post.author }
                     });
                     window.dispatchEvent(event);
-                    
                     // Fallback - alert in case the modal isn't implemented yet
                     console.log('Donation event dispatched. If nothing happens, the parent component may not be listening.');
-                    
                     // Optional: Show a toast message as fallback
                     if (typeof toast !== 'undefined') {
                       toast.info('Donation feature coming soon!');
@@ -541,14 +513,12 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
               </svg>
               Donate
             </button>
-            
             <button className="bg-blue-900 hover:bg-blue-800 text-blue-100 text-xs rounded py-1 px-2 flex items-center justify-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
               </svg>
               Add Friend
             </button>
-            
             <button className="bg-purple-900 hover:bg-purple-800 text-purple-100 text-xs rounded py-1 px-2 flex items-center justify-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
