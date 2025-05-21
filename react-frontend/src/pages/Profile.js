@@ -249,29 +249,33 @@ const Profile = () => {
   const [showCelebration, setShowCelebration] = useState(false); // Add state for celebration
   const [mcUsername, setMcUsername] = useState('');
   const [notFound, setNotFound] = useState(false);
+  const [wallpaperId, setWallpaperId] = useState(null);
+  const [savingWallpaper, setSavingWallpaper] = useState(false);
+  // Add state for wallpaper loading
+  const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
   
   // Predefined cover banner options
-  const coverOptions = [
-    '/assets/images/minecraft-hero.svg',
-    '/assets/images/minecraft/dirt-texture.svg',
-    '/assets/images/minecraft/grass-texture.svg',
-    '/assets/images/minecraft/stone-texture.svg',
-    '/assets/images/minecraft/wood-texture.svg',
-    'https://i.imgur.com/4A3YKBA.jpg', // Diamond ore
-    'https://i.imgur.com/fJVnFKK.jpg', // Nether scene
-    'https://i.imgur.com/H68GBzT.jpg', // Sunset village
-    'https://i.imgur.com/J2sywbe.jpg', // End portal
-    'https://i.imgur.com/ZD2QCnR.jpg', // Snowy taiga
-    'https://i.imgur.com/6hocX8Z.jpg', // Desert temple
+  const coverOptions = [];
+  
+  // Predefined wallpaper options (id, label)
+  const WALLPAPERS = [
+    { id: 'herobrine_hill', label: 'Herobrine Hill' },
+    { id: 'quick_hide', label: 'Quick Hide' },
+    { id: 'malevolent', label: 'Malevolent' }
   ];
+  
+  // Helper to get wallpaper URL for a given id and username
+  const getWallpaperUrl = (id, username) =>
+    `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
+  
+  // Helper to get thumbnail (use a default player for preview)
+  const getWallpaperThumb = (id) =>
+    `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/Steve?thumb=1`;
   
   // Map usernames to default covers to make each profile feel unique
   const getDefaultCover = (username) => {
-    if (!username) return coverOptions[0];
-    
-    // Simple hash function to map username to cover image
-    const sum = [...username].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return coverOptions[sum % coverOptions.length];
+    // Always use a valid wallpaperId and username
+    return getWallpaperUrl('herobrine_hill', username || 'Steve');
   };
 
   // Format date for display
@@ -781,6 +785,48 @@ const Profile = () => {
     return () => clearTimeout(timer);
   }, []);*/
   
+  // On profileUser or wallpaperId change, update cover image
+  useEffect(() => {
+    if (profileUser && (profileUser.wallpaperId || wallpaperId)) {
+      const id = profileUser.wallpaperId || wallpaperId || WALLPAPERS[0].id;
+      const uname = profileUser.mcUsername || profileUser.username || 'Steve';
+      setWallpaperId(id);
+      setCoverImage(getWallpaperUrl(id, uname));
+    } else if (profileUser) {
+      setWallpaperId(null);
+      setCoverImage(getWallpaperUrl(WALLPAPERS[0].id, profileUser.mcUsername || profileUser.username || 'Steve'));
+    }
+  }, [profileUser]);
+  
+  // Change wallpaper handler
+  const handleWallpaperSelect = async (id) => {
+    if (savingWallpaper || wallpaperId === id) return;
+    setWallpaperId(id);
+    const uname = profileUser.mcUsername || profileUser.username || 'Steve';
+    setCoverImage(getWallpaperUrl(id, uname));
+    setSavingWallpaper(true);
+    try {
+      await API.put('/api/user/profile', { wallpaperId: id });
+      setNotification({ show: true, type: 'success', message: 'Wallpaper updated!' });
+    } catch (err) {
+      setNotification({ show: true, type: 'error', message: 'Failed to update wallpaper.' });
+      // Revert to previous
+      setWallpaperId(profileUser.wallpaperId || null);
+      setCoverImage(getWallpaperUrl(profileUser.wallpaperId || WALLPAPERS[0].id, uname));
+    } finally {
+      setSavingWallpaper(false);
+    }
+  };
+  
+  // Preload wallpaper image when coverImage changes
+  useEffect(() => {
+    if (!coverImage) return;
+    setWallpaperLoaded(false);
+    const img = new window.Image();
+    img.src = coverImage;
+    img.onload = () => setWallpaperLoaded(true);
+  }, [coverImage]);
+  
   if (loading) {
     return <LoadingSpinner fullScreen />;
   }
@@ -892,24 +938,31 @@ const Profile = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Cover Banner with 3D Model */}
           <div className="relative rounded-t-md overflow-hidden mb-0 h-64 bg-cover bg-center" 
-            style={{ backgroundImage: `url(${coverImage})` }}>
+            style={{ backgroundImage: wallpaperLoaded ? `url(${coverImage})` : 'none', backgroundColor: '#222' }}>
+            {/* Skeleton/blurred overlay while loading */}
+            {!wallpaperLoaded && (
+              <div className="absolute inset-0 bg-gray-900 animate-pulse blur-sm z-10" />
+            )}
             
             {/* Cover change button (only for own profile) */}
             {isOwnProfile && (
               <div className="absolute top-4 right-4 z-10">
                 <div className="dropdown dropdown-end">
-                  <button className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-md flex items-center">
+                  <button className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-md flex items-center" disabled={savingWallpaper}>
                     <PhotoIcon className="h-5 w-5 mr-2" />
                     <span>Change Cover</span>
                   </button>
-                  <div className="dropdown-menu mt-2 bg-minecraft-navy-dark border border-white/20 p-3 rounded-md w-56 z-50 shadow-xl">
-                    <div className="grid grid-cols-2 gap-2">
-                      {coverOptions.map((image, index) => (
+                  <div className="dropdown-menu mt-2 bg-minecraft-navy-dark border border-white/20 p-3 rounded-md w-72 z-50 shadow-xl">
+                    <div className="grid grid-cols-3 gap-2">
+                      {WALLPAPERS.map((wp) => (
                         <button 
-                          key={index}
-                          className="block w-full h-16 bg-cover bg-center rounded-sm border-2 hover:border-white"
-                          style={{ backgroundImage: `url(${image})` }}
-                          onClick={() => handleCoverChange(image)}
+                          key={wp.id}
+                          className={`block w-full h-16 bg-cover bg-center rounded border-2 transition-all duration-150 ${wallpaperId === wp.id ? 'border-green-400 ring-2 ring-green-400' : 'border-transparent'} ${savingWallpaper ? 'opacity-50 pointer-events-none' : 'hover:border-white'}`}
+                          style={{ backgroundImage: `url(${getWallpaperThumb(wp.id)})` }}
+                          onClick={() => handleWallpaperSelect(wp.id)}
+                          aria-label={`Select ${wp.label} wallpaper`}
+                          disabled={savingWallpaper}
+                          title={wp.label}
                         />
                       ))}
                     </div>
