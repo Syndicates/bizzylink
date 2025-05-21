@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import ForumCategory from './ForumCategory';
@@ -24,6 +24,8 @@ import ForumPost from './ForumPost';
 import CreateThread from './CreateThread';
 import api from '../../services/api';
 import axios from 'axios';
+import { toast } from 'react-toastify';
+import { v4 as uuidv4 } from 'uuid';
 
 // Try to import DonationModal or use a fallback
 let DonationModal;
@@ -94,6 +96,7 @@ const ForumSystem = ({
   const [totalPages, setTotalPages] = useState(1);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [donationRecipient, setDonationRecipient] = useState(null);
+  const [categoryTopics, setCategoryTopics] = useState([]);
   
   // Initialize the component
   useEffect(() => {
@@ -169,10 +172,10 @@ const ForumSystem = ({
     // Fetch from API with proper error handling
     api.get('/api/forum/categories')
       .then(response => {
-        console.log('Categories API response:', response.data);
-        if (Array.isArray(response.data) && response.data.length > 0) {
-          // Map the response data to the expected format
-          const formattedCategories = response.data.map(category => ({
+        console.log('[FORUM DEBUG] Raw API response:', response.data);
+        // Log the actual data property
+        if (Array.isArray(response.data.data) && response.data.data.length > 0) {
+          const formattedCategories = response.data.data.map(category => ({
             id: category._id,
             name: category.name,
             description: category.description,
@@ -186,17 +189,19 @@ const ForumSystem = ({
               date: category.updatedAt || category.createdAt
             } : null
           }));
+          console.log('[FORUM DEBUG] Formatted categories:', formattedCategories);
           setCategories(formattedCategories);
           setIsLoading(false);
         } else {
           // No categories found, show error (no mock data per RULES.md)
+          console.log('[FORUM DEBUG] No categories found, error triggered.');
           setError('No forum categories found. Please contact an administrator.');
           setCategories([]);
           setIsLoading(false);
         }
       })
       .catch(error => {
-        console.error('Error fetching forum categories from API:', error);
+        console.error('[FORUM DEBUG] Error fetching forum categories from API:', error);
         setError('Error loading forum categories. Please try again later.');
         setCategories([]);
         setIsLoading(false);
@@ -206,16 +211,12 @@ const ForumSystem = ({
   // Fetch threads within a category directly from database
   const fetchTopics = (categoryId) => {
     setIsLoading(true);
-    console.log(`Fetching threads for category ${categoryId}...`);
-    
-    // Get threads directly from the database
     api.get(`/api/forum/categories/${categoryId}/threads`)
       .then(response => {
-        console.log('Category threads response:', response.data);
         if (response.data && response.data.threads) {
-          // Map to the expected format in our frontend
           const formattedThreads = response.data.threads.map(thread => ({
-            id: thread._id,
+            id: thread.id || thread._id,
+            slug: thread.slug,
             title: thread.title,
             author: thread.author || {
               username: 'Unknown',
@@ -229,20 +230,15 @@ const ForumSystem = ({
             pinned: thread.pinned || false,
             locked: thread.locked || false
           }));
-          
           setThreads(formattedThreads);
           setTotalPages(response.data.totalPages || 1);
-          // Don't set view here as it may conflict with the parent component's state
         } else {
-          console.log('No threads found in this category');
           setThreads([]);
           setTotalPages(1);
-          // Don't set view here as it may conflict with the parent component's state
         }
         setIsLoading(false);
       })
       .catch(error => {
-        console.error('Error fetching category threads:', error);
         setError('Error loading threads. Please try again later.');
         setIsLoading(false);
       });
@@ -251,9 +247,6 @@ const ForumSystem = ({
   // Fetch threads within a category (renamed function) - using real API
   const fetchThreads = (categoryId) => {
     setIsLoading(true);
-    console.log(`Fetching threads for category ID: ${categoryId}`);
-    
-    // Fetch from the database with sorting and pagination
     api.get(`/api/forum/categories/${categoryId}/threads`, {
       params: {
         page: pageNumber,
@@ -262,11 +255,10 @@ const ForumSystem = ({
       }
     })
       .then(response => {
-        console.log('Threads response:', response.data);
         if (response.data && response.data.threads && response.data.threads.length > 0) {
-          // Map to the expected format in our frontend
           const formattedThreads = response.data.threads.map(thread => ({
-            id: thread._id,
+            id: thread.id || thread._id,
+            slug: thread.slug,
             title: thread.title,
             author: thread.author || {
               username: 'Unknown',
@@ -280,40 +272,56 @@ const ForumSystem = ({
             pinned: thread.pinned || false,
             locked: thread.locked || false
           }));
-          
           setThreads(formattedThreads);
           setTotalPages(response.data.totalPages || 1);
         } else {
-          // Set empty array if no threads
-          console.log('No threads found for category:', categoryId);
           setThreads([]);
           setTotalPages(1);
         }
-        // Don't change the view - we already set it in handleCategorySelect
         setIsLoading(false);
       })
       .catch(error => {
-        console.error('Error fetching threads:', error);
-        // Even on error, set empty threads array so the UI can show "no threads" message
         setThreads([]);
         setTotalPages(1);
-        // Don't change the view - leave it as it was set in handleCategorySelect
         setIsLoading(false);
-        // Don't set error, let the UI show the empty state instead
-        // setError('Error loading threads. Please try again.');
       });
   };
   
   // Alias for compatibility with existing code
   const fetchTopicThreads = fetchThreads;
   
-  // Fetch posts within a thread directly from database
-  const fetchThreadPosts = (threadId) => {
+  // Patch: Helper to get thread key and navigation target
+  const getThreadKey = (thread) => thread.slug || thread.id;
+  const getThreadNavTarget = (thread) => thread.slug ? { type: 'slug', value: thread.slug } : { type: 'id', value: thread.id };
+
+  // Patch: Update handleThreadSelect to accept thread object
+  const handleThreadSelect = (thread) => {
+    setActiveThread(thread.id);
+    setView('thread');
+    // Try fetching by slug if present, else by id
+    if (thread.slug) {
+      fetchThreadPosts({ slug: thread.slug });
+    } else {
+      fetchThreadPosts({ id: thread.id });
+    }
+  };
+  
+  // Patch: Update fetchThreadPosts to accept either slug or id
+  const fetchThreadPosts = (threadRef) => {
     setIsLoading(true);
-    console.log(`Fetching posts for thread ID: ${threadId}`);
-    
-    // Get thread and posts from database via API
-    api.get(`/api/forum/threads/${threadId}`, {
+    let url = '';
+    if (threadRef.slug) {
+      url = `/api/forum/thread/${threadRef.slug}`;
+    } else if (threadRef.id) {
+      url = `/api/forum/threads/${threadRef.id}`;
+    } else if (typeof threadRef === 'string') {
+      url = `/api/forum/threads/${threadRef}`;
+    } else {
+      setError('Invalid thread reference');
+      setIsLoading(false);
+      return;
+    }
+    api.get(url, {
       params: {
         page: pageNumber,
         limit: 20
@@ -322,45 +330,33 @@ const ForumSystem = ({
       .then(response => {
         console.log('Thread posts response:', response.data);
         if (response.data) {
-          // Store the active thread details
           if (response.data.thread) {
-            // Update our thread listing with the fetched thread
+            const t = response.data.thread;
             const formattedThread = {
-              id: response.data.thread._id,
-              title: response.data.thread.title,
-              author: response.data.thread.author || {
-                username: 'Unknown',
-                avatar: null,
-                forum_rank: 'member'
-              },
-              category: response.data.thread.category,
-              createdAt: response.data.thread.createdAt,
-              updatedAt: response.data.thread.updatedAt,
-              replyCount: response.data.thread.replyCount || 0,
-              views: response.data.thread.views || 0,
-              pinned: response.data.thread.pinned || false,
-              locked: response.data.thread.locked || false
+              id: t.id || t._id,
+              slug: t.slug,
+              title: t.title,
+              author: t.author || { username: 'Unknown', avatar: null, forum_rank: 'member' },
+              category: t.category,
+              createdAt: t.createdAt,
+              updatedAt: t.updatedAt,
+              replyCount: t.replyCount || 0,
+              views: t.views || 0,
+              pinned: t.pinned || false,
+              locked: t.locked || false
             };
-            
-            // Replace the threads array with just this thread
             setThreads([formattedThread]);
           }
-          
-          // Format the posts
           if (response.data.posts && Array.isArray(response.data.posts)) {
             const formattedPosts = response.data.posts.map(post => ({
-              id: post._id,
+              id: post.id || post._id,
               content: post.content,
-              author: post.author || {
-                username: 'Unknown',
-                avatar: null,
-                forum_rank: 'member',
-                createdAt: post.createdAt
-              },
+              author: post.author || { username: 'Unknown', avatar: null, forum_rank: 'member', createdAt: post.createdAt },
               createdAt: post.createdAt,
-              edited: post.edited || null
+              edited: post.edited || null,
+              isOriginalPost: post.isOriginalPost,
+              thanks: post.thanks || []
             }));
-            
             setPosts(formattedPosts);
             setTotalPages(response.data.totalPages || 1);
           } else {
@@ -409,13 +405,6 @@ const ForumSystem = ({
     setView('threads');
     fetchTopicThreads(topicId);
     // navigate(`/forum/topic/${topicId}`);
-  };
-  
-  // Navigate to thread view
-  const handleThreadSelect = (threadId) => {
-    setActiveThread(threadId);
-    setView('thread');
-    // navigate(`/forum/thread/${threadId}`);
   };
   
   // Navigate back based on current view
@@ -476,18 +465,19 @@ const ForumSystem = ({
     console.log('Thread payload:', payload);
     
     // Create thread in database using API
-    api.post('/api/forum/threads', payload)
+    // NOTE: Backend expects singular '/thread' for creation, even though the collection is 'threads'
+    api.post('/api/forum/thread', payload)
       .then(response => {
         console.log('Thread created response:', response.data);
-        if (response.data && response.data.thread) {
+        if (response.data && response.data.data && response.data.data.thread) {
           // Navigate to the newly created thread
-          setActiveThread(response.data.thread._id);
+          setActiveThread(response.data.data.thread.id || response.data.data.thread._id);
           setView('thread');
-          fetchThreadPosts(response.data.thread._id);
-          alert('Thread created successfully!');
+          fetchThreadPosts(response.data.data.thread.id || response.data.data.thread._id);
+          toast.success('Thread created successfully!');
         } else {
           console.error('Unexpected response format:', response.data);
-          alert('Error creating thread: Unexpected server response');
+          toast.error('Error creating thread: Unexpected server response');
         }
       })
       .catch(error => {
@@ -495,9 +485,9 @@ const ForumSystem = ({
         
         // If we get an authorization error, we need to log in
         if (error.response?.status === 401) {
-          alert('You need to be logged in to create a thread. Please log in and try again.');
+          toast.error('You need to be logged in to create a thread. Please log in and try again.');
         } else {
-          alert('Error creating thread: ' + (error.response?.data?.message || 'Please try again later'));
+          toast.error('Error creating thread: ' + (error.response?.data?.message || 'Please try again later'));
         }
         
         setIsLoading(false);
@@ -509,22 +499,17 @@ const ForumSystem = ({
   
   // Submit new reply to a thread
   const handleSubmitReply = (replyData) => {
-    setIsLoading(true);
-    console.log('Submitting reply to thread:', activeThread);
-    
-    api.post(`/api/forum/threads/${activeThread}/posts`, {
-      content: replyData.content
-    })
+    api.post(`/api/forum/threads/${activeThread}/posts`, { content: replyData.content })
       .then(response => {
-        console.log('Reply posted response:', response.data);
-        // Refresh thread posts to show the new reply
-        fetchThreadPosts(activeThread);
-        alert('Reply posted successfully!');
+        if (response.data && response.data.post) {
+          setTimeout(() => {
+            setPosts(prev => [...prev, { ...response.data.post, author: loggedInUser }]);
+          }, 700);
+          toast.success('Reply posted successfully!');
+        }
       })
       .catch(error => {
-        console.error('Error posting reply:', error);
-        alert('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
-        setIsLoading(false);
+        toast.error('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
       });
   };
   
@@ -532,30 +517,61 @@ const ForumSystem = ({
   const handlePostReply = () => {
     const textarea = document.querySelector('.forum-reply-textarea');
     if (textarea && textarea.value.trim()) {
-      // Show loading indicator
-      setIsLoading(true);
-      
-      // Submit the reply to the database through API
-      api.post(`/api/forum/threads/${activeThread}/posts`, {
-        content: textarea.value.trim()
-      })
+      api.post(`/api/forum/threads/${activeThread}/posts`, { content: textarea.value.trim() })
         .then(response => {
-          console.log('Reply posted successfully:', response.data);
-          // Refresh thread posts to show the new reply
-          fetchThreadPosts(activeThread);
-          // Clear textarea after posting
-          textarea.value = '';
+          if (response.data && response.data.post) {
+            setTimeout(() => {
+              setPosts(prev => [...prev, { ...response.data.post, author: loggedInUser }]);
+            }, 700);
+            textarea.value = '';
+            toast.success('Reply posted successfully!');
+          }
         })
         .catch(error => {
-          console.error('Error posting reply:', error);
-          alert('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
-        })
-        .finally(() => {
-          setIsLoading(false);
+          toast.error('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
         });
     } else {
-      alert('Please enter a reply before posting');
+      toast.error('Please enter a reply before posting');
     }
+  };
+
+  // Fetch topics for the active category when entering 'create' view
+  useEffect(() => {
+    if (view === 'create' && activeCategory) {
+      api.get(`/api/forum/category/${activeCategory}`)
+        .then(res => {
+          if (res.data && res.data.data && Array.isArray(res.data.data.topics)) {
+            setCategoryTopics(res.data.data.topics.map(t => ({
+              id: t._id,
+              name: t.name
+            })));
+          } else {
+            setCategoryTopics([]);
+          }
+        })
+        .catch(() => setCategoryTopics([]));
+    }
+  }, [view, activeCategory]);
+
+  // In thread view, handle thread/post deletion
+  const handleThreadDeleted = () => {
+    toast.success('Thread deleted');
+    setView('threads');
+    setActiveThread(null);
+    setPosts([]);
+    setThreads([]); // Clear threads immediately
+    if (activeCategory) {
+      fetchThreads(activeCategory);
+    }
+  };
+  const handlePostDeleted = (postId) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    toast.success('Post deleted');
+  };
+
+  // Add handler to update post in state
+  const handlePostEdited = (updatedPost) => {
+    setPosts(prevPosts => prevPosts.map(p => p.id === updatedPost.id ? { ...p, ...updatedPost } : p));
   };
 
   // Loading state
@@ -776,9 +792,9 @@ const ForumSystem = ({
                     .slice((pageNumber - 1) * 10, pageNumber * 10)
                     .map(thread => (
                       <ForumThread 
-                        key={thread.id}
+                        key={getThreadKey(thread)}
                         thread={thread}
-                        onClick={() => handleThreadSelect(thread.id)}
+                        onClick={() => handleThreadSelect(thread)}
                       />
                     ))}
                 </div>
@@ -827,17 +843,38 @@ const ForumSystem = ({
               <h2 className="text-xl md:text-2xl font-bold text-white break-words">
                 {threads.find(t => t.id === activeThread)?.title || 'Thread'}
               </h2>
+              <button
+                onClick={() => fetchThreadPosts(activeThread)}
+                className="ml-4 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm"
+              >
+                Refresh
+              </button>
             </div>
             
             <div className="space-y-4">
-              {posts.map((post, index) => (
-                <ForumPost 
-                  key={post.id}
-                  post={post}
-                  currentUser={currentUser}
-                  onReply={() => {}} // Handle reply to specific post
-                />
-              ))}
+              <AnimatePresence initial={false}>
+                {posts.map((post, index) => (
+                  <motion.div
+                    key={post.id}
+                    className="forum-post"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <ForumPost
+                      post={post}
+                      currentUser={loggedInUser}
+                      onReply={() => {}}
+                      threadAuthorId={threads[0]?.author?.id || threads[0]?.author?._id}
+                      threadId={threads[0]?.id}
+                      onThreadDeleted={handleThreadDeleted}
+                      onPostDeleted={handlePostDeleted}
+                      onPostEdited={handlePostEdited}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
             
             {/* Reply form */}
@@ -863,7 +900,7 @@ const ForumSystem = ({
         
         {/* Create thread view */}
         {view === 'create' && (
-          <CreateThread onSubmit={handleSubmitThread} onCancel={handleBack} />
+          <CreateThread onSubmit={handleSubmitThread} onCancel={handleBack} activeCategory={activeCategory} topics={categoryTopics} />
         )}
       </div>
     </div>

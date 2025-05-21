@@ -24,6 +24,7 @@ import minecraftApi from '../services/minecraft-api';
  * @param {string} props.username - Minecraft username
  * @param {string} props.uuid - Minecraft UUID (takes precedence over username)
  * @param {string} props.type - Type of avatar ('head', 'bust', 'full')
+ * @param {string} props.crop - Crop type for the avatar
  * @param {number} props.size - Size in pixels
  * @param {string} props.className - Additional CSS classes
  * @param {boolean} props.animate - Whether to add hover animations
@@ -33,7 +34,8 @@ import minecraftApi from '../services/minecraft-api';
 const MinecraftAvatar = ({
   username = '',
   uuid = null,
-  type = 'head',
+  type = 'face', // default, head, bust, full, isometric, etc.
+  crop = null,   // face, bust, full, etc.
   size = 64,
   className = '',
   animate = true,
@@ -42,71 +44,64 @@ const MinecraftAvatar = ({
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  
-  // Get avatar URL based on type with improved fallback
-  const getAvatarUrl = () => {
-    const playerIdentifier = uuid || username || 'MHF_Steve'; // Use MHF_Steve if no identifier
 
-    // Use Visage as the primary source, adjust endpoint based on type
-    switch (type) {
-      case 'head':
-      case 'face': // Allow 'face' as an alias for 'head' type
-        return `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`;
-      case 'avatar': // Visage's generic avatar endpoint
-        return `https://visage.surgeplay.com/avatar/${size}/${playerIdentifier}`;
-      case 'bust':
-        return `https://visage.surgeplay.com/bust/${size}/${playerIdentifier}`;
-      case 'full':
-        return `https://visage.surgeplay.com/full/${size}/${playerIdentifier}`;
-      default:
-        return `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`; // Default to face
-    }
-  };
-  
-  // Handle image errors with consistent fallbacks
-  const handleError = (e) => {
-    setIsLoading(false); // Stop loading indicator on error
-    setHasError(true);
+  // Always use username (mcUsername) for the playerIdentifier, never uuid
+  const playerIdentifier = username || 'MHF_Steve';
 
-    const currentSrc = e.target.src;
-    const playerIdentifier = uuid || username; // Use the actual identifier for fallbacks if available
+  // Map your type/crop to API
+  let renderType = 'default';
+  let renderCrop = 'face';
 
-    if (!playerIdentifier) { // If no identifier, just use a placeholder or Steve directly
-      e.target.src = `https://mc-heads.net/avatar/MHF_Steve/${size}`; // Default to Steve if no username/UUID
-      e.target.onerror = () => { // Final placeholder if Steve also fails (unlikely for mc-heads)
-        e.target.src = `https://via.placeholder.com/${size}?text=MC`;
-        e.target.onerror = null;
-      };
-      return;
-    }
+  if (type === 'head') {
+    renderType = 'head';
+    renderCrop = 'full';
+  } else if (type === 'bust') {
+    renderType = 'default';
+    renderCrop = 'bust';
+  } else if (type === 'full') {
+    renderType = 'default';
+    renderCrop = 'full';
+  } else if (type === 'isometric') {
+    renderType = 'isometric';
+    renderCrop = 'head';
+  } else if (type === 'profile') {
+    renderType = 'profile';
+    renderCrop = 'face';
+  } else if (type === 'face') {
+    renderType = 'default';
+    renderCrop = 'face';
+  }
 
-    // Fallback chain
-    if (currentSrc.includes('visage.surgeplay.com')) {
-      console.log('Visage failed, trying PlayerDB for:', playerIdentifier);
-      e.target.src = `https://playerdb.co/api/player/minecraft/${playerIdentifier}/avatar?size=${size}`;
-    } else if (currentSrc.includes('playerdb.co')) {
-      console.log('PlayerDB failed, trying mc-heads for:', playerIdentifier);
-      e.target.src = `https://mc-heads.net/avatar/${playerIdentifier}/${size}`;
-    } else if (currentSrc.includes('mc-heads.net')) {
-      console.log('mc-heads failed, trying Minotar for:', playerIdentifier);
-      e.target.src = `https://minotar.net/avatar/${playerIdentifier}/${size}.png`;
-    } else if (currentSrc.includes('minotar.net')) {
-      console.log('Minotar failed, using placeholder for:', playerIdentifier);
-      e.target.src = `https://via.placeholder.com/${size}?text=MC`;
-      e.target.onerror = null; // Stop the error loop
+  // Allow override via crop prop
+  if (crop) renderCrop = crop;
+
+  // Compose the URL
+  const starlightUrl = `https://starlightskins.lunareclipse.studio/render/${renderType}/${playerIdentifier}/${renderCrop}?scale=${size}`;
+
+  // Fallbacks (as before)
+  const fallbackUrls = [
+    `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`,
+    `https://mc-heads.net/avatar/${playerIdentifier}/${size}`,
+    `https://minotar.net/avatar/${playerIdentifier}/${size}.png`
+  ];
+
+  const [imgSrc, setImgSrc] = React.useState(starlightUrl);
+  const [fallbackIndex, setFallbackIndex] = React.useState(0);
+
+  const handleError = () => {
+    if (fallbackIndex < fallbackUrls.length) {
+      setImgSrc(fallbackUrls[fallbackIndex]);
+      setFallbackIndex(fallbackIndex + 1);
     } else {
-      // If it's an unknown source or something went wrong, just use placeholder
-      console.log('Unknown source failed, using placeholder for:', playerIdentifier);
-      e.target.src = `https://via.placeholder.com/${size}?text=MC`;
-      e.target.onerror = null;
+      setImgSrc('/minecraft-assets/steve.png');
     }
   };
-  
-  const handleLoad = () => {
-    setIsLoading(false);
-    setHasError(false);
-  };
-  
+
+  React.useEffect(() => {
+    setImgSrc(starlightUrl);
+    setFallbackIndex(0);
+  }, [starlightUrl]);
+
   // Animation variants
   const avatarVariants = animate ? {
     hover: { 
@@ -116,7 +111,7 @@ const MinecraftAvatar = ({
     },
     tap: { scale: 0.95 }
   } : {};
-  
+
   return (
     <div className="relative inline-block">
       <motion.div
@@ -136,7 +131,7 @@ const MinecraftAvatar = ({
         )}
         
         <img
-          src={getAvatarUrl()}
+          src={imgSrc}
           alt={username || 'Minecraft Player'}
           className={`w-full h-full rounded-md ${hasError ? 'opacity-70' : ''}`}
           style={{ 
@@ -145,7 +140,7 @@ const MinecraftAvatar = ({
             objectFit: 'contain' 
           }}
           onError={handleError}
-          onLoad={handleLoad}
+          onLoad={() => { setIsLoading(false); setHasError(false); }}
         />
         
         {/* Username if requested */}

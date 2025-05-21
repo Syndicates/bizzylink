@@ -118,7 +118,12 @@ const ForumThreadSchema = new mongoose.Schema({
   topic: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'ForumTopic', 
-    required: [true, 'Topic is required']
+    required: false
+  },
+  category: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ForumCategory',
+    required: false
   },
   author: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -138,6 +143,14 @@ const ForumThreadSchema = new mongoose.Schema({
     type: Boolean, 
     default: false 
   },
+  pinned: { // for legacy/compatibility
+    type: Boolean,
+    default: false
+  },
+  locked: { // for legacy/compatibility
+    type: Boolean,
+    default: false
+  },
   views: { 
     type: Number, 
     default: 0 
@@ -154,6 +167,15 @@ const ForumThreadSchema = new mongoose.Schema({
   lastPost: {
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     date: { type: Date }
+  },
+  firstPost: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ForumPost',
+    required: false
+  },
+  replyCount: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -178,9 +200,9 @@ const ForumPostSchema = new mongoose.Schema({
     type: Boolean, 
     default: false 
   },
-  likes: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User' 
+  thanks: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }],
   edited: { 
     type: Boolean, 
@@ -241,10 +263,8 @@ ForumThreadSchema.pre('save', function(next) {
   if (!this.slug || this.isModified('title')) {
     this.slug = generateSlug(this.title);
   }
-  
   // Update timestamps
   this.updatedAt = Date.now();
-  
   next();
 });
 
@@ -283,14 +303,15 @@ ForumPostSchema.post('save', async function() {
 });
 
 // Create and export models
-const ForumCategory = mongoose.model('ForumCategory', ForumCategorySchema);
+const ForumCategory = mongoose.model('ForumCategory', ForumCategorySchema, 'categories');
 const ForumTopic = mongoose.model('ForumTopic', ForumTopicSchema);
-const ForumThread = mongoose.model('ForumThread', ForumThreadSchema);
-const ForumPost = mongoose.model('ForumPost', ForumPostSchema);
+const ForumThread = mongoose.model('ForumThread', ForumThreadSchema, 'threads');
+const ForumPost = mongoose.model('ForumPost', ForumPostSchema, 'posts');
 
 module.exports = {
   ForumCategory,
   ForumTopic,
   ForumThread,
-  ForumPost
+  ForumPost,
+  generateSlug
 };

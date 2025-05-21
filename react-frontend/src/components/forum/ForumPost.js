@@ -18,6 +18,7 @@ import MinecraftAvatar from '../MinecraftAvatar';
 import { useNavigate } from 'react-router-dom';
 import ForumAPI from '../../services/ForumAPI';
 import MinimalUserReputation from '../MinimalUserReputation.jsx';
+import { motion } from 'framer-motion';
 
 // Try to import real toast, or use our mock version
 let toast;
@@ -30,28 +31,92 @@ try {
 
 // We're using MinimalUserReputation component directly now
 
+// Redefine rankStyles for Minecraft theme
+const rankStyles = {
+  owner:    'bg-gradient-to-r from-yellow-300 to-yellow-600 text-gray-900 border-2 border-yellow-500 shadow-lg minecraft-pixel',
+  admin:    'bg-gradient-to-r from-red-500 to-red-800 text-white border-2 border-red-600 shadow-lg minecraft-pixel',
+  moderator:'bg-gradient-to-r from-blue-400 to-blue-700 text-white border-2 border-blue-500 shadow-lg minecraft-pixel',
+  helper:   'bg-gradient-to-r from-green-400 to-green-700 text-white border-2 border-green-500 shadow-lg minecraft-pixel',
+  vip:      'bg-gradient-to-r from-purple-400 to-purple-700 text-white border-2 border-purple-500 shadow-lg minecraft-pixel',
+  member:   'bg-gradient-to-r from-gray-600 to-gray-800 text-white border-2 border-gray-500 shadow minecraft-pixel',
+  user:     'bg-gradient-to-r from-gray-600 to-gray-800 text-white border-2 border-gray-500 shadow minecraft-pixel',
+  content_creator: 'bg-gradient-to-r from-pink-400 to-pink-700 text-white border-2 border-pink-500 shadow-lg minecraft-pixel',
+  developer: 'bg-gradient-to-r from-cyan-400 to-cyan-700 text-white border-2 border-cyan-500 shadow-lg minecraft-pixel',
+  donor:    'bg-gradient-to-r from-amber-400 to-amber-700 text-white border-2 border-amber-500 shadow-lg minecraft-pixel',
+  tiktok_sub: 'bg-gradient-to-r from-fuchsia-400 to-fuchsia-700 text-white border-2 border-fuchsia-500 shadow-lg minecraft-pixel'
+};
+
+// Add this function near the top
+const getDashboardRankColor = (rank) => {
+  if (!rank) return 'text-gray-400';
+  const r = rank.toLowerCase();
+  if (r === 'owner' || r === 'admin') return 'text-red-400';
+  if (r === 'vip' || r === 'vip+') return 'text-minecraft-habbo-yellow';
+  if (r === 'moderator' || r === 'mod') return 'text-minecraft-habbo-blue';
+  if (r === 'helper') return 'text-minecraft-habbo-green';
+  return 'text-gray-400';
+};
+
+// Add this function for tooltip text
+const getRankTooltip = (rank) => {
+  if (!rank) return '';
+  const r = rank.toLowerCase();
+  if (r === 'owner') return 'Owner: The creator and leader of Bizzy Nation! All-powerful, all-knowing, and super cool.';
+  if (r === 'admin') return 'Admin: A trusted staff member who helps manage the community and keep things running smoothly.';
+  if (r === 'moderator' || r === 'mod') return 'Moderator: A trusted community guardian who keeps the forums safe and friendly.';
+  if (r === 'helper') return 'Helper: A trustworthy player who assists others and supports the community.';
+  if (r === 'vip' || r === 'vip+') return 'VIP: A supporter who helps keep the server running. Thank you!';
+  if (r === 'member' || r === 'user') return 'Member: A regular player and valued part of the community.';
+  return 'Player: Enjoy your stay!';
+};
+
+// Simple in-memory cache for wallpaper images (key: wallpaperId:mcUsername)
+const wallpaperCache = new Map();
+
 /**
  * ForumPost component
  * 
  * Displays a post in a forum thread with author info, content, and actions
  */
-const ForumPost = ({ post, currentUser, onReply }) => {
+const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThreadDeleted, onPostDeleted, onPostEdited }) => {
   const navigate = useNavigate();
-  // Initialize like status properly with likes array length and check if current user has liked
-  const [likeStatus, setLikeStatus] = useState(() => {
-    // Ensure likes exists as an array
-    const likesArray = Array.isArray(post.likes) ? post.likes : [];
-    
-    // Check if current user has liked this post
-    const userHasLiked = currentUser && likesArray.some(like => 
-      like._id ? like._id.toString() === currentUser._id : like.toString() === currentUser._id
-    );
-    
+  // Initialize thanks status properly with thanks array length and check if current user has thanked
+  const [thanksStatus, setThanksStatus] = useState(() => {
+    const thanksArray = Array.isArray(post.thanks) ? post.thanks : [];
+    const userId = currentUser && (currentUser._id || currentUser.id);
+    const userHasThanked = userId && thanksArray.includes(String(userId));
+    // Debug output
+    console.log('DEBUG thanksArray:', thanksArray, 'currentUserId:', userId, 'userHasThanked:', userHasThanked);
     return {
-      liked: userHasLiked,
-      count: likesArray.length
+      thanked: userHasThanked,
+      count: thanksArray.length
     };
   });
+
+  // Wallpaper loading and retry logic
+  const wallpaperId = 'herobrine_hill'; // Default wallpaper for all users
+  const wallpaperUrl = post.author.mcUsername
+    ? `https://starlightskins.lunareclipse.studio/render/wallpaper/${wallpaperId}/${post.author.mcUsername}`
+    : null;
+  const wallpaperKey = `${wallpaperId}:${post.author.mcUsername}`;
+  const [wallpaperLoaded, setWallpaperLoaded] = useState(() => wallpaperCache.has(wallpaperKey));
+  const [wallpaperError, setWallpaperError] = useState(false);
+  const [wallpaperRetry, setWallpaperRetry] = useState(0);
+
+  // On successful load, cache the wallpaper
+  const handleWallpaperLoad = () => {
+    wallpaperCache.set(wallpaperKey, wallpaperUrl);
+    setWallpaperLoaded(true);
+  };
+
+  // Retry handler
+  const handleWallpaperError = () => {
+    if (wallpaperRetry < 2) {
+      setTimeout(() => setWallpaperRetry(r => r + 1), 800); // Retry after 800ms
+    } else {
+      setWallpaperError(true);
+    }
+  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -109,27 +174,6 @@ const ForumPost = ({ post, currentUser, onReply }) => {
     }
   };
 
-  // Get badge class based on user rank
-  const getRankBadgeClass = (rank) => {
-    if (!rank) return 'bg-gray-700 text-gray-300';
-    
-    const rankLower = rank.toLowerCase();
-    
-    if (rankLower.includes('admin')) {
-      return 'bg-red-900 text-red-200';
-    } else if (rankLower.includes('moderator') || rankLower.includes('mod')) {
-      return 'bg-blue-900 text-blue-200';
-    } else if (rankLower.includes('veteran') || rankLower.includes('vip')) {
-      return 'bg-purple-900 text-purple-200';
-    } else if (rankLower.includes('builder') || rankLower.includes('contributor')) {
-      return 'bg-green-900 text-green-200';
-    } else if (rankLower.includes('donator') || rankLower.includes('premium')) {
-      return 'bg-amber-900 text-amber-200';
-    } else {
-      return 'bg-gray-700 text-gray-300';
-    }
-  };
-  
   // Get reputation color based on count
   const getReputationColor = (rep) => {
     if (rep === undefined || rep === null) return 'text-gray-500';
@@ -143,34 +187,47 @@ const ForumPost = ({ post, currentUser, onReply }) => {
     return 'text-red-400';
   };
   
-  // Handle like toggle with API call
-  const handleLikeToggle = async () => {
-    try {
-      // Call the API to toggle like
-      const result = await ForumAPI.toggleLike(post.id);
-      
-      // Update local state based on API response
-      setLikeStatus({
-        liked: result.liked,
-        count: result.likeCount
-      });
-      
-      // Show notification
-      toast.success(result.liked ? 'Post liked!' : 'Like removed');
-      
-      // If we have allPostLikes data from the API, we could update other post likes in the thread
-      // This would require lifting state to the parent component
-      if (result.allPostLikes && typeof window !== 'undefined') {
-        // Dispatch an event that parent components can listen for to update all post likes
-        const event = new CustomEvent('forumPostLikesUpdated', { 
-          detail: { postLikes: result.allPostLikes } 
-        });
-        window.dispatchEvent(event);
-      }
-    } catch (error) {
-      console.error('Error toggling like:', error);
-      toast.error('Error updating like status');
+  // Add state for unthank confirmation modal
+  const [showUnthankModal, setShowUnthankModal] = useState(false);
+  const [pendingUnthank, setPendingUnthank] = useState(false);
+
+  // Handle thanks toggle with confirmation for unthank
+  const handleThanksToggle = async () => {
+    if (thanksStatus.thanked) {
+      // Show confirmation modal before unthanking
+      setShowUnthankModal(true);
+      return;
     }
+    // Thank as normal
+    try {
+      const result = await ForumAPI.toggleThanks(post.id);
+      setThanksStatus({
+        thanked: result.thanked,
+        count: result.thanksCount
+      });
+      toast.success(result.thanked ? 'Post thanked!' : 'Thanks removed');
+    } catch (error) {
+      console.error('Error toggling thanks:', error);
+      toast.error('Error updating thanks status');
+    }
+  };
+
+  // Confirm unthank action
+  const confirmUnthank = async () => {
+    setPendingUnthank(true);
+    try {
+      const result = await ForumAPI.toggleThanks(post.id);
+      setThanksStatus({
+        thanked: result.thanked,
+        count: result.thanksCount
+      });
+      toast.success('Thanks removed');
+    } catch (error) {
+      console.error('Error removing thanks:', error);
+      toast.error('Error updating thanks status');
+    }
+    setPendingUnthank(false);
+    setShowUnthankModal(false);
   };
 
   // Handle quote post
@@ -181,6 +238,98 @@ const ForumPost = ({ post, currentUser, onReply }) => {
         author: post.author.username,
         content: post.content
       });
+    }
+  };
+
+  // Helper: is OP
+  const isOP = post.author && threadAuthorId && (post.author.id === threadAuthorId || post.author._id === threadAuthorId);
+  // Helper: can delete post
+  const canDeletePost = currentUser && post.author && (currentUser.id === post.author.id || currentUser._id === post.author.id || ['admin','moderator','owner'].includes(currentUser.webRank));
+  // Helper: can delete thread (only on original post)
+  const canDeleteThread = post.isOriginalPost && currentUser && threadAuthorId && (currentUser.id === threadAuthorId || currentUser._id === threadAuthorId || ['admin','moderator','owner'].includes(currentUser.webRank));
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteType, setDeleteType] = useState(null); // 'post' or 'thread'
+  const [deleteDebug, setDeleteDebug] = useState(null);
+
+  // Delete post handler
+  const handleDeletePost = () => {
+    setDeleteType('post');
+    setShowDeleteModal(true);
+  };
+  // Delete thread handler
+  const handleDeleteThread = () => {
+    setDeleteType('thread');
+    setShowDeleteModal(true);
+  };
+
+  // Confirm delete action
+  const confirmDelete = async () => {
+    setShowDeleteModal(false);
+    setDeleteDebug({
+      status: 'pending',
+      type: deleteType,
+      id: deleteType === 'post' ? post.id : threadId,
+      endpoint: deleteType === 'post'
+        ? `/api/forum/post/${post.id}`
+        : `/api/forum/thread/${threadId}`
+    });
+    if (deleteType === 'post') {
+      try {
+        await ForumAPI.deletePost(post.id);
+        setDeleteDebug(prev => ({ ...prev, status: 'success' }));
+        if (onPostDeleted) onPostDeleted(post.id);
+      } catch (err) {
+        setDeleteDebug(prev => ({ ...prev, status: 'error', error: err?.message || 'Unknown error' }));
+        toast.error('Failed to delete post');
+      }
+    } else if (deleteType === 'thread') {
+      try {
+        await ForumAPI.deleteThread(threadId);
+        setDeleteDebug(prev => ({ ...prev, status: 'success' }));
+        if (onThreadDeleted) onThreadDeleted();
+      } catch (err) {
+        setDeleteDebug(prev => ({ ...prev, status: 'error', error: err?.message || 'Unknown error' }));
+        toast.error('Failed to delete thread');
+      }
+    }
+    setTimeout(() => setDeleteDebug(null), 4000);
+  };
+
+  // Add edit state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(post.content);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState(null);
+
+  // Helper: can edit post (same as canDeletePost)
+  const canEditPost = canDeletePost;
+
+  const handleEditPost = () => {
+    setIsEditing(true);
+    setEditContent(post.content);
+    setEditError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditContent(post.content);
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    setEditLoading(true);
+    setEditError(null);
+    try {
+      const res = await ForumAPI.updatePost(post.id, editContent);
+      setIsEditing(false);
+      setEditLoading(false);
+      if (res && res.post) {
+        if (onPostEdited) onPostEdited(res.post);
+      }
+    } catch (err) {
+      setEditError(err?.response?.data?.message || 'Failed to update post');
+      setEditLoading(false);
     }
   };
 
@@ -196,8 +345,8 @@ const ForumPost = ({ post, currentUser, onReply }) => {
         <div className="bg-gray-800 p-4 md:w-56 flex flex-col border-b md:border-b-0 md:border-r border-gray-600">
           {/* Username and avatar section */}
           <div className="flex flex-col items-center text-center mb-4 pb-4 border-b border-gray-700">
-            <div 
-              className="mb-3 cursor-pointer w-16 h-16"
+            <div
+              className="relative mb-6 cursor-pointer w-full h-44 flex items-center justify-center"
               onClick={() => {
                 const username = typeof post.author === 'object' ? post.author.username : post.author;
                 if (username && username !== 'Unknown') {
@@ -205,30 +354,106 @@ const ForumPost = ({ post, currentUser, onReply }) => {
                 }
               }}
             >
-              <MinecraftAvatar 
-                username={typeof post.author === 'object' ? post.author.username : post.author}
-                uuid={typeof post.author === 'object' ? post.author.mcUUID : null}
-                size={64}
-                type="head"
-                animate={true}
-              />
+              {/* Wallpaper loading skeleton */}
+              {!wallpaperLoaded && !wallpaperError && (
+                <div className="absolute inset-0 w-full h-full rounded-2xl bg-gradient-to-br from-minecraft-habbo-blue/30 to-minecraft-habbo-purple/20 animate-pulse z-0" />
+              )}
+              {/* Wallpaper image with retry logic */}
+              {wallpaperUrl && !wallpaperError && (
+                <motion.img
+                  key={wallpaperRetry} // force re-render on retry
+                  src={wallpaperCache.get(wallpaperKey) || wallpaperUrl}
+                  alt="Wallpaper"
+                  className="absolute inset-0 w-full h-full object-cover rounded-2xl z-0"
+                  style={{ filter: 'brightness(0.85) blur(0.5px)' }}
+                  initial={{ scale: 1.05 }}
+                  animate={{ scale: [1.05, 1.1, 1.05] }}
+                  transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+                  onLoad={handleWallpaperLoad}
+                  onError={handleWallpaperError}
+                />
+              )}
+              {/* Fallback if wallpaper fails */}
+              {wallpaperError && (
+                <div className="absolute inset-0 w-full h-full rounded-2xl bg-minecraft-habbo-blue/30 flex items-center justify-center z-0">
+                  <span className="text-white text-xs opacity-60">Wallpaper unavailable</span>
+                </div>
+              )}
+              <motion.div
+                className="relative z-10"
+                animate={{
+                  y: [0, -10, 0, 10, 0],
+                  boxShadow: [
+                    '0 4px 16px rgba(0,0,0,0.18)',
+                    '0 12px 32px rgba(0,0,0,0.28)',
+                    '0 4px 16px rgba(0,0,0,0.18)',
+                    '0 -12px 32px rgba(0,0,0,0.22)',
+                    '0 4px 16px rgba(0,0,0,0.18)'
+                  ]
+                }}
+                transition={{
+                  duration: 5,
+                  repeat: Infinity,
+                  ease: 'easeInOut'
+                }}
+                style={{ marginBottom: '-1.5rem' }}
+              >
+                <div className="rounded-xl bg-gray-900/70 shadow-2xl p-1"
+                     style={{
+                       boxShadow: '0 0 32px 6px rgba(84,170,255,0.18), 0 2px 8px rgba(0,0,0,0.18)'
+                     }}>
+                  <MinecraftAvatar
+                    username={typeof post.author === 'object' ? (post.author.mcUsername || post.author.username) : post.author}
+                    size={88}
+                    type="head"
+                    animate={true}
+                    className="rounded-xl"
+                    style={{
+                      border: '2px solid rgba(255,255,255,0.18)',
+                      boxShadow: '0 0 16px 2px rgba(84,170,255,0.12)'
+                    }}
+                  />
+                </div>
+              </motion.div>
             </div>
             
-            <div 
-              className="text-white text-lg font-semibold hover:text-green-400 hover:underline cursor-pointer mb-1"
-              onClick={() => {
-                const username = typeof post.author === 'object' ? post.author.username : post.author;
-                if (username && username !== 'Unknown') {
-                  navigate(`/profile/${username}`);
-                }
-              }}
-            >
-              {typeof post.author === 'object' ? post.author.username : post.author}
+            {/* Username and OP tag */}
+            <div className="flex items-center justify-center gap-2">
+              <div
+                className="text-white text-lg font-semibold hover:text-green-400 hover:underline cursor-pointer mb-1"
+                onClick={() => {
+                  const username = typeof post.author === 'object' ? post.author.username : post.author;
+                  if (username && username !== 'Unknown') {
+                    navigate(`/profile/${username}`);
+                  }
+                }}
+              >
+                {typeof post.author === 'object' ? post.author.username : post.author}
+              </div>
             </div>
+            
+            {/* Add this mapping near the top of the file (after imports): */}
+            {post.author.webRank && (
+              <div className="relative group mt-1 mb-2 flex flex-col items-center">
+                <div
+                  className={`font-minecraft text-sm ${getDashboardRankColor(post.author.webRank)} cursor-help`}
+                  style={{letterSpacing: '0.5px', textShadow: '0 1px 0 #222, 0 0 2px #000'}}
+                >
+                  {post.author.webRank.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                </div>
+                {/* Tooltip with robust edge handling */}
+                <div className="absolute left-0 top-full z-30 min-w-max max-w-xs px-3 py-2 rounded-lg bg-gray-900/95 text-white text-xs shadow-lg border border-minecraft-habbo-blue pointer-events-auto transition-all duration-300 opacity-0 scale-95 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-4 group-hover:pointer-events-auto"
+                     style={{whiteSpace: 'pre-line'}}>
+                  {getRankTooltip(post.author.webRank)}
+                  {/* Arrow */}
+                  <div className="absolute left-6 -top-2 w-3 h-3 bg-gray-900 border-l border-t border-minecraft-habbo-blue rotate-45 z-40"></div>
+                </div>
+              </div>
+            )}
             
             <div className="text-xs text-gray-400">
               {post.author.forum_rank && (
-                <span className={`px-2 py-0.5 rounded ${getRankBadgeClass(post.author.forum_rank)}`}>
+                <span className="px-2 py-0.5 rounded bg-gray-700 text-gray-300">
                   {post.author.forum_rank}
                 </span>
               )}
@@ -337,11 +562,28 @@ const ForumPost = ({ post, currentUser, onReply }) => {
         <div className="p-4 flex-1 flex flex-col h-full">
           {/* Post header with post ID and date */}
           <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-700">
-            <div className="text-xs text-gray-400 flex items-center">
+            <div className="text-xs text-gray-400 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
               </svg>
               Posted {formatDate(post.createdAt || post.date)}
+              {isOP && (
+                <div className="relative group ml-2 flex items-center">
+                  <span
+                    className="px-1.5 py-0.5 rounded-full bg-orange-400/90 text-white font-minecraft text-[11px] font-bold cursor-pointer shadow-sm group-hover:opacity-80 transition-opacity duration-200"
+                    style={{letterSpacing: '0.5px', textShadow: '0 1px 0 #222, 0 0 2px #000'}}
+                  >
+                    OP
+                  </span>
+                  {/* Custom tooltip to the right */}
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 min-w-max max-w-xs px-2 py-1 rounded bg-gray-900/95 text-white text-xs shadow-lg border border-minecraft-habbo-blue opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 pointer-events-none transition-all duration-200"
+                       style={{whiteSpace: 'nowrap'}}>
+                    Original Poster
+                    {/* Left arrow */}
+                    <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-gray-900 border-t border-l border-minecraft-habbo-blue rotate-45 z-40"></div>
+                  </div>
+                </div>
+              )}
               {post.edited && (
                 <span className="ml-2 text-gray-500 flex items-center">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -375,9 +617,29 @@ const ForumPost = ({ post, currentUser, onReply }) => {
           </div>
           
           {/* Post content */}
-          <div className="text-white whitespace-pre-line flex-grow bg-gray-800/50 rounded-md p-4 mb-4 border border-gray-700">
-            {post.content}
-          </div>
+          {isEditing ? (
+            <div className="mb-4">
+              <textarea
+                className="w-full bg-gray-800 text-white rounded-md p-2 border border-gray-600 min-h-24"
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                disabled={editLoading}
+              />
+              {editError && <div className="text-red-400 text-xs mt-1">{editError}</div>}
+              <div className="flex gap-2 mt-2">
+                <button onClick={handleSaveEdit} disabled={editLoading} className="px-3 py-1 rounded bg-green-700 text-white hover:bg-green-600 text-xs font-bold">
+                  {editLoading ? 'Saving...' : 'Save'}
+                </button>
+                <button onClick={handleCancelEdit} disabled={editLoading} className="px-3 py-1 rounded bg-gray-700 text-gray-200 hover:bg-gray-600 text-xs">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-white whitespace-pre-line flex-grow bg-gray-800/50 rounded-md p-4 mb-4 border border-gray-700">
+              {post.content}
+            </div>
+          )}
           
           {/* Post signature - if user has one */}
           {post.author.signature && (
@@ -390,24 +652,27 @@ const ForumPost = ({ post, currentUser, onReply }) => {
           <div className="mt-auto pt-3 border-t border-gray-700">
             <div className="flex justify-between items-center">
               <div className="flex flex-wrap gap-2">
-                {/* Like/Thanks button */}
-                <button 
-                  onClick={handleLikeToggle}
-                  className={`
-                    flex items-center px-2 py-1 rounded text-xs
-                    ${likeStatus.liked 
-                      ? 'bg-green-900 text-green-100' 
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}
-                  `}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
-                  </svg>
-                  <span>{likeStatus.liked ? 'Thanked' : 'Thanks'}</span>
-                  <span className="ml-1 bg-gray-800 px-1.5 py-0.5 rounded-full text-xs">
-                    {likeStatus.count}
-                  </span>
-                </button>
+                {/* Thanks button */}
+                {currentUser && post.author && (
+                  <button 
+                    onClick={handleThanksToggle}
+                    className={
+                      `flex items-center px-2 py-1 rounded text-xs ` +
+                      (thanksStatus.thanked 
+                        ? 'bg-green-900 text-green-100' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600')
+                    }
+                    disabled={pendingUnthank}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
+                    </svg>
+                    <span>{thanksStatus.thanked ? 'Thanked' : 'Thanks'}</span>
+                    <span className="ml-1 bg-gray-800 px-1.5 py-0.5 rounded-full text-xs">
+                      {thanksStatus.count}
+                    </span>
+                  </button>
+                )}
                 
                 {/* Vouch button - if relevant context (user has something for sale or offering service) */}
                 <button 
@@ -441,43 +706,88 @@ const ForumPost = ({ post, currentUser, onReply }) => {
                 </button>
               </div>
               
-              <div className="flex gap-2">
-                {/* Edit button - only for the post author */}
-                {currentUser && post.author.username === currentUser.username && (
-                  <button className="text-xs px-2 py-1 rounded bg-blue-900 text-blue-200 hover:bg-blue-800 flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                    </svg>
+              <div className="flex gap-2 ml-auto">
+                {canEditPost && !isEditing && (
+                  <button onClick={handleEditPost} className="text-xs px-2 py-1 rounded flex items-center font-semibold bg-blue-900 text-blue-200 hover:bg-blue-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0l-9.5 9.5A2 2 0 004 14v2a1 1 0 001 1h2a2 2 0 001.414-.586l9.5-9.5a2 2 0 000-2.828zM5 16v-2h2l9.293-9.293a1 1 0 00-1.414-1.414L5 12.586V16z" /></svg>
                     Edit
                   </button>
                 )}
-                
-                {/* Moderator actions - only for admins/mods */}
-                {currentUser && (currentUser.isAdmin || currentUser.isModerator) && (
-                  <div className="relative group">
-                    <button className="text-xs px-2 py-1 rounded bg-red-900 text-red-200 hover:bg-red-800 flex items-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                      </svg>
-                      Mod Actions
-                    </button>
-                    
-                    {/* Dropdown menu for mod actions */}
-                    <div className="absolute right-0 mt-1 w-36 bg-gray-800 rounded-md shadow-lg overflow-hidden z-10 invisible group-hover:visible">
-                      <div className="py-1 text-xs">
-                        <button className="block w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700">Delete Post</button>
-                        <button className="block w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700">Edit Post</button>
-                        <button className="block w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700">Warn User</button>
-                        <button className="block w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700">Ban User</button>
-                      </div>
-                    </div>
-                  </div>
+                {canDeletePost && (
+                  <button onClick={handleDeletePost} className="text-xs px-2 py-1 rounded bg-red-900 text-red-200 hover:bg-red-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 8a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm2 4a1 1 0 100 2h2a1 1 0 100-2H8z" clipRule="evenodd" /></svg>
+                    Delete Post
+                  </button>
+                )}
+                {canDeleteThread && (
+                  <button onClick={handleDeleteThread} className="text-xs px-2 py-1 rounded bg-orange-900 text-orange-200 hover:bg-orange-800 flex items-center ml-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 8a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm2 4a1 1 0 100 2h2a1 1 0 100-2H8z" clipRule="evenodd" /></svg>
+                    Delete Thread
+                  </button>
                 )}
               </div>
             </div>
           </div>
         </div>
       </div>
+      {/* Custom Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 max-w-sm w-full border border-red-700">
+            <h3 className="text-lg font-bold text-white mb-2">Confirm Deletion</h3>
+            <p className="text-gray-300 mb-4">
+              {deleteType === 'post' ? 'Are you sure you want to delete this post?' : 'Are you sure you want to delete this thread? This cannot be undone.'}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded bg-red-700 text-white hover:bg-red-800 font-bold shadow"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteDebug && (
+        <div className={`mb-2 p-2 rounded text-xs font-mono ${deleteDebug.status === 'pending' ? 'bg-yellow-900 text-yellow-200' : deleteDebug.status === 'success' ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'}`}>
+          <b>Delete Debug:</b> {deleteDebug.type} | id: {deleteDebug.id} | endpoint: {deleteDebug.endpoint} | status: {deleteDebug.status}
+          {deleteDebug.status === 'error' && <span> | error: {deleteDebug.error}</span>}
+        </div>
+      )}
+      {/* Unthank Confirmation Modal */}
+      {showUnthankModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 max-w-sm w-full border border-green-700">
+            <h3 className="text-lg font-bold text-white mb-2">Remove Thanks?</h3>
+            <p className="text-gray-300 mb-4">
+              Are you sure you want to remove your thanks from this post?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUnthankModal(false)}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+                disabled={pendingUnthank}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmUnthank}
+                className="px-4 py-2 rounded bg-green-700 text-white hover:bg-green-800 font-bold shadow"
+                disabled={pendingUnthank}
+              >
+                Remove Thanks
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

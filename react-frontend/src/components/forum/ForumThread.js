@@ -75,7 +75,7 @@ const ForumThread = ({ thread, onClick }) => {
               className="cursor-pointer"
             >
               <MinecraftAvatar 
-                username={typeof thread.author === 'object' ? thread.author.username || 'Unknown' : thread.author}
+                username={typeof thread.author === 'object' ? (thread.author.mcUsername || thread.author.username || 'Unknown') : thread.author}
                 uuid={typeof thread.author === 'object' ? thread.author.mcUUID : null}
                 size={40}
                 type="head"
@@ -150,7 +150,7 @@ const ForumThread = ({ thread, onClick }) => {
             >
               <MinecraftAvatar 
                 username={typeof thread.lastPost.author === 'object' 
-                  ? thread.lastPost.author.username || 'Unknown' 
+                  ? (thread.lastPost.author.mcUsername || thread.lastPost.author.username || 'Unknown') 
                   : (thread.lastPost.author || 'Unknown')}
                 uuid={typeof thread.lastPost.author === 'object' ? thread.lastPost.author.mcUUID : null}
                 size={32}

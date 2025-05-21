@@ -48,7 +48,7 @@ const ForumAPI = {
   // Get threads by category
   getThreadsByCategory: async (categoryId, page = 1, limit = 10) => {
     try {
-      const response = await apiClient.get(`/categories/${categoryId}/threads?page=${page}&limit=${limit}`);
+      const response = await apiClient.get(`/categories/${categoryId}/threads?page=${page}&limit=${limit}&t=${Date.now()}`);
       return response.data;
     } catch (error) {
       console.error(`Error fetching threads for category ${categoryId}:`, error);
@@ -92,7 +92,7 @@ const ForumAPI = {
   // Update post
   updatePost: async (postId, content) => {
     try {
-      const response = await apiClient.put(`/posts/${postId}`, { content });
+      const response = await apiClient.put(`/post/${postId}`, { content });
       return response.data;
     } catch (error) {
       console.error(`Error updating post ${postId}:`, error);
@@ -125,7 +125,7 @@ const ForumAPI = {
   // Delete thread
   deleteThread: async (threadId) => {
     try {
-      const response = await apiClient.delete(`/threads/${threadId}`);
+      const response = await apiClient.delete(`/thread/${threadId}`);
       return response.data;
     } catch (error) {
       console.error(`Error deleting thread ${threadId}:`, error);
@@ -199,13 +199,13 @@ const ForumAPI = {
     }
   },
 
-  // Like/unlike a post
-  toggleLike: async (postId) => {
+  // Toggle thanks for a post
+  toggleThanks: async (postId) => {
     try {
-      const response = await apiClient.post(`/posts/${postId}/like`);
+      const response = await apiClient.post(`/post/${postId}/thanks`);
       return response.data;
     } catch (error) {
-      console.error(`Error toggling like for post ${postId}:`, error);
+      console.error(`Error toggling thanks for post ${postId}:`, error);
       throw error;
     }
   }

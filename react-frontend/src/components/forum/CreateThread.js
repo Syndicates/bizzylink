@@ -13,7 +13,7 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -22,15 +22,17 @@ import { useAuth } from '../../contexts/AuthContext';
  * 
  * Form for creating a new forum thread with title, content, and options
  */
-const CreateThread = ({ onSubmit, onCancel }) => {
+const CreateThread = ({ onSubmit, onCancel, activeCategory, topics = [] }) => {
   const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [selectedTopic, setSelectedTopic] = useState('');
   const [tags, setTags] = useState('');
   const [isPinned, setIsPinned] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [notifyInGame, setNotifyInGame] = useState(false);
   const [errors, setErrors] = useState({});
+  const [error, setError] = useState(null);
   
   // Check if user has admin or moderator permissions
   const isAdminOrMod = user && (
@@ -41,6 +43,13 @@ const CreateThread = ({ onSubmit, onCancel }) => {
   );
   const [currentTab, setCurrentTab] = useState('write'); // 'write' or 'preview'
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If topics are provided, default to the first topic
+  useEffect(() => {
+    if (topics.length > 0) {
+      setSelectedTopic(topics[0].id || topics[0]._id);
+    }
+  }, [topics]);
 
   // Simple markdown preview converter
   const renderMarkdown = (text) => {
@@ -107,6 +116,14 @@ const CreateThread = ({ onSubmit, onCancel }) => {
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!title || !content) {
+      setError('Title and content are required.');
+      return;
+    }
+    if (topics.length > 0 && !selectedTopic) {
+      setError('Please select a topic.');
+      return;
+    }
     
     if (!validateForm()) {
       return;
@@ -124,6 +141,8 @@ const CreateThread = ({ onSubmit, onCancel }) => {
     const threadData = {
       title,
       content,
+      topicId: topics.length > 0 ? selectedTopic : undefined,
+      categoryId: topics.length === 0 ? activeCategory : undefined,
       tags: processedTags,
       isPinned: isAdminOrMod ? isPinned : false,
       isLocked: isAdminOrMod ? isLocked : false,
@@ -164,6 +183,8 @@ const CreateThread = ({ onSubmit, onCancel }) => {
     <div className="create-thread-form">
       <h2 className="text-2xl font-bold text-white mb-6">Create New Thread</h2>
       
+      {error && <div className="bg-red-800 text-white p-2 rounded">{error}</div>}
+      
       <form onSubmit={handleSubmit}>
         {/* Thread title */}
         <div className="mb-4">
@@ -181,11 +202,31 @@ const CreateThread = ({ onSubmit, onCancel }) => {
               focus:outline-none focus:ring-2 focus:ring-green-500
             `}
             placeholder="Enter your thread title"
+            required
           />
           {errors.title && (
             <p className="mt-1 text-sm text-red-500">{errors.title}</p>
           )}
         </div>
+        
+        {topics.length > 0 && (
+          <div className="mb-4">
+            <label htmlFor="thread-topic" className="block text-sm font-medium text-gray-300 mb-1">
+              Topic
+            </label>
+            <select
+              id="thread-topic"
+              value={selectedTopic}
+              onChange={(e) => setSelectedTopic(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 text-white rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+              required
+            >
+              {topics.map(topic => (
+                <option key={topic.id || topic._id} value={topic.id || topic._id}>{topic.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         
         {/* Content tabs - Write/Preview */}
         <div className="mb-1">
@@ -284,6 +325,7 @@ const CreateThread = ({ onSubmit, onCancel }) => {
                   min-h-[200px]
                 `}
                 placeholder="Enter your thread content... (Markdown supported)"
+                required
               ></textarea>
             </div>
           ) : (
