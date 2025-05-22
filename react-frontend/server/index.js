@@ -28,6 +28,8 @@ const config = require('./config');
 // Import routes
 const userRoutes = require('./routes/userRoutes');
 const forumRoutes = require('./routes/forumRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const minecraftProxyRoutes = require('./routes/minecraftProxyRoutes');
 
 // Initialize Express app
 const app = express();
@@ -50,6 +52,8 @@ app.use(cors({
 // Routes
 app.use('/api', userRoutes);
 app.use('/api/forum', forumRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/minecraft', minecraftProxyRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

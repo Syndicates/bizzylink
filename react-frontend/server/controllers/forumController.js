@@ -398,6 +398,14 @@ exports.createPost = async (req, res) => {
     
     await post.save();
     
+    // Populate full author info 
+    await post.populate('authorId', 'username mcUsername avatar role forum_rank webRank');
+    
+    // Convert populated authorId to author object for better client compatibility
+    const populatedPost = post.toObject();
+    populatedPost.author = populatedPost.authorId;
+    delete populatedPost.authorId;
+    
     // Update thread stats
     await ForumThread.findByIdAndUpdate(threadId, {
       $inc: { 'stats.replies': 1 },
@@ -446,7 +454,7 @@ exports.createPost = async (req, res) => {
     }
     
     res.status(201).json({
-      post,
+      post: populatedPost,
       message: 'Reply posted successfully'
     });
   } catch (error) {

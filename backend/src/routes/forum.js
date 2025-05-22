@@ -26,6 +26,7 @@ const {
   generateSlug
 } = require('../models/Forum');
 const { AdminActionLog } = require('../models/SecurityLog');
+const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 
 /**
@@ -419,6 +420,8 @@ router.post('/thread', protect, [
       // Set firstPost reference
       thread.firstPost = post._id;
       await thread.save();
+      // Create notification
+      await createThreadNotification(req.user._id, title, thread._id, topic.name);
       return res.status(201).json({
         success: true,
         data: {
@@ -465,6 +468,8 @@ router.post('/thread', protect, [
       // Set firstPost reference
       thread.firstPost = post._id;
       await thread.save();
+      // Create notification
+      await createThreadNotification(req.user._id, title, thread._id, category.name);
       return res.status(201).json({
         success: true,
         data: {
@@ -1038,6 +1043,31 @@ async function attachAuthorCounts(author) {
     ForumThread.countDocuments({ author: author._id })
   ]);
   return { ...author, postCount, threadCount };
+}
+
+// Helper function to create a notification when a thread is created
+async function createThreadNotification(userId, threadTitle, threadId, categoryName) {
+  try {
+    const notification = new Notification({
+      recipient: userId,
+      type: 'forum_thread',
+      message: `You created a new thread "${threadTitle}" in ${categoryName}`,
+      data: {
+        threadId: threadId,
+        threadTitle: threadTitle,
+        categoryName: categoryName
+      },
+      read: false,
+      createdAt: new Date()
+    });
+    
+    await notification.save();
+    console.log(`Created notification for thread creation: ${threadId}`);
+    return notification;
+  } catch (error) {
+    console.error('Error creating thread notification:', error);
+    return null;
+  }
 }
 
 module.exports = router;

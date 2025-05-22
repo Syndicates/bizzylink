@@ -28,10 +28,11 @@ const errorHandler = require('./middleware/error');
 const logger = require('./utils/logger');
 const http = require('http');
 const socketIo = require('socket.io');
-const eventEmitter = require('../../eventEmitter'); // Adjust path if needed
+const eventEmitter = require('./eventEmitter');
 const User = require('./models/User');
 const { protect } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
+const socialRoutes = require('./routes/social');
 
 // Load environment variables
 dotenv.config();
@@ -106,6 +107,7 @@ const friendsRoutes = require('./routes/friends');
 const followingRoutes = require('./routes/following');
 const notificationsRoutes = require('./routes/notifications');
 const leaderboardRoutes = require('./routes/leaderboard');
+const wallpostRoutes = require('./routes/wallpost');
 
 // Mount routes
 app.use('/api/user', userRoutes);
@@ -120,6 +122,8 @@ app.use('/api/friends', friendsRoutes);
 app.use('/api/following', followingRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/wall', wallpostRoutes);
+app.use('/api/social', socialRoutes);
 
 // Internal endpoint to emit player_unlinked to plugin-mc (for use by other services)
 app.post('/api/internal/emit-unlink', (req, res) => {
@@ -371,27 +375,43 @@ app.get('/api/events', async (req, res, next) => {
 
 // Broadcast helper for user events (can be called from anywhere)
 global.sendSseToUser = (userId, event) => {
+  let sent = false;
   for (const [clientId, client] of sseUserClients.entries()) {
     if (client.userId === userId && client.res) {
       try {
         client.res.write(`data: ${JSON.stringify(event)}\n\n`);
+        console.log(`[SSE] Wrote event to clientId: ${clientId} for userId: ${userId} | event:`, event);
+        sent = true;
       } catch (err) {
-        // Remove client if write fails
         sseUserClients.delete(clientId);
+        console.error(`[SSE] Failed to write event to clientId: ${clientId} for userId: ${userId}`, err);
       }
     }
   }
+  if (!sent) {
+    console.warn(`[SSE] No active SSE client found for userId: ${userId} when sending event:`, event);
+  }
 };
 
-// Example: Listen for userEvent and send via SSE
+// Register the eventEmitter.on('userEvent', ...) handler after sendSseToUser is defined
 if (eventEmitter && eventEmitter.on) {
   eventEmitter.on('userEvent', (payload) => {
     if (payload && payload.userId) {
-      global.sendSseToUser(payload.userId, {
-        type: payload.event,
-        ...payload.data
-      });
+      let eventData;
+      if (payload.event === 'notification') {
+        eventData = { type: 'notification', ...payload.data };
+      } else {
+        eventData = { type: payload.event, ...payload.data };
+      }
+      console.log('[SSE] Outgoing event to user', payload.userId, ':', eventData);
+      global.sendSseToUser(payload.userId, eventData);
     }
+  });
+  // Direct test emit to verify handler
+  eventEmitter.emit('userEvent', {
+    userId: '682a55afa6dbf5d8f6950d88',
+    event: 'notification',
+    data: { message: 'Test direct emit', type: 'test', createdAt: new Date() }
   });
 }
 

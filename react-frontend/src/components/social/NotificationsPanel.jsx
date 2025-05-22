@@ -14,9 +14,10 @@
  */
 
 // src/components/social/NotificationsPanel.jsx - Using axios directly
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useSocial } from '../../contexts/SocialContext';
 
 // Helper function to format time
 const formatTime = (timestamp) => {
@@ -38,7 +39,7 @@ const formatTime = (timestamp) => {
   return date.toLocaleDateString();
 };
 
-// Notification icon component
+// Add notification type for forum threads
 const NotificationIcon = ({ type }) => {
   switch (type) {
     case 'friend_request':
@@ -73,6 +74,30 @@ const NotificationIcon = ({ type }) => {
           </svg>
         </div>
       );
+    case 'forum_thread':
+      return (
+        <div className="w-10 h-10 rounded-full bg-orange-600 flex items-center justify-center text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
+          </svg>
+        </div>
+      );
+    case 'thread_reply':
+      return (
+        <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z" clipRule="evenodd" />
+          </svg>
+        </div>
+      );
+    case 'user_mention':
+      return (
+        <div className="w-10 h-10 rounded-full bg-pink-600 flex items-center justify-center text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M14.243 5.757a6 6 0 10-.986 9.284 1 1 0 111.087 1.678A8 8 0 1118 10a3 3 0 01-4.8 2.401A4 4 0 1114 10a1 1 0 102 0c0-1.537-.586-3.07-1.757-4.243zM12 10a2 2 0 10-4 0 2 2 0 004 0z" clipRule="evenodd" />
+          </svg>
+        </div>
+      );
     case 'minecraft':
       return (
         <div className="w-10 h-10 rounded-full bg-green-700 flex items-center justify-center text-white">
@@ -94,19 +119,28 @@ const NotificationIcon = ({ type }) => {
 
 // Notification panel component
 const NotificationsPanel = ({ isOpen, onClose }) => {
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const { notifications, unreadCount, markNotificationRead, markAllNotificationsRead } = useSocial();
+  console.log('[NotificationsPanel] notifications:', notifications);
+  const notificationList = Array.isArray(notifications) ? notifications : [];
+  const [lastNotificationId, setLastNotificationId] = useState(null);
+  const notificationSoundRef = useRef(null);
   const panelRef = useRef(null);
   const navigate = useNavigate();
 
-  // Fetch notifications when panel opens
+  // Play sound when a new notification arrives
   useEffect(() => {
-    if (isOpen) {
-      fetchNotifications();
+    if (notificationList && notificationList.length > 0) {
+      const latestId = notificationList[0].id || notificationList[0]._id;
+      if (lastNotificationId && latestId !== lastNotificationId) {
+        if (!notificationSoundRef.current) {
+          notificationSoundRef.current = new Audio('/sounds/level-up.mp3');
+          notificationSoundRef.current.volume = 0.5;
+        }
+        notificationSoundRef.current.play().catch(() => {});
+      }
+      setLastNotificationId(latestId);
     }
-  }, [isOpen]);
+  }, [notificationList]);
 
   // Handle click outside to close
   useEffect(() => {
@@ -115,265 +149,11 @@ const NotificationsPanel = ({ isOpen, onClose }) => {
         onClose();
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen, onClose]);
-
-  // Fetch notifications with improved caching and error handling
-  const fetchNotifications = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Check for cached notifications data first
-      const cachedData = localStorage.getItem('notificationsData');
-      const cacheTTL = 60000; // 1 minute cache for notifications
-      
-      if (cachedData) {
-        try {
-          const { data, timestamp, unread } = JSON.parse(cachedData);
-          const now = Date.now();
-          
-          // Use cache if it's less than cacheTTL old
-          if (now - timestamp < cacheTTL) {
-            console.log("Using cached notifications data");
-            setNotifications(data);
-            setUnreadCount(unread);
-            setLoading(false);
-            return; // Skip API call
-          }
-        } catch (e) {
-          console.error("Error parsing cached notifications:", e);
-          // Continue with API call if cache parsing fails
-        }
-      }
-      
-      console.log("Fetching notifications...");
-      
-      // Create default mock notifications in case we need them
-      const mockNotifications = [
-        { 
-          id: '1', 
-          type: 'friend_request', 
-          title: 'Friend Request', 
-          message: 'TestUser1 sent you a friend request', 
-          read: false,
-          createdAt: new Date().toISOString() 
-        },
-        { 
-          id: '2', 
-          type: 'achievement', 
-          title: 'New Achievement', 
-          message: 'You earned the Minecraft Expert achievement!', 
-          read: true,
-          createdAt: new Date(Date.now() - 86400000).toISOString() // 1 day ago
-        }
-      ];
-      
-      // Try to fetch from API with retry logic for rate limiting
-      const fetchWithRetry = async (retries = 2) => {
-        try {
-          return await axios.get('/api/notifications?limit=5', {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
-        } catch (error) {
-          // If we're rate limited and have retries left
-          if (error.response?.status === 429 && retries > 0) {
-            // Get retry time from response or use exponential backoff
-            const retryAfter = error.response.data?.retryAfter || 1;
-            const waitTime = (retryAfter * 1000) + (Math.random() * 500); 
-            
-            console.log(`Rate limited, retrying notifications after ${waitTime}ms`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            return fetchWithRetry(retries - 1);
-          }
-          throw error;
-        }
-      };
-      
-      // Try to make the API call with retries
-      try {
-        const response = await fetchWithRetry();
-        console.log("Notifications response:", response.data);
-        
-        if (response.data) {
-          // Handle different response formats
-          let notificationsData = [];
-          let unreadCountValue = 0;
-          
-          if (response.data.notifications) {
-            notificationsData = response.data.notifications;
-            unreadCountValue = response.data.unreadCount || 0;
-          } else if (Array.isArray(response.data)) {
-            notificationsData = response.data;
-            unreadCountValue = response.data.filter(n => !n.read).length;
-          } else {
-            console.log("Unexpected response format, using mock notification data");
-            notificationsData = mockNotifications;
-            unreadCountValue = 1;
-          }
-          
-          // Update state
-          setNotifications(notificationsData);
-          setUnreadCount(unreadCountValue);
-          
-          // Cache the results
-          try {
-            localStorage.setItem('notificationsData', JSON.stringify({
-              data: notificationsData,
-              unread: unreadCountValue,
-              timestamp: Date.now()
-            }));
-          } catch (e) {
-            console.error("Error caching notifications:", e);
-          }
-        } else {
-          throw new Error("Empty response");
-        }
-      } catch (apiError) {
-        console.error('Error fetching notifications from API:', apiError);
-        
-        // If we have cached data (even if expired), use that instead of mock data
-        const cachedFallback = localStorage.getItem('notificationsData');
-        if (cachedFallback) {
-          try {
-            const { data, unread } = JSON.parse(cachedFallback);
-            console.log("Using expired cached notifications as fallback");
-            setNotifications(data);
-            setUnreadCount(unread);
-          } catch (e) {
-            console.error("Error parsing cached fallback, using mock data:", e);
-            setNotifications(mockNotifications);
-            setUnreadCount(1);
-          }
-        } else {
-          // If no cached data either, use mock data
-          console.log("No cached data available, using mock notification data");
-          setNotifications(mockNotifications);
-          setUnreadCount(1);
-        }
-        
-        // Show error message for rate limiting
-        if (apiError.response?.status === 429) {
-          const retryAfter = apiError.response.data?.retryAfter || 1;
-          // Just set the error for UI feedback but still use cached/mock data
-          setError(`Too many requests. Try again in ${retryAfter} minute${retryAfter > 1 ? 's' : ''}.`);
-        }
-      }
-    } catch (err) {
-      console.error('Unexpected error in fetchNotifications:', err);
-      
-      // Use mock data for any unexpected error
-      const mockNotifications = [
-        { 
-          id: '1', 
-          type: 'friend_request', 
-          title: 'Friend Request', 
-          message: 'TestUser1 sent you a friend request', 
-          read: false,
-          createdAt: new Date().toISOString() 
-        },
-        { 
-          id: '2', 
-          type: 'new_follower', 
-          title: 'New Follower', 
-          message: 'TestUser2 started following you', 
-          read: true,
-          createdAt: new Date(Date.now() - 86400000).toISOString() // 1 day ago
-        }
-      ];
-      setNotifications(mockNotifications);
-      setUnreadCount(1);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Mark notification as read
-  const markAsRead = async (id) => {
-    try {
-      await axios.post(`/api/notifications/read/${id}`, {}, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      // Update local state
-      setNotifications(prev => 
-        prev.map(notif => 
-          notif.id === id ? { ...notif, read: true } : notif
-        )
-      );
-      
-      // Update unread count
-      if (unreadCount > 0) {
-        setUnreadCount(prev => prev - 1);
-      }
-    } catch (err) {
-      console.error('Error marking notification as read:', err);
-    }
-  };
-
-  // Mark all as read
-  const markAllAsRead = async () => {
-    try {
-      await axios.post('/api/notifications/read-all', {}, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      // Update local state
-      setNotifications(prev => 
-        prev.map(notif => ({ ...notif, read: true }))
-      );
-      
-      // Reset unread count
-      setUnreadCount(0);
-    } catch (err) {
-      console.error('Error marking all notifications as read:', err);
-    }
-  };
-
-  // Handle notification click
-  const handleNotificationClick = (notification) => {
-    // Mark as read if needed
-    if (!notification.read) {
-      markAsRead(notification.id);
-    }
-    
-    // Navigate based on type
-    switch (notification.type) {
-      case 'friend_request':
-        navigate('/friends?tab=requests');
-        onClose();
-        break;
-      case 'friend_accept':
-        navigate('/friends');
-        onClose();
-        break;
-      case 'new_follower':
-        navigate('/friends?tab=followers');
-        onClose();
-        break;
-      case 'achievement':
-        navigate('/profile');
-        onClose();
-        break;
-      case 'minecraft':
-        navigate('/');
-        onClose();
-        break;
-      default:
-        onClose();
-        break;
-    }
-  };
 
   // If panel is not open, don't render
   if (!isOpen) return null;
@@ -382,60 +162,54 @@ const NotificationsPanel = ({ isOpen, onClose }) => {
     <div 
       ref={panelRef}
       className="absolute right-0 mt-2 w-80 bg-gray-800 rounded-md shadow-lg overflow-hidden border border-gray-700"
-      style={{ maxHeight: '80vh', zIndex: 9999 }}
+      style={{ maxHeight: '80vh', zIndex: 9999, width: '320px' }}
     >
       <div className="p-4 border-b border-gray-700 flex justify-between items-center">
         <h3 className="font-bold text-white text-lg">Notifications</h3>
         {unreadCount > 0 && (
           <button
-            onClick={markAllAsRead}
+            onClick={markAllNotificationsRead}
             className="text-xs text-blue-400 hover:text-blue-300"
           >
             Mark all as read
           </button>
         )}
       </div>
-      
       <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
-        {loading ? (
-          <div className="p-4 text-center text-gray-400">
-            <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mb-2"></div>
-            <p>Loading...</p>
-          </div>
-        ) : error ? (
-          <div className="p-4 text-center text-red-400">
-            <p>{error}</p>
-          </div>
-        ) : notifications.length === 0 ? (
+        {(!notificationList || notificationList.length === 0) ? (
           <div className="p-4 text-center text-gray-400">
             <p>No notifications yet</p>
           </div>
         ) : (
           <>
-            {notifications.map((notification) => (
+            {notificationList.map((notification) => (
               <div
-                key={notification.id}
-                onClick={() => handleNotificationClick(notification)}
+                key={notification.id || notification._id}
+                onClick={() => {
+                  markNotificationRead(notification.id || notification._id);
+                  handleNotificationClick(notification, navigate, onClose);
+                }}
                 className={`p-3 border-b border-gray-700 flex items-start hover:bg-gray-700 cursor-pointer ${
                   notification.read ? 'opacity-70' : 'bg-gray-750'
                 }`}
               >
                 <NotificationIcon type={notification.type} />
-                
-                <div className="ml-3 flex-1">
+                <div className="ml-3 flex-1 min-w-0">
                   <div className="flex justify-between items-start">
                     <p className="text-white text-sm font-semibold">
-                      {notification.title || "New Notification"}
+                      {notification.title 
+                        ? (notification.title.length > 13 
+                            ? `${notification.title.substring(0, 13)}...` 
+                            : notification.title)
+                        : "New Notification"}
                     </p>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-400 flex-shrink-0 ml-1 whitespace-nowrap">
                       {formatTime(notification.createdAt)}
                     </span>
                   </div>
-                  
-                  <p className="text-gray-300 text-xs mt-1">
-                    {notification.message}
+                  <p className="text-gray-300 text-xs mt-1 line-clamp-2 overflow-hidden">
+                    {formatThreadTitleInMessage(notification.message)}
                   </p>
-                  
                   {!notification.read && (
                     <div className="mt-1 flex justify-end">
                       <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -447,7 +221,6 @@ const NotificationsPanel = ({ isOpen, onClose }) => {
           </>
         )}
       </div>
-      
       <div className="p-2 text-center border-t border-gray-700">
         <button
           onClick={() => {
@@ -461,6 +234,156 @@ const NotificationsPanel = ({ isOpen, onClose }) => {
       </div>
     </div>
   );
+};
+
+// Helper function to format message with capped thread title
+const formatThreadTitleInMessage = (message) => {
+  if (!message) return '';
+  
+  // Check if this is a forum thread message that follows the pattern
+  if (message.includes('You created a new thread') || 
+      message.includes('new thread')) {
+    
+    // Find the thread title within quotes
+    const match = message.match(/["']([^"']+)["']/);
+    
+    if (match && match[1]) {
+      const threadTitle = match[1];
+      const cappedTitle = threadTitle.length > 13 
+        ? `${threadTitle.substring(0, 13)}...` 
+        : threadTitle;
+      
+      // Replace the original title with the capped one
+      return message.replace(threadTitle, cappedTitle);
+    }
+  }
+  
+  // Return original message if no thread title found or different message format
+  return message;
+};
+
+// Handle notification click with different actions based on type
+const handleNotificationClick = (notification, navigate, onClose) => {
+  // Handle different notification types
+  switch (notification.type) {
+    case 'friend_request':
+      navigate('/friends');
+      break;
+    case 'friend_accept':
+      navigate('/friends');
+      break;
+    case 'achievement':
+      navigate('/achievements');
+      break;
+    case 'forum_thread':
+      // Get thread ID from notification data
+      const threadId = notification.data?.threadId;
+      if (threadId) {
+        // Dispatch custom event for ForumSystem to handle
+        const event = new CustomEvent('viewForumThread', { 
+          detail: { threadId } 
+        });
+        
+        // Close notification panel
+        onClose();
+        
+        // Store in sessionStorage for page refreshes
+        sessionStorage.setItem('viewThread', threadId);
+        
+        // Dispatch event to open thread
+        document.dispatchEvent(event);
+        
+        // Navigate to community page if we're not already there
+        if (!window.location.pathname.includes('/community')) {
+          navigate('/community');
+        }
+      } else {
+        navigate('/community');
+      }
+      break;
+    case 'new_follower':
+      navigate('/profile');
+      break;
+    case 'thread_reply':
+      // Get thread ID from notification data
+      const replyThreadId = notification.data?.threadId;
+      if (replyThreadId) {
+        // Store in sessionStorage for page refreshes
+        sessionStorage.setItem('viewThread', replyThreadId);
+        
+        // Add optional postId if available to scroll to specific reply
+        if (notification.data?.postId) {
+          sessionStorage.setItem('viewPost', notification.data.postId);
+        }
+        
+        // Dispatch custom event for ForumSystem to handle
+        const replyEvent = new CustomEvent('viewForumThread', { 
+          detail: { 
+            threadId: replyThreadId,
+            postId: notification.data?.postId 
+          } 
+        });
+        
+        // Close notification panel
+        onClose();
+        
+        // Navigate to community page if we're not already there
+        if (!window.location.pathname.includes('/community')) {
+          navigate('/community');
+        }
+        
+        // Dispatch event after a short delay to ensure page has loaded
+        setTimeout(() => {
+          document.dispatchEvent(replyEvent);
+        }, 100);
+      } else {
+        navigate('/community');
+      }
+      break;
+    case 'user_mention':
+      // Similar to thread_reply but with possible highlighting of the mention
+      const mentionThreadId = notification.data?.threadId;
+      if (mentionThreadId) {
+        // Store in sessionStorage for page refreshes
+        sessionStorage.setItem('viewThread', mentionThreadId);
+        
+        // Add optional postId if available to scroll to specific post
+        if (notification.data?.postId) {
+          sessionStorage.setItem('viewPost', notification.data.postId);
+          // Add mention flag to highlight the username
+          sessionStorage.setItem('highlightMention', 'true');
+        }
+        
+        // Dispatch custom event for ForumSystem to handle
+        const mentionEvent = new CustomEvent('viewForumThread', { 
+          detail: { 
+            threadId: mentionThreadId,
+            postId: notification.data?.postId,
+            highlightMention: true
+          } 
+        });
+        
+        // Close notification panel
+        onClose();
+        
+        // Navigate to community page if we're not already there
+        if (!window.location.pathname.includes('/community')) {
+          navigate('/community');
+        }
+        
+        // Dispatch event after a short delay to ensure page has loaded
+        setTimeout(() => {
+          document.dispatchEvent(mentionEvent);
+        }, 100);
+      } else {
+        navigate('/community');
+      }
+      break;
+    default:
+      // For unknown types, just close the panel
+      onClose();
+      break;
+  }
 };
 
 export default NotificationsPanel;

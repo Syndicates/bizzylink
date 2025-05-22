@@ -13,13 +13,13 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import VerificationCelebration from '../components/VerificationCelebration';
-import { motion } from 'framer-motion';
-import { useParams, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocial } from '../contexts/SocialContext';
-import { MinecraftService, SocialService } from '../services/api';
+import { MinecraftService } from '../services/api';
 import API from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
@@ -52,41 +52,87 @@ import {
   HandThumbUpIcon,
   ChatBubbleOvalLeftIcon,
   HomeIcon,
-  TrophyIcon
+  TrophyIcon,
+  CheckIcon,
+  UserPlusIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 import AnimatedPlayerStats from '../components/AnimatedPlayerStats';
+// Import WallService after all React, UI and context imports
+import WallService from '../services/wallService';
+import { SocialService } from '../services/api';
+// Import timeUtils explicitly
+import { timeAgo, formatDate } from '../utils/timeUtils';
+// Import the useSocialStats hook after all service imports
+import useSocialStats from '../hooks/useSocialStats';
 
-// Convert timestamp to Facebook-style time format
-const timeAgo = (timestamp) => {
-  if (!timestamp) return 'Never';
+// Using imported timeAgo from utils
+
+// Predefined wallpaper options (id, label)
+const WALLPAPERS = [
+  { id: 'herobrine_hill', label: 'Herobrine Hill', external: true },
+  { id: 'quick_hide', label: 'Quick Hide', external: true },
+  { id: 'malevolent', label: 'Malevolent', external: true },
+  { id: 'sunset_lake', label: 'Sunset Lake', custom: true },
+  { id: 'pink_sky', label: 'Pink Sky', custom: true },
+  { id: 'night_adventure', label: 'Night Adventure', custom: true }
+  // Removed unavailable wallpapers wallpaper_1, wallpaper_2, and wallpaper_3
+];
+
+// Helper to get wallpaper URL for a given id and username
+const getWallpaperUrl = (id, username) => {
+  // Check if wallpaper exists
+  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
   
-  const now = new Date();
-  const date = new Date(timestamp);
-  const diffMs = now - date;
+  // If wallpaper doesn't exist, use default
+  if (!wallpaper) {
+    return `/minecraft-assets/wallpapers/night_adventure.jpg`;
+  }
   
-  // Convert to seconds
-  const diffSecs = Math.floor(diffMs / 1000);
+  // Check if this is one of our custom wallpapers
+  if (wallpaper.custom) {
+    return `/minecraft-assets/wallpapers/${id}.jpg`;
+  }
   
-  if (diffSecs < 60) return `${diffSecs} seconds ago`;
+  // Use the external service for standard wallpapers if we mark it as external
+  if (wallpaper.external) {
+    // If no username provided, use Steve as default
+    const safeUsername = username || 'Steve';
+    return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${safeUsername}`;
+  }
   
-  // Convert to minutes
-  const diffMins = Math.floor(diffSecs / 60);
-  if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
+  // Fallback to default wallpaper
+  return `/minecraft-assets/wallpapers/night_adventure.jpg`;
+};
+
+// Helper to get thumbnail (use a default player for preview)
+const getWallpaperThumb = (id) => {
+  // Check if wallpaper exists
+  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
   
-  // Convert to hours
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+  // If wallpaper doesn't exist, use default
+  if (!wallpaper) {
+    return `/minecraft-assets/wallpapers/night_adventure.jpg`;
+  }
   
-  // Convert to days
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+  // Check if this is one of our custom wallpapers
+  if (wallpaper.custom) {
+    return `/minecraft-assets/wallpapers/${id}.jpg`;
+  }
   
-  // For older dates, use a more formal format
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
+  // Use the external service for standard wallpapers
+  if (wallpaper.external) {
+    return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/Steve?thumb=1`;
+  }
+  
+  // Fallback to default wallpaper
+  return `/minecraft-assets/wallpapers/night_adventure.jpg`;
+};
+
+// Map usernames to default covers to make each profile feel unique
+const getDefaultCover = (username) => {
+  // Always use a valid wallpaperId and username
+  return getWallpaperUrl('herobrine_hill', username || 'Steve');
 };
 
 // Activity feed item component
@@ -222,18 +268,385 @@ const generateInventoryItems = (inventoryData) => {
   return items;
 };
 
+// Add this at the beginning of the file to define animations
+const fadeInAnimation = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.3 }
+};
+
+// Enhanced CommentItem with animation and fixed avatar/username issues
+const CommentItem = ({ comment, postId, onDelete, currentUser }) => {
+  // Format the date to display
+  const formattedDate = timeAgo(comment.createdAt);
+  
+  // Check if the current user is the author of the comment
+  const isCommentAuthor = currentUser && 
+    (currentUser._id === comment.author?._id || 
+     currentUser.username === comment.author?.username);
+  
+  // Ensure author exists or provide fallback
+  const author = comment.author || {
+    username: 'Unknown User',
+    mcUsername: 'Steve'
+  };
+  
+  // Create exact timestamp for hover
+  const exactTimestamp = comment.createdAt ? 
+    new Date(comment.createdAt).toLocaleString() : 
+    'Unknown date';
+  
+  // Log comment author info for debugging
+  console.log(`[CommentItem] Comment author data:`, author);
+  
+  // Ensure we have a valid username for the avatar
+  // Fixed: ensure mcUsername is properly used (in server responses it might be minecraftUsername)
+  const avatarUsername = author.mcUsername || author.minecraftUsername || author.username;
+  console.log(`[CommentItem] Using avatar username: ${avatarUsername} for author: ${author.username}`);
+  
+  return (
+    <motion.div 
+      className="flex items-start py-2 group hover:bg-minecraft-navy/20 rounded-md px-2 -mx-2 transition-colors"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Link to={`/profile/${author.username}`} className="flex-shrink-0">
+        <MinecraftAvatar 
+          username={avatarUsername}
+          size={28}
+          type="head"
+          className="rounded-md hover:ring-2 hover:ring-minecraft-habbo-blue transition-all"
+        />
+      </Link>
+      <div className="ml-2 flex-1">
+        <div className="flex justify-between items-start">
+          <div>
+            <Link 
+              to={`/profile/${author.username}`}
+              className="font-medium text-sm hover:text-minecraft-habbo-blue transition-colors"
+            >
+              {author.username}
+            </Link>
+            <span 
+              className="text-gray-400 text-xs ml-2 cursor-default" 
+              title={exactTimestamp}
+            >
+              {formattedDate}
+            </span>
+          </div>
+          {isCommentAuthor && (
+            <button 
+              onClick={() => onDelete(postId, comment._id)}
+              className="text-gray-400 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all duration-200"
+              title="Delete comment"
+            >
+              <XMarkIcon className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <p className="text-sm text-gray-200 mt-1 break-words">{comment.content}</p>
+      </div>
+    </motion.div>
+  );
+};
+
+// Enhanced CommentSection with animations and improved styling
+const CommentSection = ({ 
+  post, 
+  commentInput, 
+  commentLoading, 
+  commentError,
+  onCommentChange, 
+  onAddComment,
+  onDeleteComment,
+  currentUser,
+  isExpanded,
+  onToggleExpand
+}) => {
+  // Get comments from post or default to empty array
+  const comments = post.comments || [];
+  const postId = post._id;
+  
+  // Reference to input field for focusing
+  const inputRef = useRef(null);
+  
+  // State to track emoji picker visibility
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  
+  // State to track if the comment input is visible
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  
+  // Focus input when expanded
+  useEffect(() => {
+    if (isExpanded && showCommentInput && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isExpanded, showCommentInput]);
+  
+  // Handle Enter key press
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && commentInput.trim()) {
+      e.preventDefault();
+      onAddComment(postId);
+      setShowCommentInput(false); // Hide input after posting
+    }
+  };
+  
+  // Handle emoji insertion
+  const handleEmojiSelect = (emoji) => {
+    onCommentChange(postId, commentInput + emoji);
+    setShowEmojiPicker(false);
+    inputRef.current?.focus();
+  };
+  
+  // Common emojis for quick selection
+  const quickEmojis = ['😊', '👍', '❤️', '😂', '😎', '🎮', '🧱', '⛏️', '🗡️'];
+
+  // In CommentSection, add state for comment deletion modal and pending comment
+  const [showDeleteCommentModal, setShowDeleteCommentModal] = useState(false);
+  const [commentToDelete, setCommentToDelete] = useState(null);
+
+  // Handler to trigger modal
+  const handleDeleteCommentWithConfirm = (commentId) => {
+    setCommentToDelete(commentId);
+    setShowDeleteCommentModal(true);
+  };
+
+  // Handler to confirm deletion
+  const confirmDeleteComment = () => {
+    if (commentToDelete) {
+      onDeleteComment(postId, commentToDelete);
+      setShowDeleteCommentModal(false);
+      setCommentToDelete(null);
+    }
+  };
+
+  // Handler to cancel deletion
+  const cancelDeleteComment = () => {
+    setShowDeleteCommentModal(false);
+    setCommentToDelete(null);
+  };
+
+  return (
+    <div className="mt-4">
+      {/* Comment toggle button */}
+      <button 
+        onClick={onToggleExpand}
+        className="flex items-center text-sm text-gray-400 hover:text-white transition-colors group"
+      >
+        <div className="flex items-center relative">
+          <ChatBubbleOvalLeftIcon className="h-4 w-4 mr-1" />
+          {comments.length > 0 && (
+            <span className="absolute -top-2 -right-1 bg-minecraft-habbo-blue text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+              {comments.length > 99 ? '99+' : comments.length}
+            </span>
+          )}
+        </div>
+        <span className="ml-1 group-hover:text-white transition-colors">
+          {comments.length === 0 ? 'Add Comment' : 
+           isExpanded ? 'Hide Comments' : 'Show Comments'}
+        </span>
+      </button>
+      
+      {/* Expanded comment section */}
+      {isExpanded && (
+        <motion.div 
+          className="mt-3 pt-3 border-t border-white/10 comment-section rounded-md transition-colors duration-200"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          {/* Comment list with animation */}
+          <div className="mb-4 space-y-3">
+            <AnimatePresence>
+              {comments.map(comment => (
+                <motion.div
+                  key={comment._id}
+                  initial={{ opacity: 1, x: 0 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 40 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <CommentItem 
+                    comment={comment} 
+                    postId={postId}
+                    onDelete={() => handleDeleteCommentWithConfirm(comment._id)}
+                    currentUser={currentUser} 
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+          
+          {/* Add Comment button or comment input form */}
+          {currentUser && (
+            <>
+              {!showCommentInput ? (
+                <motion.button
+                  className="flex items-center text-sm text-minecraft-habbo-blue hover:text-minecraft-habbo-green transition-colors mt-2"
+                  onClick={() => setShowCommentInput(true)}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <span className="mr-1">+</span> Write a comment...
+                </motion.button>
+              ) : (
+                <motion.div 
+                  className="flex items-start mt-2"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <MinecraftAvatar 
+                    username={currentUser.mcUsername || currentUser.username}
+                    size={30}
+                    type="head"
+                    className="rounded-md mr-2 flex-shrink-0"
+                  />
+                  <div className="flex-1">
+                    <div className="relative">
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={commentInput}
+                        onChange={(e) => onCommentChange(postId, e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Write a comment..."
+                        className="w-full bg-minecraft-navy/50 text-white rounded-md py-2 px-3 pr-16 
+                          focus:outline-none focus:ring-1 focus:ring-minecraft-habbo-blue
+                          transition-all duration-200 hover:bg-minecraft-navy/70"
+                      />
+                      
+                      {/* Quick Emoji Picker (now appears below the new emoji button) */}
+                      {showEmojiPicker && (
+                        <div className="absolute right-0 top-full mt-2 bg-minecraft-navy-dark rounded-md p-2 shadow-lg border border-minecraft-habbo-blue/30 z-10">
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {quickEmojis.map(emoji => (
+                              <button
+                                key={emoji}
+                                onClick={() => handleEmojiSelect(emoji)}
+                                className="hover:bg-minecraft-navy p-1 rounded-md transition-colors"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex gap-1">
+                        <button
+                          onClick={() => setShowCommentInput(false)}
+                          className="text-gray-400 hover:text-white"
+                          title="Cancel"
+                        >
+                          <XMarkIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          className="text-gray-400 hover:text-white transition-colors p-1"
+                          title="Add emoji"
+                        >
+                          😊
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (commentInput.trim()) {
+                              onAddComment(postId);
+                              setShowCommentInput(false);
+                            }
+                          }}
+                          disabled={!commentInput?.trim() || commentLoading}
+                          className={`px-2 py-1 rounded-md text-sm transition-all duration-200
+                            ${(!commentInput?.trim() || commentLoading) 
+                              ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                              : 'bg-minecraft-habbo-blue text-white hover:bg-minecraft-habbo-blue-dark'}`}
+                        >
+                          {commentLoading ? (
+                            <span className="flex items-center">
+                              <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Posting
+                            </span>
+                          ) : 'Post'}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {commentError && (
+                      <motion.p 
+                        className="text-red-400 text-xs mt-1"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        {commentError}
+                      </motion.p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </>
+          )}
+        </motion.div>
+      )}
+      {showDeleteCommentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-minecraft-navy-dark rounded-md p-5 max-w-md w-full border border-minecraft-habbo-blue shadow-lg">
+            <h3 className="text-lg font-minecraft text-minecraft-habbo-blue mb-3">Delete Comment?</h3>
+            <p className="text-gray-300 mb-4">Are you sure you want to delete this comment? This action cannot be undone.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={cancelDeleteComment}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteComment}
+                className="habbo-btn px-4 py-2"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Main Profile Component
 const Profile = () => {
+  // Router hooks
   const { username } = useParams();
+  const navigate = useNavigate();
+  
+  // Context hooks
   const { user } = useAuth();
-  // Get context with fallbacks
   const socialContext = useSocial() || {};
   
-  // Provide default values
+  // Get context with fallbacks
   const { 
     getRelationship = async () => ({ status: 'not_friends', following: false }),
-    friendRequests = [] 
+    friendRequests = [],
+    handleFriendRequest,
+    handleFriendRequestResponse,
+    handleFollow,
+    handleUnfollow
   } = socialContext;
+  
+  // Custom hooks
+  const socialStats = useSocialStats(username);
+  
+  // State hooks
   const [profileUser, setProfileUser] = useState(null);
   const [playerStats, setPlayerStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -242,151 +655,103 @@ const Profile = () => {
   const [coverImage, setCoverImage] = useState(null);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [wallPosts, setWallPosts] = useState([]);
+  const [wallLoading, setWallLoading] = useState(true);
+  const [wallError, setWallError] = useState(null);
+  const [wallPage, setWallPage] = useState(1);
+  const [wallTotalPages, setWallTotalPages] = useState(1);
   const [newWallPost, setNewWallPost] = useState('');
   const [friends, setFriends] = useState([]);
   const [viewMode, setViewMode] = useState('avatar');
   const [relationship, setRelationship] = useState(null);
-  const [showCelebration, setShowCelebration] = useState(false); // Add state for celebration
+  const [showCelebration, setShowCelebration] = useState(false);
   const [mcUsername, setMcUsername] = useState('');
   const [notFound, setNotFound] = useState(false);
   const [wallpaperId, setWallpaperId] = useState(null);
   const [savingWallpaper, setSavingWallpaper] = useState(false);
-  // Add state for wallpaper loading
   const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
-  // Add state to track available wallpapers
   const [availableWallpapers, setAvailableWallpapers] = useState([]);
-  // Add state for wallpaper confirmation modal
   const [showWallpaperModal, setShowWallpaperModal] = useState(false);
   const [pendingWallpaperId, setPendingWallpaperId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [postToDelete, setPostToDelete] = useState(null);
+  const [commentInputs, setCommentInputs] = useState({}); // { [postId]: "" }
+  const [commentLoading, setCommentLoading] = useState({}); // { [postId]: false }
+  const [commentError, setCommentError] = useState({}); // { [postId]: "" }
+  const [expandedComments, setExpandedComments] = useState({});
   
-  // Predefined cover banner options
-  const coverOptions = [];
+  // Check if profile should be displayed - Setting this at the top level
+  const shouldDisplayProfile = username || user?.username;
   
-  // Predefined wallpaper options (id, label)
-const WALLPAPERS = [
-  { id: 'herobrine_hill', label: 'Herobrine Hill' },
-  { id: 'quick_hide', label: 'Quick Hide' },
-  { id: 'malevolent', label: 'Malevolent' },
-  { id: 'sunset_lake', label: 'Sunset Lake', custom: true },
-  { id: 'pink_sky', label: 'Pink Sky', custom: true },
-  { id: 'night_adventure', label: 'Night Adventure', custom: true },
-  { id: 'wallpaper_1', label: 'Forest View', custom: true, extension: 'jpg' },
-  { id: 'wallpaper_2', label: 'Mountain Sunset', custom: true, extension: 'jpg' },
-  { id: 'wallpaper_3', label: 'Night Sky', custom: true, extension: 'png' }
-];
+  // ALL useEffect hooks moved here, before any conditional returns
   
   // Check which wallpapers are available
-useEffect(() => {
-  const checkWallpaperAvailability = async () => {
-    // First detect which local wallpapers actually exist
-    const localWallpapers = WALLPAPERS.filter(wp => wp.custom);
-    const availableLocalWallpapers = [];
+  useEffect(() => {
+    // Skip if not showing profile
+    if (!shouldDisplayProfile) return;
     
-    // Reset available wallpapers array to start fresh
-    setAvailableWallpapers([]);
-    
-    // Check each local wallpaper and add it if it exists
-    for (const wallpaper of localWallpapers) {
-      const img = new Image();
-      const src = getWallpaperUrl(wallpaper.id, 'Steve');
-      console.log(`Checking wallpaper: ${wallpaper.id} at ${src}`);
-      img.onload = () => {
-        console.log(`Wallpaper ${wallpaper.id} loaded successfully`);
-        setAvailableWallpapers(prev => {
-          if (!prev.some(wp => wp.id === wallpaper.id)) {
-            return [...prev, wallpaper];
-          }
-          return prev;
-        });
-      };
-      img.onerror = () => {
-        console.warn(`Wallpaper ${wallpaper.id} failed to load`);
-      };
-      img.src = src;
-    }
-    
-    // In parallel, check external wallpapers
-    const checkExternalWallpapers = async () => {
-      const externalWallpapers = WALLPAPERS.filter(wp => !wp.custom);
-      if (externalWallpapers.length === 0) return;
+    const checkWallpaperAvailability = async () => {
+      // First detect which local wallpapers actually exist
+      const localWallpapers = WALLPAPERS.filter(wp => wp.custom);
+      const availableLocalWallpapers = [];
       
-      try {
-        const testUrl = getWallpaperUrl(externalWallpapers[0].id, 'Steve');
-        const response = await fetch(testUrl, { method: 'HEAD', timeout: 3000 });
-        
-        if (response.ok) {
-          // Add external wallpapers to the available list
-          setAvailableWallpapers(prev => [...prev, ...externalWallpapers]);
-        }
-      } catch (error) {
-        console.warn('External wallpapers not available:', error);
-      }
-    };
-    
-    // Start checking external wallpapers without awaiting
-    checkExternalWallpapers();
-  };
-  
-  checkWallpaperAvailability();
-}, []);
-  
-  // Helper to get wallpaper URL for a given id and username
-const getWallpaperUrl = (id, username) => {
-  // Check if this is one of our custom wallpapers
-  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
-  if (wallpaper && wallpaper.custom) {
-    // Use the specified extension if available, otherwise default to jpg
-    const extension = wallpaper.extension || 'jpg';
-    return `/minecraft-assets/wallpapers/${id}.${extension}`;
-  }
-  // Use the external service for standard wallpapers
-  return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/${username}`;
-};
-  
-  // Helper to get thumbnail (use a default player for preview)
-const getWallpaperThumb = (id) => {
-  // Check if this is one of our custom wallpapers
-  const wallpaper = WALLPAPERS.find(wp => wp.id === id);
-  if (wallpaper && wallpaper.custom) {
-    // Use the specified extension if available, otherwise default to jpg
-    const extension = wallpaper.extension || 'jpg';
-    return `/minecraft-assets/wallpapers/${id}.${extension}`;
-  }
-  // Use the external service for standard wallpapers
-  return `https://starlightskins.lunareclipse.studio/render/wallpaper/${id}/Steve?thumb=1`;
-};
-  
-  // Map usernames to default covers to make each profile feel unique
-  const getDefaultCover = (username) => {
-    // Always use a valid wallpaperId and username
-    return getWallpaperUrl('herobrine_hill', username || 'Steve');
-  };
-
-  // Format date for display
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+      // Reset available wallpapers array to start fresh
+      setAvailableWallpapers([]);
+      
+      // Check each local wallpaper and add it if it exists
+      for (const wallpaper of localWallpapers) {
+        const img = new Image();
+        const src = getWallpaperUrl(wallpaper.id, 'Steve');
+        console.log(`Checking wallpaper: ${wallpaper.id} at ${src}`);
+        img.onload = () => {
+          console.log(`Wallpaper ${wallpaper.id} loaded successfully`);
+          setAvailableWallpapers(prev => {
+            if (!prev.some(wp => wp.id === wallpaper.id)) {
+              return [...prev, wallpaper];
+            }
+            return prev;
     });
   };
+        img.onerror = () => {
+          console.warn(`Wallpaper ${wallpaper.id} failed to load`);
+        };
+        img.src = src;
+      }
+      
+      // In parallel, check external wallpapers
+      const checkExternalWallpapers = async () => {
+        const externalWallpapers = WALLPAPERS.filter(wp => !wp.custom);
+        if (externalWallpapers.length === 0) return;
+        
+        try {
+          const testUrl = getWallpaperUrl(externalWallpapers[0].id, 'Steve');
+          const response = await fetch(testUrl, { method: 'HEAD', timeout: 3000 });
+          
+          if (response.ok) {
+            // Add external wallpapers to the available list
+            setAvailableWallpapers(prev => [...prev, ...externalWallpapers]);
+          }
+        } catch (error) {
+          console.warn('External wallpapers not available:', error);
+        }
+      };
+      
+      // Start checking external wallpapers without awaiting
+      checkExternalWallpapers();
+    };
+    
+    checkWallpaperAvailability();
+  }, [shouldDisplayProfile]);
 
   // Fetch profile data
   useEffect(() => {
+    // Skip if not showing profile
+    if (!shouldDisplayProfile) return;
+    
     let isMounted = true;
     let controller = new AbortController(); // For cleanup of fetch requests
     const signal = controller.signal;
     
-    // Cache mechanism 
-    const CACHE_DURATION = 60000; // 60 seconds
-    const profileCacheKey = `profile_${username || 'me'}`;
-    const cachedData = sessionStorage.getItem(profileCacheKey);
-    const cachedTimestamp = sessionStorage.getItem(`${profileCacheKey}_timestamp`);
-    const now = Date.now();
-    const isCacheValid = cachedData && cachedTimestamp && (now - parseInt(cachedTimestamp, 10) < CACHE_DURATION);
-    
+    // Define fetchProfileData function first before using it
     const fetchProfileData = async () => {
       if (!isMounted) return;
       try {
@@ -421,8 +786,20 @@ const getWallpaperThumb = (id) => {
         let completeStats = {
           playtime: '0h', lastSeen: 'Never', balance: 0, blocksMined: 0, mobsKilled: 0, deaths: 0, joinDate: websiteUser ? formatDate(websiteUser.createdAt) : 'N/A', achievements: 0, level: 1, experience: 0, rank: 'Member', group: 'default', groups: ['default'], world: 'world', gamemode: 'SURVIVAL', online: false
         };
+        
         try {
+          // Add a debounce flag to prevent overlapping calls
+          if (window.__FETCHING_PLAYER_STATS) {
+            console.log('Skipping player stats fetch - already in progress');
+            // Wait for the previous fetch to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (!isMounted) return;
+          }
+          
+          window.__FETCHING_PLAYER_STATS = true;
           const playerStatsRes = await MinecraftService.getPlayerStats(mcUsernameToUse);
+          window.__FETCHING_PLAYER_STATS = false;
+          
           console.log('Player Stats API Response:', playerStatsRes.data);
           // Merge API data, prioritizing API values
           completeStats = {
@@ -436,6 +813,7 @@ const getWallpaperThumb = (id) => {
             setPlayerStats(completeStats);
           }
         } catch (playerStatsError) {
+          window.__FETCHING_PLAYER_STATS = false;
           console.error('Failed to fetch player stats:', playerStatsError);
           // Use fallback stats if API fails
           if (isMounted) {
@@ -523,15 +901,10 @@ const getWallpaperThumb = (id) => {
         try {
           // Remove all special-case logic for n0t_awake and bizzy. Always use real data from the API or generic fallback.
           posts = await generateWallPosts(targetUsername, completeStats);
-          if (isMounted) {
-            setWallPosts(posts);
-          }
+          // Do NOT setWallPosts here; let the wall posts effect handle it
         } catch (err) {
           console.warn('Error with wall posts, using defaults:', err);
-          // Use generic fallback but don't re-fetch
-          if (isMounted) {
-            setWallPosts([]);
-          }
+          // Do NOT setWallPosts here
         }
         
         // Cache the full profile data to prevent repeated API calls
@@ -575,6 +948,43 @@ const getWallpaperThumb = (id) => {
       }
     };
     
+    // Cache mechanism 
+    const CACHE_DURATION = 30000; // 30 seconds (reduced from 60s)
+    const profileCacheKey = `profile_${username || 'me'}`;
+    const cachedData = sessionStorage.getItem(profileCacheKey);
+    const cachedTimestamp = sessionStorage.getItem(`${profileCacheKey}_timestamp`);
+    const now = Date.now();
+    const isCacheValid = cachedData && cachedTimestamp && (now - parseInt(cachedTimestamp, 10) < CACHE_DURATION);
+    
+    // Check if we already have valid cached data
+    if (isCacheValid && isMounted) {
+      try {
+        const parsedData = JSON.parse(cachedData);
+        setProfileUser(parsedData.profileUser);
+        setPlayerStats(parsedData.playerStats);
+        setRelationship(parsedData.relationship);
+        setFriends(parsedData.friends);
+        
+        // Do NOT set wallPosts from cache - always fetch these fresh
+        console.log('[Profile] Loading profile from cache, but fetching wall posts separately');
+        
+        setLoading(false);
+        // Use cached data but still fetch wall posts immediately
+        setTimeout(() => {
+          if (isMounted) fetchWallPosts();
+        }, 100);
+        
+        // Also fetch full profile data in the background after a delay
+        setTimeout(() => {
+          if (isMounted) fetchProfileData();
+        }, 5000);
+        return;
+      } catch (e) {
+        console.warn('[Profile] Error parsing cached profile data:', e);
+        // Continue to fetch if cache parsing fails
+      }
+    }
+    
     // Only fetch if component is mounted
     if (isMounted) {
       fetchProfileData();
@@ -583,145 +993,18 @@ const getWallpaperThumb = (id) => {
     return () => { 
       isMounted = false; 
       controller.abort();
+      // Clean up debounce flag
+      window.__FETCHING_PLAYER_STATS = false;
     };
-    // We specifically exclude getRelationship because it can change
-    // between renders and cause infinite loops
-  }, [user, username]);
-
-  // Fetch real friends with memoization to prevent re-renders
-  const fetchFriends = async (username) => {
-    // Use session storage cache to prevent repeated API calls
-    const cacheKey = `friends_${username}`;
-    const cachedFriends = sessionStorage.getItem(cacheKey);
-    
-    if (cachedFriends) {
-      try {
-        return JSON.parse(cachedFriends);
-      } catch (e) {
-        // Invalid cache, continue to fetch
-      }
-    }
-    
-    try {
-      // Try to get real friends data first
-      const response = await SocialService.getFriends(username);
-      if (response && response.data && Array.isArray(response.data.friends)) {
-        // Cache the response
-        try {
-          sessionStorage.setItem(cacheKey, JSON.stringify(response.data.friends));
-        } catch (e) {
-          // Failed to cache, but we can still use the data
-        }
-        return response.data.friends;
-      }
-    } catch (error) {
-      console.warn('Error fetching friends, using fallback:', error);
-    }
-    
-    // Fallback with reasonable data if API fails
-    const fallbackFriends = [
-      { username: 'DiamondDigger', status: 'Mining diamonds', online: true },
-      { username: 'CreeperSlayer', status: 'Fighting mobs', online: true },
-      { username: 'RedstoneWizard', status: 'Building circuits', online: false },
-      { username: 'MinerSteve', status: 'Last seen 2 hours ago', online: false },
-    ];
-    
-    // Cache the fallback data to prevent repeated API calls
-    try {
-      sessionStorage.setItem(cacheKey, JSON.stringify(fallbackFriends));
-    } catch (e) {
-      // Failed to cache, but we can still use the data
-    }
-    
-    return fallbackFriends;
-  };
-  
-  // Generate wall posts with memoization to prevent re-renders
-  const generateWallPosts = async (username, stats) => {
-    // Use session storage cache to prevent repeated API calls
-    const cacheKey = `wall_posts_${username}`;
-    const cachedPosts = sessionStorage.getItem(cacheKey);
-    
-    if (cachedPosts) {
-      try {
-        // When loading from cache, we need to convert any stored icon objects back to React elements
-        const parsedPosts = JSON.parse(cachedPosts);
-        return parsedPosts.map(post => ({
-          ...post,
-          // Recreate the icon element if it was stringified
-          icon: typeof post.icon === 'object' ? 
-            <UserIcon className="h-5 w-5 text-white" /> : post.icon
-        }));
-      } catch (e) {
-        // Invalid cache, continue to fetch
-        console.warn("Error parsing cached wall posts:", e);
-      }
-    }
-    
-    try {
-      // Try to get real wall posts first
-      const response = await SocialService.getWallPosts(username);
-      if (response && response.data && Array.isArray(response.data.posts)) {
-        // Store simplified version without React elements for caching
-        const cachablePosts = response.data.posts.map(post => ({
-          ...post,
-          // Convert icon to string representation for storage
-          icon: 'UserIcon'
-        }));
-        
-        // Cache the simplified posts
-        try {
-          sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
-        } catch (e) {
-          // Failed to cache, but we can still use the data
-          console.warn("Failed to cache wall posts:", e);
-        }
-        
-        return response.data.posts;
-      }
-    } catch (error) {
-      console.warn('Error fetching wall posts, using fallbacks:', error);
-    }
-    
-    // Create reasonable fallback posts based on user data
-    const defaultIcon = <UserIcon className="h-5 w-5 text-white" />;
-    
-    const posts = [
-      {
-        id: Date.now(),
-        type: 'default',
-        title: `${username}'s Profile`,
-        description: 'Welcome to my Minecraft profile!',
-        time: 'Just now',
-        icon: defaultIcon
-      }
-    ];
-    
-    // Cache simplified version for storage
-    const cachablePosts = [
-      {
-        id: Date.now(),
-        type: 'default',
-        title: `${username}'s Profile`,
-        description: 'Welcome to my Minecraft profile!',
-        time: 'Just now',
-        icon: 'UserIcon'
-      }
-    ];
-    
-    // Cache the fallback data to prevent repeated API calls
-    try {
-      sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
-    } catch (e) {
-      // Failed to cache, but we can still use the data
-      console.warn("Failed to cache default wall posts:", e);
-    }
-    
-    return posts;
-  };
+    // We need to include the shouldDisplayProfile, username, and user deps
+    // but exclude getRelationship as it can change between renders and cause issues
+  }, [user, username, shouldDisplayProfile]);
   
   // Listen for minecraft_linked events to refresh the profile
   useEffect(() => {
+    // Skip if not showing profile
+    if (!shouldDisplayProfile) return;
+    
     const handleMinecraftLinked = (event) => {
       console.log('🎮 Minecraft account linked event received:', event.detail);
       // Show celebration notification
@@ -787,90 +1070,13 @@ const getWallpaperThumb = (id) => {
     return () => {
       window.removeEventListener('minecraft_linked', handleMinecraftLinked);
     };
-  }, [user, username]);
-  
-  // Handle posting to wall
-  const handleWallPost = (e) => {
-    e.preventDefault();
-    if (!newWallPost.trim()) return;
-    
-    // Add new post to the wall
-    const newPost = {
-      id: Date.now(),
-      type: 'default',
-      title: `${user.username} posted on ${profileUser.username === user.username ? 'their' : profileUser.username + "'s"} wall`,
-      description: newWallPost,
-      time: 'Just now',
-      icon: <ChatBubbleLeftIcon className="h-5 w-5 text-white" />,
-    };
-    
-    setWallPosts([newPost, ...wallPosts]);
-    
-    // Update cache with the new post
-    try {
-      const profileCacheKey = `profile_${username || 'me'}`;
-      const cachedData = sessionStorage.getItem(profileCacheKey);
-      
-      if (cachedData) {
-        const parsedData = JSON.parse(cachedData);
-        
-        // Convert the new post for caching
-        const cacheablePost = {
-          ...newPost,
-          icon: 'ChatBubbleLeftIcon'
-        };
-        
-        // Update cached wall posts
-        parsedData.wallPosts = [cacheablePost, ...(parsedData.wallPosts || [])];
-        
-        // Update cache
-        sessionStorage.setItem(profileCacheKey, JSON.stringify(parsedData));
-        sessionStorage.setItem(`${profileCacheKey}_timestamp`, Date.now().toString());
-      }
-    } catch (e) {
-      console.warn("Failed to update wall posts cache:", e);
-    }
-    
-    setNewWallPost('');
-    
-    setNotification({
-      show: true,
-      type: 'success',
-      message: 'Posted to wall!'
-    });
-  };
-  
-  // Toggle between 3D model and regular avatar
-  const toggleViewMode = () => {
-    console.log('Toggling view mode from', viewMode, 'to', viewMode === '3d' ? 'avatar' : '3d');
-    setViewMode(prevMode => prevMode === '3d' ? 'avatar' : '3d');
-  };
-  
-  // Change cover image
-  const handleCoverChange = (imagePath) => {
-    setCoverImage(imagePath);
-    
-    setNotification({
-      show: true,
-      type: 'success',
-      message: 'Cover image updated!'
-    });
-  };
-  
-  // Force celebration for testing
-  /*useEffect(() => {
-    console.log('Setting up forced celebration test');
-    const timer = setTimeout(() => {
-      console.log('Forcing celebration to show for testing');
-      setShowCelebration(true);
-      setMcUsername('n0t_awake');
-    }, 3000);
-    
-    return () => clearTimeout(timer);
-  }, []);*/
+  }, [user, username, shouldDisplayProfile]);
   
   // On profileUser or wallpaperId change, update cover image
   useEffect(() => {
+    // Skip if not showing profile or if profileUser not loaded
+    if (!shouldDisplayProfile || !profileUser) return;
+    
     if (profileUser && (profileUser.wallpaperId || wallpaperId)) {
       const id = profileUser.wallpaperId || wallpaperId || WALLPAPERS[0].id;
       const uname = profileUser.mcUsername || profileUser.username || 'Steve';
@@ -880,61 +1086,838 @@ const getWallpaperThumb = (id) => {
       setWallpaperId(null);
       setCoverImage(getWallpaperUrl(WALLPAPERS[0].id, profileUser.mcUsername || profileUser.username || 'Steve'));
     }
-  }, [profileUser]);
-  
-  // Change wallpaper handler
-  const handleWallpaperSelect = async (id) => {
-    if (savingWallpaper || wallpaperId === id) return;
-    
-    // Show confirmation dialog instead of immediately changing
-    setPendingWallpaperId(id);
-    setShowWallpaperModal(true);
-  };
-  
-  // Confirm wallpaper change
-  const confirmWallpaperChange = async () => {
-    const id = pendingWallpaperId;
-    setShowWallpaperModal(false);
-    
-    if (!id) return;
-    
-    setWallpaperId(id);
-    const uname = profileUser.mcUsername || profileUser.username || 'Steve';
-    setCoverImage(getWallpaperUrl(id, uname));
-    setSavingWallpaper(true);
-    
-    try {
-      await API.put('/api/user/profile', { wallpaperId: id });
-      
-             // Play sound effect on successful change
-       try {
-         const audio = new Audio('/sounds/level-up.mp3');
-         audio.volume = 0.3; // Lower volume for this sound
-         audio.play().catch(e => console.log('Audio play prevented by browser policy', e));
-       } catch (e) {
-         console.log('Audio not supported', e);
-       }
-      
-      setNotification({ show: true, type: 'success', message: 'Wallpaper updated!' });
-    } catch (err) {
-      setNotification({ show: true, type: 'error', message: 'Failed to update wallpaper.' });
-      // Revert to previous
-      setWallpaperId(profileUser.wallpaperId || null);
-      setCoverImage(getWallpaperUrl(profileUser.wallpaperId || WALLPAPERS[0].id, uname));
-    } finally {
-      setSavingWallpaper(false);
-      setPendingWallpaperId(null);
-    }
-  };
+  }, [profileUser, wallpaperId, shouldDisplayProfile]);
   
   // Preload wallpaper image when coverImage changes
   useEffect(() => {
-    if (!coverImage) return;
+    // Skip if not showing profile or no cover image
+    if (!shouldDisplayProfile || !coverImage) return;
+    
     setWallpaperLoaded(false);
     const img = new window.Image();
     img.src = coverImage;
     img.onload = () => setWallpaperLoaded(true);
-  }, [coverImage]);
+  }, [coverImage, shouldDisplayProfile]);
+  
+  // Refactored wall post fetching (no fallback unless API fails and no posts)
+  const fetchWallPosts = useCallback(async () => {
+    console.log('[DEBUG] fetchWallPosts called');
+    if (!username) return;
+    setWallLoading(true);
+    setWallError(null);
+    try {
+      console.log('[Profile] Fetching wall posts for', username, 'page', wallPage);
+      // Always fetch fresh data from the API
+      const res = await WallService.getWallPosts(username, wallPage, 10);
+      console.log('[Profile] Wall posts API response:', res);
+      
+      let postsToSet = [];
+      
+      if (res && Array.isArray(res.posts) && res.posts.length > 0) {
+        // Ensure each post has required properties before setting state
+        postsToSet = res.posts.map(post => ({
+          ...post,
+          // Ensure post has author information
+          author: post.author || {
+            username: username,
+            mcUsername: username,
+            _id: post.author_id || `user-${Date.now()}`
+          },
+          // Defensive patch: ensure every comment has a valid author object
+          comments: (post.comments || []).map(comment => ({
+            ...comment,
+            author: comment.author && comment.author.username ? comment.author : {
+              username: 'Unknown User',
+              mcUsername: 'Steve'
+            }
+          }))
+        }));
+        
+        console.log('[Profile] Processed', postsToSet.length, 'wall posts');
+      } else {
+        console.warn('[Profile] No posts found in API response, using fallback');
+        postsToSet = [{
+          _id: `fallback-${Date.now()}`,
+          content: 'Welcome to your wall! Start posting to see your content here.',
+          author: {
+            username: username,
+            mcUsername: username
+          },
+          createdAt: new Date().toISOString(),
+          likes: [],
+          comments: []
+        }];
+      }
+      
+      // Force clear any cached wall posts before setting state
+      try {
+        sessionStorage.removeItem(`wall_posts_${username}`);
+        sessionStorage.removeItem(`profile_${username}`);
+      } catch (e) {
+        console.warn('[Profile] Failed to clear cached wall posts:', e);
+      }
+      
+      // Set state all at once after processing
+      console.log('[Profile] Setting wall posts state with', postsToSet.length, 'posts');
+      setWallPosts(postsToSet);
+      setWallTotalPages(res?.pagination?.totalPages || 1);
+    } catch (err) {
+      console.error('[Profile] Error fetching wall posts:', err);
+      setWallError(err.message || 'Failed to load wall posts');
+      
+      // Use fallback on error
+      const fallbackPost = {
+        _id: `fallback-${Date.now()}`,
+        content: 'Welcome to your wall! Start posting to see your content here.',
+        author: {
+          username: username,
+          mcUsername: username
+        },
+        createdAt: new Date().toISOString(),
+        likes: [],
+        comments: []
+      };
+      
+      setWallPosts([fallbackPost]);
+      setWallTotalPages(1);
+    } finally {
+      setWallLoading(false);
+    }
+  }, [username, wallPage]);
+  
+  // Function to refresh wall posts
+  const refreshWallPosts = async () => {
+    console.log('[DEBUG] refreshWallPosts called');
+    if (!username) return;
+    
+    try {
+      setWallLoading(true);
+      
+      // Save current expanded comment sections before refresh
+      const currentExpandedComments = { ...expandedComments };
+      
+      // Clear any cached wall posts data
+      try {
+        const cacheKey = `wall_posts_${username}`;
+        sessionStorage.removeItem(cacheKey);
+        console.log('[Profile] Cleared wall posts cache for', username);
+      } catch (e) {
+        console.warn('[Profile] Failed to clear wall posts cache:', e);
+      }
+      
+      console.log('[Profile] Refreshing wall posts for', username);
+      const res = await WallService.getWallPosts(username, 1, 10);
+      console.log('[Profile] Wall posts refresh response:', res);
+      
+      let postsToSet = [];
+      
+      if (res && Array.isArray(res.posts) && res.posts.length > 0) {
+        // Ensure each post has required properties before setting state
+        postsToSet = res.posts.map(post => ({
+          ...post,
+          // Ensure post has author information
+          author: post.author || {
+            username: post.author_username || username,
+            mcUsername: post.author_mcUsername || username,
+            _id: post.author_id || `user-${Date.now()}`
+          },
+          // Ensure likes array exists
+          likes: post.likes || [],
+          // Ensure comments array exists
+          comments: post.comments || []
+        }));
+        
+        console.log('[Profile] Processed posts for state update:', postsToSet.length);
+      } else {
+        // Fallback post
+        postsToSet = [{
+          _id: `fallback-${Date.now()}`,
+          content: 'Welcome to your wall! Start posting to see your content here.',
+          author: {
+            username: username,
+            mcUsername: username
+          },
+          createdAt: new Date().toISOString(),
+          likes: [],
+          comments: []
+        }];
+        console.log('[Profile] Using fallback post for empty response');
+      }
+      
+      // Do a direct update with the prepared array
+      setWallPosts(postsToSet);
+      setWallPage(1);
+      setWallTotalPages(res?.pagination?.totalPages || 1);
+      
+      // Restore expanded comments state for posts that still exist
+      const newExpandedCommentsState = { ...currentExpandedComments };
+      postsToSet.forEach(post => {
+        // If the post had comments expanded before, keep it expanded
+        if (post._id && currentExpandedComments[post._id]) {
+          newExpandedCommentsState[post._id] = true;
+        }
+        
+        // Auto-expand any posts with new activity (new comments since last refresh)
+        if (post.comments && post.comments.length > 0 && post.comments[0].createdAt) {
+          const latestCommentTime = new Date(post.comments[0].createdAt).getTime();
+          const fiveMinutesAgo = Date.now() - (5 * 60 * 1000); 
+          
+          // If the latest comment is less than 5 minutes old, auto-expand
+          if (latestCommentTime > fiveMinutesAgo) {
+            newExpandedCommentsState[post._id] = true;
+          }
+        }
+      });
+      
+      setExpandedComments(newExpandedCommentsState);
+      
+    } catch (err) {
+      console.error('[Profile] Failed to refresh wall posts:', err);
+      // Use fallback on error
+      setWallPosts([{
+        _id: `fallback-${Date.now()}`,
+        content: 'Welcome to your wall! Start posting to see your content here.',
+        author: {
+          username: username,
+          mcUsername: username
+        },
+        createdAt: new Date().toISOString(),
+        likes: [],
+        comments: []
+      }]);
+      setWallTotalPages(1);
+    } finally {
+      setWallLoading(false);
+    }
+  };
+  
+  // Fetch wall posts for the profile user
+  useEffect(() => {
+    fetchWallPosts();
+  }, [fetchWallPosts]);
+  
+  // Friend request handlers
+  const handleSendFriendRequest = async (targetUserId) => {
+    try {
+      await handleFriendRequest(targetUserId);
+      setRelationship(prev => ({ ...prev, status: 'pending_sent' }));
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Friend request sent!'
+      });
+      socialStats.refetch();
+    } catch (error) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to send friend request'
+      });
+    }
+  };
+  
+  const handleAcceptFriendRequest = async (targetUserId) => {
+    try {
+      await handleFriendRequestResponse(targetUserId, 'accept');
+      setRelationship(prev => ({ ...prev, status: 'friends' }));
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Friend request accepted!'
+      });
+      socialStats.refetch();
+    } catch (error) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to accept friend request'
+      });
+    }
+  };
+  
+  const handleRejectFriendRequest = async (targetUserId) => {
+    try {
+      await handleFriendRequestResponse(targetUserId, 'reject');
+      setRelationship(prev => ({ ...prev, status: 'not_friends' }));
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Friend request declined'
+      });
+      socialStats.refetch();
+    } catch (error) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to decline friend request'
+      });
+    }
+  };
+  
+  // Follow handlers
+  const handleFollowUser = async (targetUserId) => {
+    try {
+      await handleFollow(targetUserId);
+      setRelationship(prev => ({ ...prev, following: true }));
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Now following ${profileUser?.username}`
+      });
+      socialStats.refetch();
+    } catch (error) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to follow user'
+      });
+    }
+  };
+  
+  const handleUnfollowUser = async (targetUserId) => {
+    try {
+      await handleUnfollow(targetUserId);
+      setRelationship(prev => ({ ...prev, following: false }));
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Unfollowed ${profileUser?.username}`
+      });
+      socialStats.refetch();
+    } catch (error) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to unfollow user'
+      });
+    }
+  };
+  
+  // Predefined cover banner options
+  const coverOptions = [];
+
+  // Fetch real friends with memoization to prevent re-renders
+  const fetchFriends = async (username) => {
+    // Use session storage cache to prevent repeated API calls
+    const cacheKey = `friends_${username}`;
+    const cachedFriends = sessionStorage.getItem(cacheKey);
+    
+    if (cachedFriends) {
+      try {
+        return JSON.parse(cachedFriends);
+      } catch (e) {
+        // Invalid cache, continue to fetch
+        console.warn('Error parsing cached friends data:', e);
+      }
+    }
+    
+    try {
+      // Try to get real friends data first
+      const response = await SocialService.getFriends(username);
+      if (response && response.data && Array.isArray(response.data.friends)) {
+        // Cache the response
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(response.data.friends));
+        } catch (e) {
+          // Failed to cache, but we can still use the data
+          console.warn('Failed to cache friends data:', e);
+        }
+        return response.data.friends;
+      }
+      
+      // If the response doesn't have the expected structure, throw an error
+      throw new Error('Invalid friends data structure');
+    } catch (error) {
+      console.warn('Error fetching friends, using fallback:', error.message);
+    
+    // Fallback with reasonable data if API fails
+    const fallbackFriends = [
+        { _id: 'f1', username: 'DiamondDigger', status: 'Mining diamonds', online: true },
+        { _id: 'f2', username: 'CreeperSlayer', status: 'Fighting mobs', online: true },
+        { _id: 'f3', username: 'RedstoneWizard', status: 'Building circuits', online: false },
+        { _id: 'f4', username: 'MinerSteve', status: 'Last seen 2 hours ago', online: false },
+    ];
+    
+    // Cache the fallback data to prevent repeated API calls
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify(fallbackFriends));
+    } catch (e) {
+      // Failed to cache, but we can still use the data
+        console.warn('Failed to cache fallback friends data:', e);
+    }
+    
+    return fallbackFriends;
+    }
+  };
+  
+  // Generate wall posts with memoization to prevent re-renders
+  const generateWallPosts = async (username, stats) => {
+    // Use session storage cache to prevent repeated API calls
+    const cacheKey = `wall_posts_${username}`;
+    const cachedPosts = sessionStorage.getItem(cacheKey);
+    
+    if (cachedPosts) {
+      try {
+        // When loading from cache, we need to convert any stored icon objects back to React elements
+        const parsedPosts = JSON.parse(cachedPosts);
+        return parsedPosts.map(post => ({
+          ...post,
+          // Recreate the icon element if it was stringified
+          icon: typeof post.icon === 'object' ? 
+            <UserIcon className="h-5 w-5 text-white" /> : post.icon,
+          // Ensure post has a valid author
+          author: post.author || { 
+            username: username, 
+            mcUsername: username
+          }
+        }));
+      } catch (e) {
+        // Invalid cache, continue to fetch
+        console.warn("Error parsing cached wall posts:", e);
+      }
+    }
+    
+    try {
+      // Try to get real wall posts first
+      const response = await SocialService.getWallPosts(username);
+      if (response && response.data && Array.isArray(response.data.posts)) {
+        // Store simplified version without React elements for caching
+        const cachablePosts = response.data.posts.map(post => ({
+          ...post,
+          // Convert icon to string representation for storage
+          icon: 'UserIcon'
+        }));
+        
+        // Cache the simplified posts
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
+        } catch (e) {
+          // Failed to cache, but we can still use the data
+          console.warn("Failed to cache wall posts:", e);
+        }
+        
+        return response.data.posts;
+      }
+    } catch (error) {
+      console.warn('Error fetching wall posts, using fallbacks:', error);
+    }
+    
+    // Create reasonable fallback posts based on user data
+    const defaultIcon = <UserIcon className="h-5 w-5 text-white" />;
+    
+    const posts = [
+      {
+        _id: `fallback-${Date.now()}`,
+        type: 'default',
+        title: `${username}'s Profile`,
+        description: 'Welcome to my Minecraft profile!',
+        content: `Welcome to ${username}'s Minecraft profile! Thanks for visiting.`,
+        time: 'Just now',
+        createdAt: new Date(),
+        author: {
+          username: username,
+          mcUsername: username,
+          _id: `user-${Math.random().toString(36).substr(2, 9)}`
+        },
+        likes: [],
+        comments: [],
+        icon: defaultIcon
+      }
+    ];
+    
+    // Cache simplified version for storage
+    const cachablePosts = [
+      {
+        _id: `fallback-${Date.now()}`,
+        type: 'default',
+        title: `${username}'s Profile`,
+        description: 'Welcome to my Minecraft profile!',
+        content: `Welcome to ${username}'s Minecraft profile! Thanks for visiting.`,
+        time: 'Just now',
+        createdAt: new Date(),
+        author: {
+          username: username,
+          mcUsername: username,
+          _id: `user-${Math.random().toString(36).substr(2, 9)}`
+        },
+        likes: [],
+        comments: [],
+        icon: 'UserIcon'
+      }
+    ];
+    
+    // Cache the fallback data to prevent repeated API calls
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
+    } catch (e) {
+      // Failed to cache, but we can still use the data
+      console.warn("Failed to cache default wall posts:", e);
+    }
+    
+    return posts;
+  };
+  
+  // Optimistic update for adding a comment
+  const handleAddComment = async (postId) => {
+    const content = (commentInputs[postId] || '').trim();
+    if (!content) return;
+
+    setCommentLoading((prev) => ({ ...prev, [postId]: true }));
+    setCommentError((prev) => ({ ...prev, [postId]: '' }));
+
+    // Optimistically add a temporary comment
+    const tempCommentId = `temp-${Date.now()}`;
+    const optimisticComment = {
+      _id: tempCommentId,
+      content,
+      author: {
+        username: user?.username || 'You',
+        mcUsername: user?.mcUsername || user?.minecraftUsername || user?.username || 'Steve',
+        _id: user?._id || 'me',
+      },
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+    setWallPosts((prevPosts) => prevPosts.map(post =>
+      post._id === postId
+        ? { ...post, comments: [...(post.comments || []), optimisticComment] }
+        : post
+    ));
+    setExpandedComments((prev) => ({ ...prev, [postId]: true }));
+    setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+
+    try {
+      const response = await WallService.addComment(postId, content);
+      // Remove the optimistic comment and add the real one from the response
+      setWallPosts((prevPosts) => prevPosts.map(post => {
+        if (post._id !== postId) return post;
+        let comments = (post.comments || []).filter(c => c._id !== tempCommentId);
+        if (response && response.comments) {
+          comments = response.comments;
+        }
+        return { ...post, comments };
+      }));
+      setNotification({ show: true, type: 'success', message: 'Comment added successfully' });
+      try {
+        const audio = new Audio('/sounds/notification.mp3');
+        audio.volume = 0.2;
+        audio.play().catch(e => console.log('Audio play prevented by browser policy', e));
+      } catch (e) {
+        console.log('Audio not supported', e);
+      }
+    } catch (err) {
+      setWallPosts((prevPosts) => prevPosts.map(post =>
+        post._id === postId
+          ? { ...post, comments: (post.comments || []).filter(c => c._id !== tempCommentId) }
+          : post
+      ));
+      setCommentError((prev) => ({ 
+        ...prev, 
+        [postId]: err?.response?.data?.error || 'Failed to add comment. Please try again.'
+      }));
+      setNotification({ show: true, type: 'error', message: 'Failed to add comment' });
+    } finally {
+      setCommentLoading((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  // Optimistic update for deleting a comment
+  const handleDeleteComment = async (postId, commentId) => {
+    let removedComment = null;
+    setWallPosts((prevPosts) => prevPosts.map(post => {
+      if (post._id !== postId) return post;
+      const comments = (post.comments || []);
+      removedComment = comments.find(c => c._id === commentId);
+      return { ...post, comments: comments.filter(c => c._id !== commentId) };
+    }));
+    setCommentLoading((prev) => ({ ...prev, [postId]: true }));
+    setCommentError((prev) => ({ ...prev, [postId]: '' }));
+
+    try {
+      await WallService.deleteComment(postId, commentId);
+      setNotification({ show: true, type: 'success', message: 'Comment deleted successfully' });
+    } catch (err) {
+      setWallPosts((prevPosts) => prevPosts.map(post => {
+        if (post._id !== postId) return post;
+        return { ...post, comments: [...(post.comments || []), removedComment].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) };
+      }));
+      setCommentError((prev) => ({ 
+        ...prev, 
+        [postId]: err?.response?.data?.error || 'Failed to delete comment. Please try again.'
+      }));
+      setNotification({ show: true, type: 'error', message: 'Failed to delete comment' });
+    } finally {
+      setCommentLoading((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  // Optimistic update for creating a wall post
+  const handleCreateWallPost = async (content, image) => {
+    if (!content?.trim()) return Promise.reject(new Error('Empty content'));
+    setWallError(null);
+    const tempPostId = `temp-${Date.now()}`;
+    const optimisticPost = {
+      _id: tempPostId,
+      content,
+      author: profileUser || user || { username: 'You', mcUsername: 'Steve' },
+      createdAt: new Date().toISOString(),
+      likes: [],
+      comments: [],
+      isOptimistic: true,
+    };
+    setWallPosts((prev) => {
+      const newPosts = [optimisticPost, ...prev];
+      console.log('[DEBUG] Optimistic post added. wallPosts now:', newPosts.map(p => p._id));
+      return newPosts;
+    });
+    try {
+      const response = await WallService.createWallPost(username, content, image);
+      console.log('[DEBUG] WallService.createWallPost response:', response);
+      if (response && response.post) {
+        setWallPosts((prev) => {
+          const newPosts = [response.post, ...prev.filter(p => p._id !== tempPostId)];
+          console.log('[DEBUG] Backend post added. wallPosts now:', newPosts.map(p => p._id));
+          return newPosts;
+        });
+      } else {
+        setWallPosts((prev) => prev);
+      }
+      if (response && response.post && response.post._id) {
+        setExpandedComments(prev => ({
+          ...prev,
+          [response.post._id]: true
+        }));
+      }
+      setNotification({ show: true, type: 'success', message: 'Post created successfully!' });
+      if (socialStats && socialStats.refetch) socialStats.refetch();
+      return Promise.resolve();
+    } catch (err) {
+      setWallPosts((prev) => prev.filter(p => p._id !== tempPostId));
+      setWallError(err.message || 'Failed to create wall post');
+      setNotification({ show: true, type: 'error', message: 'Failed to create post. Please try again.' });
+      return Promise.reject(err);
+    }
+  };
+  
+  // Refactored handleDeleteWallPost: always fetch fresh after
+  const handleDeleteWallPost = async (postId) => {
+    try {
+      console.log('[Profile] Deleting post:', postId);
+      await WallService.deleteWallPost(postId);
+      
+      // Clear cache and refresh
+      try {
+        sessionStorage.removeItem(`wall_posts_${username}`);
+      } catch (e) {
+        console.warn('[Profile] Failed to clear wall posts cache for post deletion:', e);
+      }
+      
+      // Use refreshWallPosts for consistency
+      await refreshWallPosts();
+      
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Post deleted successfully'
+      });
+    } catch (err) {
+      console.error('[Profile] Error deleting post:', err);
+      setWallError(err.message || 'Failed to delete wall post');
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Failed to delete post'
+      });
+    }
+  };
+
+  // Handler to like a wall post
+  const handleLikeWallPost = async (postId) => {
+    try {
+      await WallService.likeWallPost(postId);
+      setWallPosts(wallPosts.map(post => post._id === postId ? { ...post, likes: [...(post.likes || []), user._id] } : post));
+    } catch (err) {
+      setWallError(err.message || 'Failed to like wall post');
+    }
+  };
+
+  // Handler to unlike a wall post
+  const handleUnlikeWallPost = async (postId) => {
+    try {
+      await WallService.unlikeWallPost(postId);
+      setWallPosts(wallPosts.map(post => post._id === postId ? { ...post, likes: (post.likes || []).filter(id => id !== user._id) } : post));
+    } catch (err) {
+      setWallError(err.message || 'Failed to unlike wall post');
+    }
+  };
+  
+  // Add handleDeleteWallPostWithConfirm
+  const handleDeleteWallPostWithConfirm = (postId) => {
+    setPostToDelete(postId);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteWallPost = async () => {
+    if (postToDelete) {
+      await handleDeleteWallPost(postToDelete);
+      setPostToDelete(null);
+      setShowDeleteModal(false);
+    }
+  };
+
+  const cancelDeleteWallPost = () => {
+    setPostToDelete(null);
+    setShowDeleteModal(false);
+  };
+  
+  // Toggle comment section expansion
+  const toggleCommentSection = (postId) => {
+    setExpandedComments(prev => ({
+      ...prev,
+      [postId]: !prev[postId]
+    }));
+  };
+  
+  // Update comment input handler
+  const handleCommentInputChange = (postId, value) => {
+    setCommentInputs(prev => ({
+      ...prev,
+      [postId]: value
+    }));
+  };
+  
+  // Add this before the return statement in Profile
+  useEffect(() => {
+    console.log('[Profile] About to render', wallPosts.length, 'posts, array:', JSON.stringify(wallPosts.map(p => ({ id: p._id, author: p.author?.username }))));
+  }, [wallPosts]);
+  
+  const renderedWallPosts = useMemo(() => wallPosts.map((post, index) => {
+    // Enhanced null check for post and post.author
+    if (!post) {
+      console.warn('[Profile] Null post encountered at index', index);
+      return null; // Skip rendering this post
+    }
+    if (!post.author) {
+      console.warn('[Profile] Post without author encountered:', post);
+      // Instead of skipping, fix it
+      post = {
+        ...post,
+        author: {
+          username: profileUser.username || username,
+          mcUsername: profileUser.mcUsername || username,
+          _id: post.author_id || `user-${Date.now()}`
+        }
+      };
+    }
+    // Ensure mcUsername or username is available for avatar
+    const avatarUsername = post.author.mcUsername || post.author.username;
+    console.log('[DEBUG] Rendering post', post._id, 'with key:', post._id || `post-${Date.now()}-${Math.random()}`);
+    const postId = post._id || `post-${Date.now()}-${Math.random()}`;
+    return (
+      <div key={postId} className="bg-white/10 rounded-md p-4">
+        <div className="flex items-start">
+          <Link to={`/profile/${post.author.username}`} className="flex-shrink-0">
+            <MinecraftAvatar 
+              username={avatarUsername}
+              size={40}
+              type="head"
+              className="rounded-md"
+            />
+          </Link>
+          <div className="flex-1 ml-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <Link 
+                  to={`/profile/${post.author.username}`}
+                  className="font-medium hover:text-minecraft-habbo-blue"
+                >
+                  {post.author.username}
+                </Link>
+                <span className="text-gray-400 text-sm ml-2">
+                  {timeAgo(post.createdAt || Date.now())}
+                </span>
+              </div>
+              {(isOwnProfile || (user && post.author.username === user.username)) && (
+                <button 
+                  onClick={() => handleDeleteWallPostWithConfirm(post._id)}
+                  className="text-gray-400 hover:text-red-400"
+                  title="Delete post"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-gray-200 whitespace-pre-wrap break-all overflow-x-auto">{post.content || ''}</p>
+            {post.image && (
+              <div className="mt-3">
+                <img 
+                  src={post.image} 
+                  alt=""
+                  className="rounded-md max-h-96 w-auto"
+                />
+              </div>
+            )}
+            <div className="flex items-center mt-3 text-sm text-gray-400">
+              <button 
+                className={`flex items-center hover:text-white mr-4 ${
+                  (post.likes && user && post.likes.includes(user._id)) ? 'text-minecraft-habbo-blue' : ''
+                }`}
+                onClick={() => {
+                  if (!user || !post._id) return;
+                  if (post.likes && post.likes.includes(user._id)) {
+                    handleUnlikeWallPost(post._id);
+                  } else {
+                    handleLikeWallPost(post._id);
+                  }
+                }}
+              >
+                <HandThumbUpIcon className="h-4 w-4 mr-1" />
+                {post.likes?.length || 0} {post.likes?.length === 1 ? 'Like' : 'Likes'}
+              </button>
+              
+              {/* Visual indicator for posts with comments */}
+              {post.comments && post.comments.length > 0 && (
+                <div className="relative h-2 w-2 mr-2">
+                  <span className="absolute inset-0 inline-flex h-2 w-2 rounded-full bg-minecraft-habbo-blue opacity-75 animate-ping"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-minecraft-habbo-blue"></span>
+                </div>
+              )}
+            </div>
+            
+            {/* Comment Section */}
+            <CommentSection
+              post={post}
+              commentInput={commentInputs[postId] || ''}
+              commentLoading={commentLoading[postId] || false}
+              commentError={commentError[postId] || ''}
+              onCommentChange={handleCommentInputChange}
+              onAddComment={handleAddComment}
+              onDeleteComment={handleDeleteComment}
+              currentUser={user}
+              isExpanded={expandedComments[postId] || false}
+              onToggleExpand={() => toggleCommentSection(postId)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }), [wallPosts, user, isOwnProfile, commentInputs, commentLoading, commentError, expandedComments, profileUser, username]);
+  
+  if (!shouldDisplayProfile) {
+    return (
+      <div className="min-h-screen pt-24 py-20 minecraft-grid-bg bg-habbo-pattern text-center">
+        <div className="max-w-2xl mx-auto px-4">
+          <h1 className="text-3xl font-minecraft text-minecraft-habbo-blue mb-6">Profile Not Found</h1>
+          <p className="text-gray-300 mb-8">Please log in to view your profile or specify a username.</p>
+          <Link to="/login" className="habbo-btn text-center px-6 py-2">
+            Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
   
   if (loading) {
     return <LoadingSpinner fullScreen />;
@@ -964,6 +1947,76 @@ const getWallpaperThumb = (id) => {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
     </svg>
   );
+  
+  // Old post method and wallpaper functions that were removed
+  // Handle posting to wall
+  const handleWallPost = async (e) => {
+    e.preventDefault();
+    if (!newWallPost.trim()) return;
+    await handleCreateWallPost(newWallPost);
+  };
+  
+  // Toggle between 3D model and regular avatar
+  const toggleViewMode = () => {
+    console.log('Toggling view mode from', viewMode, 'to', viewMode === '3d' ? 'avatar' : '3d');
+    setViewMode(prevMode => prevMode === '3d' ? 'avatar' : '3d');
+  };
+  
+  // Change cover image
+  const handleCoverChange = (imagePath) => {
+    setCoverImage(imagePath);
+    
+    setNotification({
+      show: true,
+      type: 'success',
+      message: 'Cover image updated!'
+    });
+  };
+  
+  // Change wallpaper handler
+  const handleWallpaperSelect = async (id) => {
+    if (savingWallpaper || wallpaperId === id) return;
+    
+    // Show confirmation dialog instead of immediately changing
+    setPendingWallpaperId(id);
+    setShowWallpaperModal(true);
+  };
+  
+  // Confirm wallpaper change
+  const confirmWallpaperChange = async () => {
+    const id = pendingWallpaperId;
+    setShowWallpaperModal(false);
+    
+    if (!id) return;
+    
+    setWallpaperId(id);
+    const uname = profileUser.mcUsername || profileUser.username || 'Steve';
+    setCoverImage(getWallpaperUrl(id, uname));
+    setSavingWallpaper(true);
+    
+    try {
+      await API.put('/api/user/profile', { wallpaperId: id });
+      
+      // Play sound effect on successful change
+      try {
+        const audio = new Audio('/sounds/level-up.mp3');
+        audio.volume = 0.3; // Lower volume for this sound
+        audio.play().catch(e => console.log('Audio play prevented by browser policy', e));
+      } catch (e) {
+        console.log('Audio not supported', e);
+      }
+      
+      setNotification({ show: true, type: 'success', message: 'Wallpaper updated!' });
+    } catch (err) {
+      setNotification({ show: true, type: 'error', message: 'Failed to update wallpaper.' });
+      // Revert to previous
+      setWallpaperId(profileUser.wallpaperId || null);
+      setCoverImage(getWallpaperUrl(profileUser.wallpaperId || WALLPAPERS[0].id, uname));
+    } finally {
+      setSavingWallpaper(false);
+      setPendingWallpaperId(null);
+    }
+  };
   
   return (
     <div className="relative min-h-screen ...">
@@ -1045,185 +2098,175 @@ const getWallpaperThumb = (id) => {
       
       <div className="min-h-screen ...">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Cover Banner with 3D Model */}
-          <div className="relative rounded-t-md overflow-hidden mb-0 h-64 bg-cover bg-center" 
-            style={{ backgroundImage: wallpaperLoaded ? `url(${coverImage})` : 'none', backgroundColor: '#222' }}>
-            {/* Skeleton/blurred overlay while loading */}
-            {!wallpaperLoaded && (
-              <div className="absolute inset-0 bg-gray-900 animate-pulse blur-sm z-10" />
-            )}
-            
-            {/* Cover change button (only for own profile) */}
-            {isOwnProfile && (
-              <div className="absolute top-4 right-4 z-10">
-                <div className="dropdown dropdown-end">
-                  <button className="bg-black/50 hover:bg-black/70 text-white p-2 rounded-md flex items-center" disabled={savingWallpaper}>
-                    <PhotoIcon className="h-5 w-5 mr-2" />
-                    <span>Change Cover</span>
-                  </button>
-                  <div className="dropdown-menu mt-2 bg-minecraft-navy-dark border border-white/20 p-3 rounded-md w-72 z-50 shadow-xl">
-                    <div className="grid grid-cols-3 gap-2">
-                      {availableWallpapers.length > 0 ? (
-                        availableWallpapers.map((wp) => (
-                          <button 
-                            key={wp.id}
-                            className={`block w-full h-16 bg-cover bg-center rounded border-2 transition-all duration-150 ${wallpaperId === wp.id ? 'border-green-400 ring-2 ring-green-400' : 'border-transparent'} ${savingWallpaper ? 'opacity-50 pointer-events-none' : 'hover:border-white'}`}
-                            style={{ backgroundImage: `url(${getWallpaperThumb(wp.id)})` }}
-                            onClick={() => handleWallpaperSelect(wp.id)}
-                            aria-label={`Select ${wp.label} wallpaper`}
-                            disabled={savingWallpaper}
-                            title={wp.label}
-                          />
-                        ))
-                      ) : (
-                        <p className="text-gray-400 col-span-3 text-center py-4">Loading available wallpapers...</p>
-                      )}
-                    </div>
-                  </div>
+          {/* Profile Header */}
+          <div className="relative">
+            {/* Cover Image */}
+            <div className="h-48 bg-minecraft-navy-dark rounded-t-md overflow-hidden relative">
+              {coverImage ? (
+                <img
+                  src={coverImage}
+                  alt="Profile Cover"
+                  className="w-full h-full object-cover"
+                  onLoad={() => setWallpaperLoaded(true)}
+                />
+              ) : (
+                <div className="w-full h-full bg-minecraft-navy-dark flex items-center justify-center">
+                  <img
+                    src={getDefaultCover(profileUser?.username)}
+                    alt="Default Cover"
+                    className="w-full h-full object-cover opacity-50"
+                  />
                 </div>
-              </div>
-            )}
-            
-            {/* 3D Model or Avatar */}
-            <div className="absolute bottom-0 left-12 transform translate-y-1/3 w-48 h-48">
-              <div className="relative">
-                {viewMode === '3d' ? (
-                  <div className="w-48 h-48 border-4 border-white bg-minecraft-navy-dark rounded-lg shadow-2xl overflow-hidden relative">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="minecraft-3d-model relative w-full h-full">
-                        <div className="absolute inset-0 z-10 flex items-center justify-center">
-                          <div className="w-32 h-32 transform rotate-animation">
+              )}
+              
+              {/* Cover Image Change Button */}
+            {isOwnProfile && (
+                        <button 
+                  onClick={() => setShowWallpaperModal(true)}
+                  className="absolute bottom-4 right-4 bg-black/50 hover:bg-black/70 text-white px-3 py-1 rounded-md flex items-center text-sm"
+                >
+                  <PhotoIcon className="h-4 w-4 mr-1" />
+                  Change Cover
+                </button>
+              )}
+            </div>
+
+            {/* Profile Info */}
+            <div className="px-6 pb-4">
+              <div className="flex flex-col md:flex-row md:items-end -mt-16 relative z-10">
+                {/* Avatar */}
+                <div className="flex-shrink-0 relative group">
+                  <div className="w-32 h-32 rounded-md overflow-hidden border-4 border-minecraft-navy-dark bg-minecraft-navy-light">
+                    {viewMode === 'avatar' ? (
                             <MinecraftAvatar 
-                              username={profileUser.mcUsername}
-                              uuid={profileUser.mcUUID}
-                              type="head"
+                        username={profileUser?.mcUsername || profileUser?.username}
                               size={128}
-                              animate={false}
-                            />
-                          </div>
-                        </div>
-                        <div className="absolute bottom-0 inset-x-0 h-1/4 bg-gradient-to-t from-minecraft-navy-dark to-transparent z-0"></div>
-                        <div className="absolute inset-0 bg-black/10 z-0"></div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="w-48 h-48 border-4 border-white bg-minecraft-navy-dark rounded-lg shadow-2xl overflow-hidden">
-                    {playerStats ? (
-                      <MinecraftPlayerModel3D
-                        playerData={playerStats}
-                        username={profileUser.mcUsername || profileUser.username}
-                        initialView="model"
-                        size="small"
+                        className="w-full h-full"
                       />
                     ) : (
-                      <MinecraftAvatar 
-                        username={profileUser.mcUsername}
-                        uuid={profileUser.mcUUID}
-                        type="full"
-                        size={192}
-                        animate={false}
+                      <MinecraftPlayerModel3D
+                        username={profileUser?.mcUsername || profileUser?.username}
+                        width={128}
+                        height={128}
                       />
                     )}
                   </div>
-                )}
-                
-                {/* Add custom CSS for 3D model animation */}
-                <style jsx>{`
-                  @keyframes rotate {
-                    0% { transform: rotateY(0deg); }
-                    100% { transform: rotateY(360deg); }
-                  }
-                  .rotate-animation {
-                    animation: rotate 10s linear infinite;
-                    transform-style: preserve-3d;
-                  }
-                `}</style>
-                
-                {/* Toggle view button */}
                 <button 
-                  className="absolute top-2 right-2 bg-black/60 p-1 rounded-full hover:bg-black/80"
                   onClick={toggleViewMode}
-                  type="button"
-                  title={viewMode === '3d' ? 'Switch to regular view' : 'Switch to 3D view'}
-                >
-                  {viewMode === '3d' ? (
-                    <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  ) : (
-                    <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
+                    className="absolute bottom-2 right-2 bg-black/50 hover:bg-black/70 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    title={viewMode === 'avatar' ? 'Show 3D Model' : 'Show Avatar'}
+                  >
+                    <CubeIcon className="h-4 w-4" />
                 </button>
-              </div>
-            </div>
           </div>
           
-          {/* Profile Header */}
-          <div className="bg-minecraft-navy-dark pt-20 pb-4 px-6 rounded-b-md border-b border-white/20 relative">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end">
+                {/* Profile Info & Actions */}
+                <div className="flex-1 md:ml-6 mt-4 md:mt-0">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="flex items-center gap-2">
-                  {profileUser.activeTitle && playerStats && (
-                    <TitleSystem 
-                      playerData={playerStats} 
-                      compact={true} 
-                      selectedTitle={profileUser.activeTitle}
-                    />
-                  )}
-                  <h1 className="text-3xl font-minecraft text-minecraft-habbo-blue">
-                    {profileUser.username}
-                    {profileUser.mcUsername && profileUser.mcUsername !== profileUser.username && (
-                      <span className="text-sm text-gray-400 ml-2">({profileUser.mcUsername})</span>
+                      <h1 className="text-2xl font-minecraft flex items-center">
+                        {profileUser?.username}
+                        {profileUser?.verified && (
+                          <span className="ml-2 text-minecraft-habbo-blue" title="Verified">
+                            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                          </span>
                     )}
                   </h1>
-                </div>
-                <div className="flex items-center text-gray-400 text-sm mt-1">
-                  <UserIcon className="h-4 w-4 mr-1" />
-                  <span className="mr-4">{profileUser.role || 'Member'}</span>
-                  <CalendarIcon className="h-4 w-4 mr-1" />
-                  <span>Joined: {formatDate(profileUser.createdAt)}</span>
+                      <div className="text-gray-400 text-sm mt-1">
+                        {profileUser?.title || 'Adventurer'}
                 </div>
               </div>
               
-              <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
+                    {/* Profile Actions */}
+                    <div className="flex items-center space-x-3 mt-4 md:mt-0">
                 {!isOwnProfile && (
                   <>
-                    <FriendButton 
-                      username={profileUser.username}
-                      mcUsername={profileUser.mcUsername} 
-                      userId={profileUser._id} 
-                      key={`friend-button-${relationship?.status}-${Date.now()}`}
-                      initialStatus={relationship?.status}
-                    />
-                    
-                    {relationship?.status !== 'friends' && (
-                      <FollowButton 
-                        username={profileUser.username} 
-                        mcUsername={profileUser.mcUsername} 
-                        userId={profileUser._id} 
-                        key={`follow-button-${relationship?.following}-${Date.now()}`}
-                        initialFollowing={relationship?.following || false}
-                      />
-                    )}
+                          <button
+                            onClick={() => {
+                              if (relationship?.status === 'not_friends') {
+                                handleSendFriendRequest(profileUser?._id);
+                              } else if (relationship?.status === 'pending_received') {
+                                handleAcceptFriendRequest(profileUser?._id);
+                              }
+                            }}
+                            className={`habbo-btn flex items-center ${
+                              relationship?.status === 'friends' ? 'bg-green-600' :
+                              relationship?.status === 'pending_sent' ? 'bg-gray-600' :
+                              relationship?.status === 'pending_received' ? 'bg-blue-600' :
+                              'bg-minecraft-habbo-blue'
+                            }`}
+                            disabled={relationship?.status === 'pending_sent'}
+                          >
+                            <UsersIcon className="h-5 w-5 mr-2" />
+                            {relationship?.status === 'friends' ? 'Friends' :
+                             relationship?.status === 'pending_sent' ? 'Request Sent' :
+                             relationship?.status === 'pending_received' ? 'Accept Request' :
+                             'Add Friend'}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              if (relationship?.following) {
+                                handleUnfollowUser(profileUser?._id);
+                              } else {
+                                handleFollowUser(profileUser?._id);
+                              }
+                            }}
+                            className={`habbo-btn-secondary flex items-center ${
+                              relationship?.following ? 'bg-gray-700' : ''
+                            }`}
+                          >
+                            {relationship?.following ? (
+                              <>
+                                <CheckIcon className="h-5 w-5 mr-2" />
+                                Following
+                              </>
+                            ) : (
+                              <>
+                                <UserPlusIcon className="h-5 w-5 mr-2" />
+                                Follow
                   </>
                 )}
-                
-                <button className="minecraft-btn flex items-center">
-                  <ChatBubbleLeftIcon className="h-4 w-4 mr-2" />
-                  {isOwnProfile ? 'Update Status' : 'Send Message'}
+                          </button>
+
+                          <button
+                            onClick={() => navigate(`/messages/new/${profileUser?.username}`)}
+                            className="habbo-btn-outline flex items-center"
+                          >
+                            <ChatBubbleLeftIcon className="h-5 w-5 mr-2" />
+                            Message
                 </button>
-                
-                {isOwnProfile && (
-                  <Link to="/edit-profile" className="bg-minecraft-navy-light px-4 py-2 rounded-md text-sm text-white hover:bg-minecraft-navy flex items-center">
-                    <PencilIcon className="h-4 w-4 mr-2" />
-                    Edit Profile
-                  </Link>
-                )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Friend Request Notification */}
+                  {relationship?.status === 'pending_received' && (
+                    <div className="mt-4 bg-minecraft-navy-light p-4 rounded-md">
+                      <p className="text-sm mb-2">
+                        {profileUser?.username} sent you a friend request
+                      </p>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleAcceptFriendRequest(profileUser?._id)}
+                          className="habbo-btn-success text-sm px-3 py-1"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => handleRejectFriendRequest(profileUser?._id)}
+                          className="habbo-btn-danger text-sm px-3 py-1"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               </div>
             </div>
             
@@ -1277,7 +2320,6 @@ const getWallpaperThumb = (id) => {
               >
                 Screenshots
               </button>
-            </div>
           </div>
           
           {/* Main Content Area */}
@@ -1344,7 +2386,7 @@ const getWallpaperThumb = (id) => {
                     <UserIcon className="h-5 w-5 text-blue-400 mr-3 flex-shrink-0" />
                     <div>
                       <p className="text-gray-400">Friends:</p>
-                      <p>{friends.length || playerStats?.friendsCount || 0}</p>
+                      <p>{socialStats.friendsCount || 0}</p>
                     </div>
                   </div>
                   
@@ -1352,7 +2394,7 @@ const getWallpaperThumb = (id) => {
                     <UsersIcon className="h-5 w-5 text-purple-400 mr-3 flex-shrink-0" />
                     <div>
                       <p className="text-gray-400">Followers:</p>
-                      <p>{playerStats?.followersCount || 7}</p>
+                      <p>{socialStats.followersCount || 0}</p>
                     </div>
                   </div>
                   
@@ -1360,13 +2402,23 @@ const getWallpaperThumb = (id) => {
                     <HeartIcon className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" />
                     <div>
                       <p className="text-gray-400">Following:</p>
-                      <p>{playerStats?.followingCount || 5}</p>
+                      <p>{socialStats.followingCount || 0}</p>
                     </div>
                   </div>
                   
+                  {socialStats.loading ? (
+                    <div className="text-center py-2">
+                      <LoadingSpinner size="small" />
+                    </div>
+                  ) : socialStats.error ? (
+                    <div className="text-center text-red-400 text-xs py-2">
+                      {socialStats.error}
+                    </div>
+                  ) : (
                   <Link to="/friends" className="block text-center text-minecraft-habbo-blue hover:text-minecraft-habbo-green mt-3 text-xs">
                     View all social connections
                   </Link>
+                  )}
                 </div>
               </div>
               
@@ -1389,21 +2441,35 @@ const getWallpaperThumb = (id) => {
               {/* Friends Box */}
               <div className="habbo-card p-5 rounded-md">
                 <h2 className="text-lg font-minecraft text-minecraft-habbo-blue mb-4 border-b border-white/10 pb-2 flex justify-between items-center">
-                  <span>Friends ({friends.length})</span>
-                  <Link to="#" className="text-sm text-minecraft-habbo-green hover:underline">
+                  <span>Friends ({socialStats.friendsCount || 0})</span>
+                  <Link to="/friends" className="text-sm text-minecraft-habbo-green hover:underline">
                     See All
                   </Link>
                 </h2>
                 
                 <div className="space-y-1">
-                  {friends.map((friend, index) => (
+                  {socialStats.loading ? (
+                    <div className="text-center py-4">
+                      <LoadingSpinner size="small" />
+                    </div>
+                  ) : socialStats.error ? (
+                    <div className="text-center text-red-400 py-4">
+                      Failed to load friends
+                    </div>
+                  ) : socialStats.friends.length === 0 ? (
+                    <div className="text-center text-gray-400 py-4">
+                      No friends yet
+                    </div>
+                  ) : (
+                    socialStats.friends.slice(0, 5).map((friend) => (
                     <FriendItem 
-                      key={index}
+                        key={friend._id}
                       username={friend.username}
                       status={friend.status}
                       online={friend.online}
                     />
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -1419,7 +2485,17 @@ const getWallpaperThumb = (id) => {
                       {isOwnProfile ? 'Update Your Status' : `Write on ${profileUser.username}'s Wall`}
                     </h2>
                     
-                    <form onSubmit={handleWallPost}>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!newWallPost.trim()) return;
+                      try {
+                        await handleCreateWallPost(newWallPost);
+                        setNewWallPost('');
+                      } catch (err) {
+                        setNotification({ show: true, type: 'error', message: 'Failed to create post. Please try again.' });
+                        setNewWallPost(newWallPost); // restore input if failed
+                      }
+                    }}>
                       <textarea
                         value={newWallPost}
                         onChange={(e) => setNewWallPost(e.target.value)}
@@ -1427,38 +2503,95 @@ const getWallpaperThumb = (id) => {
                         placeholder={isOwnProfile ? "What's on your mind?" : `Write something to ${profileUser.username}...`}
                         rows={3}
                       ></textarea>
-                      <div className="flex justify-end mt-3">
+                      <div className="flex justify-between items-center mt-3">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            className="bg-minecraft-navy-light hover:bg-minecraft-navy p-2 rounded-md"
+                            title="Add Image"
+                          >
+                            <PhotoIcon className="h-5 w-5 text-gray-400" />
+                          </button>
+                          <button
+                            type="button"
+                            className="bg-minecraft-navy-light hover:bg-minecraft-navy p-2 rounded-md"
+                            title="Add Emoji"
+                          >
+                            <span className="text-xl">😊</span>
+                          </button>
+                        </div>
                         <button 
                           type="submit"
                           className="habbo-btn px-4 py-2"
-                          disabled={!newWallPost.trim()}
+                          disabled={!newWallPost.trim() || wallLoading}
                         >
-                          Post
+                          {wallLoading ? 'Posting...' : 'Post'}
                         </button>
                       </div>
                     </form>
                   </div>
                   
-                  {/* Activity Feed */}
+                  {/* Wall Posts */}
                   <div className="space-y-4">
-                    {wallPosts.map((post) => (
-                      <ActivityItem
-                        key={post.id}
-                        icon={post.icon}
-                        title={post.title}
-                        description={post.description}
-                        time={post.time}
-                        type={post.type}
-                      >
-                        {post.image && (
-                          <img 
-                            src={post.image} 
-                            alt={post.title} 
-                            className="w-full h-auto rounded-md object-cover"
-                          />
+                    {wallError && (
+                      <div className="bg-red-500/10 text-red-400 p-4 rounded-md mb-4">
+                        {wallError}
+                      </div>
+                    )}
+                    
+                    {wallLoading ? (
+                      <div className="text-center py-8">
+                        <LoadingSpinner />
+                      </div>
+                    ) : wallPosts.length === 0 ? (
+                      <div className="text-center py-12">
+                        <ChatBubbleOvalLeftIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                        <p className="text-lg text-gray-400">No wall posts yet</p>
+                        <p className="text-sm text-gray-500 max-w-md mx-auto mt-2">
+                          {isOwnProfile ? 
+                            "Share what's on your mind or what you've been up to in Minecraft!" :
+                            `Be the first to write on ${profileUser.username}'s wall!`}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <AnimatePresence>
+                          {console.log('[DEBUG] AnimatePresence rendering wall posts:', wallPosts.map(p => p._id))}
+                          {renderedWallPosts}
+                        </AnimatePresence>
+                        
+                        {/* Pagination */}
+                        {wallTotalPages > 1 && (
+                          <div className="flex justify-center mt-6 space-x-2">
+                            <button
+                              onClick={() => setWallPage(prev => Math.max(prev - 1, 1))}
+                              disabled={wallPage === 1}
+                              className={`px-3 py-1 rounded-md ${
+                                wallPage === 1 
+                                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                                  : 'bg-minecraft-navy-light hover:bg-minecraft-navy text-white'
+                              }`}
+                            >
+                              Previous
+                            </button>
+                            <span className="px-3 py-1 bg-minecraft-navy-dark text-white rounded-md">
+                              Page {wallPage} of {wallTotalPages}
+                            </span>
+                            <button
+                              onClick={() => setWallPage(prev => Math.min(prev + 1, wallTotalPages))}
+                              disabled={wallPage === wallTotalPages}
+                              className={`px-3 py-1 rounded-md ${
+                                wallPage === wallTotalPages
+                                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                  : 'bg-minecraft-navy-light hover:bg-minecraft-navy text-white'
+                              }`}
+                            >
+                              Next
+                            </button>
+                          </div>
                         )}
-                      </ActivityItem>
-                    ))}
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -2075,6 +3208,28 @@ const getWallpaperThumb = (id) => {
                 className="habbo-btn px-4 py-2"
               >
                 Change Wallpaper
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-minecraft-navy-dark rounded-md p-5 max-w-md w-full border border-minecraft-habbo-blue shadow-lg">
+            <h3 className="text-lg font-minecraft text-minecraft-habbo-blue mb-3">Delete Post?</h3>
+            <p className="text-gray-300 mb-4">Are you sure you want to delete this post? This action cannot be undone.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={cancelDeleteWallPost}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteWallPost}
+                className="habbo-btn px-4 py-2"
+              >
+                Delete
               </button>
             </div>
           </div>

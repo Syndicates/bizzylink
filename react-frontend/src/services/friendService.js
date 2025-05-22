@@ -62,8 +62,9 @@ class FriendService {
     return this.#makeRequest('POST', '/api/friends/request', { username });
   }
 
-  static async getFriends() {
-    return this.#makeRequest('GET', '/api/friends');
+  static async getFriendRequests() {
+    const data = await this.#makeRequest('GET', '/api/friends/requests');
+    return { data };
   }
 
   static async acceptFriendRequest(username) {
@@ -117,28 +118,38 @@ class FriendService {
     return this.#makeRequest('POST', '/api/following/unfollow', { username });
   }
 
+  static async getFriends() {
+    const data = await this.#makeRequest('GET', '/api/friends');
+    return { data };
+  }
+
   static async getFollowing() {
-    return this.#makeRequest('GET', '/api/following');
+    const data = await this.#makeRequest('GET', '/api/following');
+    return { data };
   }
 
   static async getFollowers() {
-    return this.#makeRequest('GET', '/api/followers');
+    const data = await this.#makeRequest('GET', '/api/followers');
+    return { data };
   }
 
   // Notifications
   static async getNotifications(page = 1, limit = 10) {
-    return this.#makeRequest('GET', `/api/notifications?page=${page}&limit=${limit}`);
+    const data = await this.#makeRequest('GET', `/api/notifications?page=${page}&limit=${limit}`);
+    return { data };
   }
 
   static async markNotificationRead(notificationId) {
     if (!notificationId) {
       throw new Error('Notification ID is required');
     }
-    return this.#makeRequest('POST', `/api/notifications/${notificationId}/read`);
+    const data = await this.#makeRequest('POST', `/api/notifications/${notificationId}/read`);
+    return { data };
   }
 
   static async markAllNotificationsRead() {
-    return this.#makeRequest('POST', '/api/notifications/read-all');
+    const data = await this.#makeRequest('POST', '/api/notifications/read-all');
+    return { data };
   }
 
   // Test connection
@@ -151,6 +162,25 @@ class FriendService {
       console.error('[FriendService] Connection test failed:', error);
       return false;
     }
+  }
+
+  // Settings
+  static async getSettings() {
+    const data = await this.#makeRequest('GET', '/api/settings');
+    return { data };
+  }
+
+  // Relationship Status
+  static async getRelationshipStatus(username, mcUsername) {
+    if (!username && !mcUsername) {
+      throw new Error('Username or MC Username is required');
+    }
+    const params = [];
+    if (username) params.push(`username=${encodeURIComponent(username)}`);
+    if (mcUsername) params.push(`mcUsername=${encodeURIComponent(mcUsername)}`);
+    const query = params.length ? `?${params.join('&')}` : '';
+    const data = await this.#makeRequest('GET', `/api/friends/relationship${query}`);
+    return { data };
   }
 }
 

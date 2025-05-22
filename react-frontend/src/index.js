@@ -152,6 +152,41 @@ setInterval(() => {
   }
 }, ERROR_RESET_INTERVAL);
 
+// Add a global event listener to prevent empty src attributes from causing network errors
+// Place this before the ReactDOM.render call
+
+// Setup a global image error handler to prevent empty src attributes
+document.addEventListener('DOMContentLoaded', () => {
+  // Fix for empty src attributes
+  const originalCreateElement = React.createElement;
+  
+  // Override createElement to catch empty src on img elements
+  React.createElement = function(type, props, ...children) {
+    if (type === 'img' && props && (props.src === '' || props.src === undefined)) {
+      // Replace empty src with null to prevent network requests
+      props = {
+        ...props,
+        src: null, // This will be filtered out in the DOM
+        'data-empty-src': 'true' // Add a marker for debugging
+      };
+      console.warn('Empty img src detected and prevented');
+    }
+    return originalCreateElement.apply(this, [type, props, ...children]);
+  };
+  
+  // Add global image error handler
+  window.addEventListener('error', (event) => {
+    if (event.target.tagName === 'IMG') {
+      console.log('Image error detected, applying fallback');
+      // Prevent showing broken image icon
+      event.target.style.display = 'none';
+      // Handle with a fallback
+      event.target.src = '/minecraft-assets/steve.png';
+      event.target.style.display = '';
+    }
+  }, true); // Use capture phase
+});
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

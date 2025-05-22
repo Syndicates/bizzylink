@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SSE Test Client</title>
+  <style>
+    body { font-family: monospace; background: #181818; color: #e0e0e0; padding: 2em; }
+    #log { white-space: pre-wrap; background: #222; padding: 1em; border-radius: 8px; max-width: 800px; }
+    input, button { font-size: 1em; margin: 0.5em 0; }
+  </style>
+</head>
+<body>
+  <h2>SSE Test Client</h2>
+  <div>
+    <label>User ID: <input id="userId" type="text" size="32"></label><br>
+    <label>Token: <input id="token" type="text" size="64"></label><br>
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+  </div>
+  <div id="status">Not connected</div>
+  <div id="log"></div>
+  <script>
+    let es = null;
+    const logDiv = document.getElementById('log');
+    const statusDiv = document.getElementById('status');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+
+    function log(msg) {
+      logDiv.textContent += msg + '\n';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    connectBtn.onclick = function() {
+      const userId = document.getElementById('userId').value.trim();
+      const token = document.getElementById('token').value.trim();
+      if (!userId || !token) {
+        alert('Please enter both userId and token!');
+        return;
+      }
+      const url = `/api/events?userId=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`;
+      es = new EventSource(url);
+      statusDiv.textContent = 'Connecting...';
+      log('Connecting to ' + url);
+      es.onopen = () => {
+        statusDiv.textContent = 'Connected';
+        log('[SSE] Connection opened');
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+      };
+      es.onerror = (e) => {
+        statusDiv.textContent = 'Error or disconnected';
+        log('[SSE] Error: ' + (e && e.data ? e.data : e));
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+      };
+      es.onmessage = (event) => {
+        log('[SSE] Raw event: ' + event.data);
+        try {
+          const parsed = JSON.parse(event.data);
+          log('[SSE] Parsed event data: ' + JSON.stringify(parsed, null, 2));
+        } catch (e) {
+          log('[SSE] Could not parse event data: ' + event.data);
+        }
+      };
+    };
+    disconnectBtn.onclick = function() {
+      if (es) {
+        es.close();
+        es = null;
+        statusDiv.textContent = 'Disconnected';
+        log('[SSE] Connection closed');
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+      }
+    };
+  </script>
+</body>
+</html> 

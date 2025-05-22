@@ -30,7 +30,8 @@ const cookieParser = require('cookie-parser');
 const http = require('http');
 const socketIo = require('socket.io');
 // Use the shared eventEmitter instead of creating a new one
-const eventEmitter = require('./eventEmitter');
+const eventEmitter = require('./backend/src/eventEmitter');
+global.eventEmitter = eventEmitter;
 
 // Import the enhanced DB connection
 const { connectDB, isConnected, withConnection, dbEvents } = require('./db');
@@ -1898,3 +1899,28 @@ const PORT = process.env.PORT || 8080;
     process.exit(1);
   }
 })();
+
+// Add this logging to the SSE userEvent handler
+if (global.eventEmitter && typeof global.eventEmitter.on === 'function') {
+  global.eventEmitter.on('userEvent', (event) => {
+    console.log('[SSE] userEvent received:', {
+      userId: event.userId,
+      event: event.event,
+      data: event.data
+    });
+    if (sseClients && event.userId) {
+      const userClients = Array.from(sseClients.entries()).filter(([id, client]) => client.userId === event.userId);
+      console.log(`[SSE] Found ${userClients.length} SSE clients for userId:`, event.userId);
+      userClients.forEach(([clientId, client]) => {
+        try {
+          const payload = JSON.stringify(event.data);
+          console.log(`[SSE] Sending notification to clientId: ${clientId}, userId: ${event.userId}, payload:`, payload);
+          client.res.write(`data: ${payload}\n\n`);
+          console.log(`[SSE] Notification sent to clientId: ${clientId}`);
+        } catch (err) {
+          console.error(`[SSE] Error sending notification to clientId: ${clientId}`, err);
+        }
+      });
+    }
+  });
+}

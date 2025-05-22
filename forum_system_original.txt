@@ -22,8 +22,6 @@ import ForumThread from './ForumThread';
 import ForumTopicList from './ForumTopicList';
 import ForumPost from './ForumPost';
 import CreateThread from './CreateThread';
-import MentionDropdown from './MentionDropdown';
-import useMentions from '../../hooks/useMentions';
 import api from '../../services/api';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -88,10 +86,6 @@ const ForumSystem = ({
   const [topics, setTopics] = useState([]);
   const [threads, setThreads] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [postsLoading, setPostsLoading] = useState(false);
-  const [postError, setPostError] = useState(null);
-  const [totalPostPages, setTotalPostPages] = useState(1);
-  const [currentPostPage, setCurrentPostPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState(selectedCategory);
   const [activeTopic, setActiveTopic] = useState(null);
@@ -103,12 +97,6 @@ const ForumSystem = ({
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [donationRecipient, setDonationRecipient] = useState(null);
   const [categoryTopics, setCategoryTopics] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState(null);
-  const [newPostContent, setNewPostContent] = useState('');
-  
-  // Initialize mentions system
-  const mentions = useMentions('');
   
   // Track latest request to prevent race conditions
   const latestRequestId = useRef(0);
@@ -119,70 +107,17 @@ const ForumSystem = ({
     console.log('ForumSystem initialized with view:', view);
     fetchCategories();
     
-    // Check for thread navigation from sessionStorage (for page refreshes)
-    const storedThreadId = sessionStorage.getItem('viewThread');
-    if (storedThreadId) {
-      console.log(`[FORUM] Found stored thread ID in session: ${storedThreadId}`);
-      setActiveThread(storedThreadId);
-      setView('thread');
-      fetchThreadPosts({ id: storedThreadId });
-      // Remove from session storage to prevent repeated navigation
-      sessionStorage.removeItem('viewThread');
-    }
-    
     // Add event listener for donation modal
     const handleDonationModalEvent = (event) => {
       setDonationRecipient(event.detail.recipient);
       setShowDonationModal(true);
     };
     
-    // Add event listener for handling thread navigation from notifications
-    const handleViewThreadEvent = (event) => {
-      const { threadId, postId, highlightMention } = event.detail;
-      if (threadId) {
-        console.log(`[FORUM] Received viewForumThread event for thread: ${threadId}`);
-        
-        // Set active thread and change view
-        setActiveThread(threadId);
-        setView('thread');
-        
-        // Fetch thread data
-        fetchThreadPosts({ id: threadId }, () => {
-          // After posts are loaded, scroll to specific post if provided
-          if (postId) {
-            console.log(`[FORUM] Scrolling to post: ${postId}`);
-            setTimeout(() => {
-              const postElement = document.getElementById(`post-${postId}`);
-              if (postElement) {
-                postElement.scrollIntoView({ behavior: 'smooth' });
-                
-                // Add highlight effect for mentions
-                if (highlightMention) {
-                  postElement.classList.add('highlight-mention');
-                  setTimeout(() => {
-                    postElement.classList.remove('highlight-mention');
-                  }, 3000); // Remove highlight after 3 seconds
-                } else {
-                  // Add regular highlight for replies
-                  postElement.classList.add('highlight-post');
-                  setTimeout(() => {
-                    postElement.classList.remove('highlight-post');
-                  }, 3000); // Remove highlight after 3 seconds
-                }
-              }
-            }, 500); // Short delay to ensure posts are rendered
-          }
-        });
-      }
-    };
-    
     window.addEventListener('showDonationModal', handleDonationModalEvent);
-    document.addEventListener('viewForumThread', handleViewThreadEvent);
     
-    // Clean up event listeners
+    // Clean up event listener
     return () => {
       window.removeEventListener('showDonationModal', handleDonationModalEvent);
-      document.removeEventListener('viewForumThread', handleViewThreadEvent);
     };
   }, []); // Empty dependency array means this runs once on mount
 
@@ -386,7 +321,7 @@ const ForumSystem = ({
   };
   
   // Patch: Update fetchThreadPosts to accept either slug or id
-  const fetchThreadPosts = (threadRef, callback) => {
+  const fetchThreadPosts = (threadRef) => {
     setIsLoading(true);
     latestRequestId.current += 1;
     const thisRequest = latestRequestId.current;
@@ -447,9 +382,6 @@ const ForumSystem = ({
         } else {
           setTimeout(() => { if (thisRequest === latestRequestId.current) setIsLoading(false); }, 200);
         }
-        if (callback) {
-          callback();
-        }
       })
       .catch(error => {
         if (thisRequest !== latestRequestId.current) return;
@@ -463,9 +395,6 @@ const ForumSystem = ({
   const handleCategorySelect = (categoryId) => {
     setActiveCategory(categoryId);
     console.log(`Selected category ID: ${categoryId}`);
-    
-    // Store category ID in sessionStorage for potential thread navigation from notifications
-    sessionStorage.setItem('lastCategoryId', categoryId);
     
     // Update category information in the breadcrumb
     const selectedCategory = categories.find(c => c.id === categoryId);
@@ -581,6 +510,44 @@ const ForumSystem = ({
         setIsLoading(false);
       });
   };
+  
+  // Submit new reply to a thread
+  const handleSubmitReply = (replyData) => {
+    api.post(`/api/forum/threads/${activeThread}/posts`, { content: replyData.content })
+      .then(response => {
+        if (response.data && response.data.post) {
+          setTimeout(() => {
+            setPosts(prev => [...prev, { ...response.data.post, author: loggedInUser }]);
+          }, 700);
+          toast.success('Reply posted successfully!');
+        }
+      })
+      .catch(error => {
+        toast.error('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
+      });
+  };
+  
+  // Get reply content from textarea and post to database
+  const handlePostReply = () => {
+    const textarea = document.querySelector('.forum-reply-textarea');
+    if (textarea && textarea.value.trim()) {
+      api.post(`/api/forum/threads/${activeThread}/posts`, { content: textarea.value.trim() })
+        .then(response => {
+          if (response.data && response.data.post) {
+            setTimeout(() => {
+              setPosts(prev => [...prev, { ...response.data.post, author: loggedInUser }]);
+            }, 700);
+            textarea.value = '';
+            toast.success('Reply posted successfully!');
+          }
+        })
+        .catch(error => {
+          toast.error('Error posting reply: ' + (error.response?.data?.message || 'Please try again later'));
+        });
+    } else {
+      toast.error('Please enter a reply before posting');
+    }
+  };
 
   // Fetch topics for the active category when entering 'create' view
   useEffect(() => {
@@ -621,166 +588,6 @@ const ForumSystem = ({
     setPosts(prevPosts => prevPosts.map(p => p.id === updatedPost.id ? { ...p, ...updatedPost } : p));
   };
 
-  // Add CSS for highlighted posts and mentions
-  useEffect(() => {
-    // Add CSS for post highlighting
-    const style = document.createElement('style');
-    style.textContent = `
-      .highlight-post {
-        animation: highlightPostAnimation 3s ease-out;
-      }
-      .highlight-mention {
-        animation: highlightMentionAnimation 3s ease-out;
-      }
-      @keyframes highlightPostAnimation {
-        0%, 100% { 
-          background-color: transparent; 
-        }
-        20%, 80% { 
-          background-color: rgba(59, 130, 246, 0.1); 
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-        }
-      }
-      @keyframes highlightMentionAnimation {
-        0%, 100% { 
-          background-color: transparent; 
-        }
-        20%, 80% { 
-          background-color: rgba(219, 39, 119, 0.1); 
-          box-shadow: 0 0 0 3px rgba(219, 39, 119, 0.2);
-        }
-      }
-    `;
-    document.head.appendChild(style);
-    
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
-
-  // Handle image upload for the editor
-  const handleImageUpload = (file) => {
-    // Implementation of image upload
-  };
-  
-  // Create post in thread
-  const createPost = async (content) => {
-    setSubmitting(true);
-    setSubmitError(null);
-    
-    if (!content.trim()) {
-      setSubmitError('Post content cannot be empty');
-      setSubmitting(false);
-      return;
-    }
-    
-    try {
-      const response = await api.post(`/api/forum/threads/${activeThread}/posts`, {
-        content
-      });
-      
-      if (response.data && response.data.post) {
-        const newPost = response.data.post;
-        const targetThread = threads.find(t => t.id === activeThread);
-        
-        // Check if response contains complete author info
-        const responseHasCompleteAuthor = newPost.author && 
-          typeof newPost.author === 'object' && 
-          newPost.author.username &&
-          newPost.author.avatar;
-        
-        // Only use enhancement if needed
-        const enhancedPost = responseHasCompleteAuthor ? newPost : {
-          ...newPost,
-          author: {
-            ...newPost.author, // Keep any existing author data
-            // Ensure complete author data by using logged in user info
-            id: loggedInUser.id,
-            username: loggedInUser.username,
-            avatar: loggedInUser.avatar,
-            forum_rank: loggedInUser.forum_rank || loggedInUser.webRank || 'member',
-            mcUsername: loggedInUser.mcUsername
-          }
-        };
-        
-        // Add enhanced post to the thread
-        setPosts(prevPosts => [...prevPosts, enhancedPost]);
-        
-        // Create notification for thread author if they aren't the one replying
-        if (
-          targetThread && 
-          targetThread.author && 
-          targetThread.author.id && 
-          loggedInUser && 
-          targetThread.author.id !== loggedInUser.id
-        ) {
-          // Send notification to thread author about the reply
-          try {
-            await api.post('/api/notifications/create', {
-              recipientId: targetThread.author.id,
-              type: 'thread_reply',
-              threadId: activeThread,
-              threadTitle: targetThread.title,
-              authorName: loggedInUser.username,
-              postId: newPost.id
-            });
-            console.log('[FORUM] Reply notification sent to thread author');
-          } catch (err) {
-            console.error('Failed to send reply notification:', err);
-          }
-        }
-        
-        // Check for user mentions in the content (@username)
-        const mentionRegex = /@(\w+)/g;
-        const mentions = content.match(mentionRegex);
-        
-        if (mentions && mentions.length > 0) {
-          // Get unique usernames without the @ symbol
-          const mentionedUsers = [...new Set(mentions.map(m => m.substring(1)))];
-          
-          // Create notifications for mentioned users
-          for (const username of mentionedUsers) {
-            try {
-              // Skip if user mentioned themselves
-              if (loggedInUser && loggedInUser.username === username) {
-                continue;
-              }
-              
-              // Get user ID from username
-              const userResponse = await api.get(`/api/users/by-username/${username}`);
-              if (userResponse.data && userResponse.data.user) {
-                const mentionedUserId = userResponse.data.user.id;
-                
-                // Create mention notification
-                await api.post('/api/notifications/create', {
-                  recipientId: mentionedUserId,
-                  type: 'user_mention',
-                  threadId: activeThread,
-                  threadTitle: targetThread ? targetThread.title : 'a thread',
-                  authorName: loggedInUser.username,
-                  postId: newPost.id
-                });
-                console.log(`[FORUM] Mention notification sent to ${username}`);
-              }
-            } catch (err) {
-              console.error(`Failed to send mention notification to ${username}:`, err);
-            }
-          }
-        }
-        
-        setNewPostContent('');
-        toast.success('Reply posted successfully!');
-      } else {
-        setSubmitError('Failed to post reply');
-      }
-    } catch (error) {
-      console.error('Error posting reply:', error);
-      setSubmitError(error.response?.data?.message || 'Failed to post reply');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   // Loading state
   if (isLoading) {
     return (
@@ -815,335 +622,231 @@ const ForumSystem = ({
 
   // Render appropriate view
   return (
-    <div className="forum-system w-full max-w-6xl mx-auto">
-      {/* Toast notifications */}
-      <ToastContainer position="top-right" autoClose={3000} />
+    <div className="relative w-full">
+      <ToastContainer position="bottom-right" autoClose={5000} />
       
-      {/* Donation Modal */}
-      {showDonationModal && donationRecipient && (
-        <DonationModal
-          isOpen={showDonationModal}
-          onClose={() => setShowDonationModal(false)}
-          recipient={donationRecipient}
-          onSuccess={() => {
-            setShowDonationModal(false);
-            // You could reload user data here if needed
-          }}
-        />
-      )}
-      {/* Navigation breadcrumbs */}
-      <div className="bg-gray-800 p-4 rounded-t-md mb-1 flex items-center">
-        <div className="flex-1 flex items-center space-x-2">
-          {/* DEBUG: Breadcrumb state */}
-          {console.log('[FORUM DEBUG] Breadcrumb: activeCategory', activeCategory, 'categories', categories)}
-          <button 
-            onClick={() => setView('categories')}
-            className={`text-sm px-3 py-1 rounded-md ${view === 'categories' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
-          >
-            Forum Home
-          </button>
-          
-          {activeCategory && (
-            <>
-              <span className="text-gray-500">/</span>
-              <button 
-                onClick={() => {
-                  // Don't go to topics view, go directly to threads view
-                  setView('threads');
-                  setActiveTopic(null);
-                  setActiveThread(null);
-                }}
-                className={`text-sm px-3 py-1 rounded-md ${view === 'threads' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
-              >
-                {categories.find(c => c.id === activeCategory)?.name || activeCategory}
-              </button>
-            </>
+      {/* Header section with breadcrumb navigation and actions */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        {/* Navigation breadcrumbs */}
+        <div className="flex items-center">
+          {view !== 'categories' && (
+            <button 
+              onClick={handleBack}
+              className="text-sm flex items-center mr-2 text-gray-300 hover:text-white transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back
+            </button>
           )}
           
-          {activeTopic && (
-            <>
-              <span className="text-gray-500">/</span>
-              <button 
-                onClick={() => {
-                  setView('threads');
-                  setActiveThread(null);
-                }}
-                className={`text-sm px-3 py-1 rounded-md ${view === 'threads' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
-              >
-                {topics.find(t => t.id === activeTopic)?.name || activeTopic}
-              </button>
-            </>
-          )}
-          
-          {activeThread && view === 'thread' && (
-            <>
-              <span className="text-gray-500">/</span>
-              <span className="text-sm px-3 py-1 bg-green-700 text-white rounded-md truncate max-w-xs">
-                {threads.find(t => t.id === activeThread)?.title || 'Thread'}
-              </span>
-            </>
-          )}
-          
-          {view === 'create' && (
-            <>
-              <span className="text-gray-500">/</span>
-              <span className="text-sm px-3 py-1 bg-green-700 text-white rounded-md">
-                Create New Thread
-              </span>
-            </>
-          )}
+          {view === 'categories' ? (
+            <h2 className="font-minecraft text-2xl bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent">Forum Categories</h2>
+          ) : view === 'topics' ? (
+            <div className="flex items-center">
+              <span className="text-gray-500 mx-2">/</span>
+              <h2 className="font-bold text-xl text-white">{activeCategory?.name || 'Topics'}</h2>
+            </div>
+          ) : view === 'threads' ? (
+            <div className="flex items-center">
+              <span className="text-gray-500 mx-2">/</span>
+              <h2 className="font-bold text-xl text-white">{activeCategory?.name || 'Threads'}</h2>
+            </div>
+          ) : view === 'thread' ? (
+            <div className="flex items-center">
+              <span className="text-gray-500 mx-2">/</span>
+              <h2 className="font-bold text-xl text-white truncate max-w-xs sm:max-w-md">
+                {threads.find(t => getThreadKey(t) === activeThread)?.title || 'Thread'}
+              </h2>
+            </div>
+          ) : view === 'create' ? (
+            <div className="flex items-center">
+              <span className="text-gray-500 mx-2">/</span>
+              <h2 className="font-bold text-xl text-white">Create New Thread</h2>
+            </div>
+          ) : null}
         </div>
         
-        {view !== 'categories' && view !== 'create' && (
-          <button 
-            onClick={handleBack}
-            className="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md ml-2"
-          >
-            Back
-          </button>
-        )}
+        {/* Action buttons */}
+        <div className="flex items-center space-x-2">
+          {view === 'categories' || view === 'topics' || view === 'threads' ? (
+            <button 
+              onClick={() => {
+                setIsLoading(true);
+                setError(null);
+                fetchCategories();
+              }}
+              className="text-sm bg-gray-700 hover:bg-gray-600 text-white py-1 px-3 rounded-md flex items-center transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          ) : null}
+          
+          {/* Post action buttons for thread view */}
+          {view === 'threads' && loggedInUser && (
+            <button 
+              onClick={handleCreateThread}
+              className="text-sm bg-purple-700 hover:bg-purple-600 text-white py-1 px-3 rounded-md flex items-center transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Thread
+            </button>
+          )}
+          
+          {view === 'thread' && loggedInUser && (
+            <button 
+              onClick={handlePostReply}
+              className="text-sm bg-purple-700 hover:bg-purple-600 text-white py-1 px-3 rounded-md flex items-center transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Reply
+            </button>
+          )}
+        </div>
       </div>
       
-      {/* Main content area */}
-      <div className="bg-gray-800 p-6 rounded-b-md mb-4">
-        <motion.div
-          style={{ position: 'relative', width: '100%' }}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-        >
-          {/* Categories view */}
-          {view === 'categories' && (
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-white mb-6">Forum Categories</h2>
-              <div className="grid gap-4 md:grid-cols-2">
-                {categories.map(category => (
-                  <ForumCategory 
-                    key={category.id}
-                    category={category}
-                    onClick={() => handleCategorySelect(category.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Topics view */}
-          {view === 'topics' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-white">
-                  {categories.find(c => c.id === activeCategory)?.name || 'Topics'}
-                </h2>
-              </div>
-              <div className="space-y-3">
-                {topics.map(topic => (
-                  <ForumTopicList 
-                    key={topic.id}
-                    topic={topic}
-                    onClick={() => handleTopicSelect(topic.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Threads view */}
-          {view === 'threads' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center flex-wrap gap-2 mb-6">
-                <h2 className="text-2xl font-bold text-white">
-                  {categories.find(c => c.id === activeCategory)?.name || 'Threads'}
-                </h2>
-                <div className="flex items-center space-x-2">
-                  <div className="bg-gray-700 rounded-md p-1 flex text-sm">
+      {/* Loading state */}
+      {isLoading ? (
+        <div className="flex justify-center py-10">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+        </div>
+      ) : error ? (
+        <div className="bg-red-900 bg-opacity-20 border border-red-900 text-red-300 px-4 py-3 rounded-lg">
+          <p>{error}</p>
+        </div>
+      ) : (
+        <>
+          {/* Display appropriate content based on current view */}
+          <AnimatePresence mode="wait">
+            {view === 'categories' && (
+              <motion.div
+                key="categories"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="mb-6 p-5 bg-gray-800/50 backdrop-blur-sm rounded-lg border border-gray-700 shadow-lg">
+                  <h3 className="text-lg font-minecraft text-white mb-3">Welcome to the BizzyLink Forum</h3>
+                  <p className="text-gray-300 text-sm">
+                    Connect with our community, share your Minecraft experiences, get help, and discover the latest news and updates.
+                  </p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {categories.map(category => (
+                    <ForumCategory
+                      key={category.id}
+                      category={category}
+                      onClick={() => handleCategorySelect(category.id)}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+            
+            {/* Other view content - keep all other views the same */}
+            {view === 'topics' && (
+              <motion.div
+                key="topics"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ForumTopicList
+                  topics={topics}
+                  onTopicSelect={handleTopicSelect}
+                />
+              </motion.div>
+            )}
+            
+            {view === 'threads' && (
+              <motion.div
+                key="threads"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="flex flex-col-reverse sm:flex-row justify-between items-start sm:items-center mb-4">
+                  <div className="flex justify-center sm:justify-start mt-3 sm:mt-0">
                     <button 
                       onClick={() => handleSortChange('newest')}
-                      className={`px-3 py-1 rounded-md ${sortOrder === 'newest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                      className={`px-3 py-1 text-xs rounded-md mr-2 ${sortOrder === 'newest' ? 'bg-purple-700 text-white' : 'bg-gray-700 text-gray-300'}`}
                     >
                       Newest
                     </button>
                     <button 
                       onClick={() => handleSortChange('oldest')}
-                      className={`px-3 py-1 rounded-md ${sortOrder === 'oldest' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                      className={`px-3 py-1 text-xs rounded-md mr-2 ${sortOrder === 'oldest' ? 'bg-purple-700 text-white' : 'bg-gray-700 text-gray-300'}`}
                     >
                       Oldest
                     </button>
                     <button 
                       onClick={() => handleSortChange('popular')}
-                      className={`px-3 py-1 rounded-md ${sortOrder === 'popular' ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
+                      className={`px-3 py-1 text-xs rounded-md ${sortOrder === 'popular' ? 'bg-purple-700 text-white' : 'bg-gray-700 text-gray-300'}`}
                     >
                       Popular
                     </button>
                   </div>
-                  <button 
-                    onClick={handleCreateThread}
-                    className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
-                  >
-                    New Thread
-                  </button>
                 </div>
-              </div>
-              {/* Animated thread list */}
-              {threads.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-400">No threads found in {categories.find(c => c.id === activeCategory)?.name || 'this category'}.</p>
-                  <p className="text-gray-500 mt-2 mb-4">Be the first to start a discussion!</p>
-                  <button 
-                    onClick={handleCreateThread}
-                    className="mt-4 px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md"
-                  >
-                    Create the First Thread
-                  </button>
-                </div>
-              ) : (
-                <AnimatePresence initial={false} key={sortOrder + '-' + pageNumber}>
-                  {[...threads]
-                    .sort((a, b) => (b.pinned === a.pinned ? 0 : a.pinned ? -1 : 1))
-                    .slice((pageNumber - 1) * 10, pageNumber * 10)
-                    .map(thread => (
-                      <motion.div
-                        key={thread.id + (thread.slug ? '-' + thread.slug : '')}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <ForumThread 
+                
+                {/* Thread listing */}
+                <div className="border border-gray-700 rounded-lg overflow-hidden">
+                  {threads.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <div className="text-gray-400 text-4xl mb-3">📭</div>
+                      <h3 className="text-lg font-bold text-white mb-2">No Threads Yet</h3>
+                      <p className="text-gray-400 mb-6">Be the first to start a discussion in this category!</p>
+                      {loggedInUser && (
+                        <button 
+                          onClick={handleCreateThread}
+                          className="mx-auto bg-purple-700 hover:bg-purple-600 text-white py-2 px-4 rounded-md flex items-center justify-center transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Create Thread
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-700">
+                      {threads.map(thread => (
+                        <ForumThread
+                          key={getThreadKey(thread)}
                           thread={thread}
                           onClick={() => handleThreadSelect(thread)}
-                          currentUser={loggedInUser}
                         />
-                      </motion.div>
-                    ))}
-                </AnimatePresence>
-              )}
-              {/* Pagination */}
-              {totalPages > 1 && !isLoading && (
-                <div className="flex justify-center mt-6">
-                  <div className="inline-flex items-center rounded-md bg-gray-700">
-                    <button 
-                      onClick={() => handlePageChange(Math.max(1, pageNumber - 1))}
-                      disabled={pageNumber === 1}
-                      className={`px-3 py-2 rounded-l-md ${pageNumber === 1 ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
-                    >
-                      Previous
-                    </button>
-                    {[...Array(totalPages).keys()].map(i => (
-                      <button 
-                        key={i + 1}
-                        onClick={() => handlePageChange(i + 1)}
-                        className={`px-3 py-2 ${pageNumber === i + 1 ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-gray-600'}`}
-                      >
-                        {i + 1}
-                      </button>
-                    ))}
-                    <button 
-                      onClick={() => handlePageChange(Math.min(totalPages, pageNumber + 1))}
-                      disabled={pageNumber === totalPages}
-                      className={`px-3 py-2 rounded-r-md ${pageNumber === totalPages ? 'text-gray-500' : 'text-gray-300 hover:bg-gray-600'}`}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {/* Thread view */}
-          {view === 'thread' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl md:text-2xl font-bold text-white break-words">
-                  {threads.find(t => t.id === activeThread)?.title || 'Thread'}
-                </h2>
-                <button
-                  onClick={() => fetchThreadPosts(activeThread)}
-                  className="ml-4 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm"
-                >
-                  Refresh
-                </button>
-              </div>
-              <div className="space-y-4">
-                <AnimatePresence initial={false}>
-                  {posts.map((post, index) => (
-                    <motion.div
-                      key={post.id}
-                      className="forum-post"
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <ForumPost
-                        post={post}
-                        currentUser={loggedInUser}
-                        onReply={() => {}}
-                        threadAuthorId={threads[0]?.author?.id || threads[0]?.author?._id}
-                        threadId={threads[0]?.id}
-                        onThreadDeleted={handleThreadDeleted}
-                        onPostDeleted={handlePostDeleted}
-                        onPostEdited={handlePostEdited}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-              {/* Reply form */}
-              <div className="bg-gray-700 rounded-md p-4 mt-6">
-                <h3 className="text-lg font-semibold text-white mb-3">Post a Reply</h3>
-                <div className="relative">
-                <textarea 
-                    ref={mentions.inputRef}
-                    value={mentions.text}
-                    onChange={mentions.handleTextChange}
-                  className="forum-reply-textarea w-full bg-gray-800 text-white rounded-md p-3 min-h-32 focus:outline-none focus:ring-2 focus:ring-green-500 border border-gray-600"
-                    placeholder="Write your reply here... Use @username to mention other users"
-                ></textarea>
-                  
-                  {mentions.mentionActive && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      top: '100%', 
-                      left: '0', 
-                      zIndex: 50,
-                      marginTop: '8px'
-                    }}>
-                      <MentionDropdown 
-                        inputRef={mentions.inputRef}
-                        onSelectUser={mentions.handleSelectMention}
-                        isVisible={mentions.mentionActive}
-                        setIsVisible={mentions.setMentionActive}
-                        mentionText={mentions.mentionText}
-                      />
+                      ))}
                     </div>
                   )}
                 </div>
-                <div className="flex justify-end mt-3">
-                  <button 
-                    className="bg-gradient-to-r from-green-400 to-green-600 hover:from-green-500 hover:to-green-700 text-white px-4 py-2 rounded-md shadow-md transition duration-300 ease-in-out transform hover:translate-y-[-2px] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                    onClick={() => {
-                      if (mentions.text.trim()) {
-                        createPost(mentions.text.trim());
-                        mentions.setText('');
-                      } else {
-                        toast.error('Please enter a reply before posting');
-                      }
-                    }}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Posting...' : 'Post Reply'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* Create thread view */}
-          {view === 'create' && (
-            <CreateThread onSubmit={handleSubmitThread} onCancel={handleBack} activeCategory={activeCategory} topics={categoryTopics} />
-          )}
-        </motion.div>
-      </div>
-    </div>
-  );
-};
-
-export default ForumSystem;
+                
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center mt-6">
+                    <div className="flex space-x-1">
+                      {pageNumber > 1 && (
+                        <button 
+                          onClick={() => handlePageChange(pageNumber - 1)}
+                          className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md"
+                        >
+                          Prev
+                        </button>
+                      )}
+                      
+                      {Array.from({ length: totalPages }).map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handlePageChange(i + 1)}
+                          className={`

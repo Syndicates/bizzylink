@@ -45,75 +45,7 @@ const Navigation = () => {
   const { user, logout } = auth;
   
   // Social context integration
-  const social = useSocial();
-  
-  // Calculate unread count from notifications array
-  const calculateUnreadCount = () => {
-    // Helper function to count unread notifications in an array
-    const countUnread = (notifArray) => {
-      if (!Array.isArray(notifArray)) return 0;
-      
-      // First check if notifications have a read property
-      if (notifArray.length > 0 && notifArray[0].hasOwnProperty('read')) {
-        return notifArray.filter(n => !n.read).length;
-      }
-      
-      // If no read property exists, check for other indicators of unread status
-      if (notifArray.length > 0 && notifArray[0].hasOwnProperty('isRead')) {
-        return notifArray.filter(n => !n.isRead).length;
-      }
-      
-      // If no read indicators are found, assume all are unread
-      return notifArray.length;
-    };
-    
-    // From the screenshot, we can see a direct { success: true, notifications: Array(3) } format
-    if (social?.notifications?.notifications && Array.isArray(social.notifications.notifications)) {
-      return countUnread(social.notifications.notifications);
-    } else if (!social?.notifications?.items && Array.isArray(social?.notifications)) {
-      // If notifications is directly an array (API response format)
-      return countUnread(social.notifications);
-    } else if (social?.notifications?.items && Array.isArray(social?.notifications?.items)) {
-      // If notifications has an items property that is an array (context format)
-      return countUnread(social.notifications.items);
-    } else if (social?.notifications?.unreadCount !== undefined) {
-      // If unreadCount is explicitly provided
-      return social.notifications.unreadCount;
-    }
-    // Default to 0 if no valid data
-    return 0;
-  };
-  
-  const unreadCount = calculateUnreadCount();
-  const hasUnreadNotifications = unreadCount > 0;
-  
-  // Add debug logging for notifications
-  useEffect(() => {
-    console.log('[NAVBAR] Social context:', social);
-    console.log('[NAVBAR] Unread notifications count calculated:', unreadCount);
-    
-    // Log additional info to help debug
-    if (social?.notifications) {
-      if (Array.isArray(social.notifications)) {
-        console.log('[NAVBAR] Notifications is an array with length:', social.notifications.length);
-        
-        // Log the first notification to check its structure
-        if (social.notifications.length > 0) {
-          console.log('[NAVBAR] First notification structure:', social.notifications[0]);
-        }
-      } else if (social.notifications.items && Array.isArray(social.notifications.items)) {
-        console.log('[NAVBAR] Notifications items array length:', social.notifications.items.length);
-        
-        // Log the first notification to check its structure
-        if (social.notifications.items.length > 0) {
-          console.log('[NAVBAR] First notification structure:', social.notifications.items[0]);
-        }
-      } else {
-        // Log the entire notifications object to see its structure
-        console.log('[NAVBAR] Notifications object structure:', social.notifications);
-      }
-    }
-  }, [social, unreadCount]);
+  const { notifications, unreadCount } = useSocial();
   
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -251,12 +183,12 @@ const Navigation = () => {
                         <span>More</span>
                         <svg className="w-4 h-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
+                          </svg>
+                        </button>
                       
                       {/* Dropdown content */}
                       <div className="dropdown-menu z-10 w-48 mt-2 bg-minecraft-navy border border-minecraft-green/50 shadow-xl rounded-md overflow-hidden">
-                        <div className="py-1">
+                          <div className="py-1">
                           <DropdownLink to="/map" icon={<MapIcon className="h-4 w-4" />}>
                             Server Map
                           </DropdownLink>
@@ -291,7 +223,7 @@ const Navigation = () => {
                     onClick={toggleNotifications}
                     className="relative p-2 rounded-md text-white hover:bg-minecraft-navy-light transition-colors"
                   >
-                    {hasUnreadNotifications ? (
+                    {unreadCount > 0 ? (
                       <BellAlertIcon className="h-5 w-5 text-yellow-400" />
                     ) : (
                       <BellIcon className="h-5 w-5" />
@@ -314,54 +246,54 @@ const Navigation = () => {
                 
                 {/* User profile - simplified */}
                 <div className="dropdown-menu-container relative">
-                  <button 
-                    className="flex items-center space-x-2 hover:bg-minecraft-navy-light transition-colors py-1.5 px-3 rounded-md"
-                  >
-                    <span className="text-sm font-minecraft text-white">{user?.username}</span>
-                    <div className="w-6 h-6">
-                      {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
-                      {user?.mcUsername ? (
-                        <img
-                          src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
-                          alt="Minecraft Skin"
-                          className="w-6 h-6 rounded-md"
-                          onError={(e) => {
-                            e.target.onerror = () => {
+                    <button 
+                      className="flex items-center space-x-2 hover:bg-minecraft-navy-light transition-colors py-1.5 px-3 rounded-md"
+                    >
+                      <span className="text-sm font-minecraft text-white">{user?.username}</span>
+                      <div className="w-6 h-6">
+                        {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
+                        {user?.mcUsername ? (
+                          <img
+                            src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
+                            alt="Minecraft Skin"
+                            className="w-6 h-6 rounded-md"
+                            onError={(e) => {
                               e.target.onerror = () => {
                                 e.target.onerror = () => {
-                                  e.target.onerror = null;
-                                  e.target.src = 'https://via.placeholder.com/32?text=Skin';
+                                  e.target.onerror = () => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'https://via.placeholder.com/32?text=Skin';
+                                  };
+                                  e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
                                 };
-                                e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
+                                e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
                               };
-                              e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
-                            };
-                            e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
-                          }}
+                              e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
+                            }}
                         />
-                      ) : (
-                        <UserCircleIcon className="w-6 h-6 text-gray-400" />
-                      )}
-                    </div>
-                  </button>
-                  
-                  {/* Dropdown menu with absolute positioning and high z-index */}
+                        ) : (
+                          <UserCircleIcon className="w-6 h-6 text-gray-400" />
+                        )}
+                      </div>
+                    </button>
+                    
+                    {/* Dropdown menu with absolute positioning and high z-index */}
                   <div className="dropdown-menu w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden border border-gray-800 z-[100]" style={{ right: '0' }}>
-                    <div className="py-1">
-                      <Link 
-                        to="/edit-profile" 
-                        className="flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
-                      >
-                        <Cog6ToothIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
-                        Edit Profile
-                      </Link>
-                      <button
-                        onClick={logout}
-                        className="w-full text-left flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
-                      >
-                        <ArrowRightOnRectangleIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
-                        Logout
-                      </button>
+                      <div className="py-1">
+                        <Link 
+                          to="/edit-profile" 
+                          className="flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
+                        >
+                          <Cog6ToothIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
+                          Edit Profile
+                        </Link>
+                        <button
+                          onClick={logout}
+                          className="w-full text-left flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
+                        >
+                          <ArrowRightOnRectangleIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
+                          Logout
+                        </button>
                     </div>
                   </div>
                 </div>
@@ -419,7 +351,7 @@ const Navigation = () => {
                   <MobileNavLink to={user?.username ? `/profile/${user.username}` : "/profile"} icon={<UserCircleIcon className="h-5 w-5" />}>Profile</MobileNavLink>
                   <MobileNavLink to="/friends" icon={<UserGroupIcon className="h-5 w-5" />}>Friends</MobileNavLink>
                   <MobileNavLink to="/community" icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />}>Community</MobileNavLink>
-                  <MobileNavLink to="/notifications" icon={hasUnreadNotifications ? <BellAlertIcon className="h-5 w-5 text-yellow-400" /> : <BellIcon className="h-5 w-5" />}>
+                  <MobileNavLink to="/notifications" icon={unreadCount > 0 ? <BellAlertIcon className="h-5 w-5 text-yellow-400" /> : <BellIcon className="h-5 w-5" />}>
                     Notifications
                     {unreadCount > 0 && (
                       <span className="ml-2 bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[1.5rem] inline-block text-center">

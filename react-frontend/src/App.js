@@ -16,7 +16,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, TokenStorage } from './contexts/AuthContext';
-import { SocialProvider } from './contexts/SocialContext';
+import { SocialProvider } from './contexts/SocialContext.jsx';
 import { EventSourceProvider } from './contexts/EventSourceContext';
 // Import the new WebSocket context
 import { WebSocketProvider } from './contexts/WebSocketContext';

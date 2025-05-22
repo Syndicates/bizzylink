@@ -14,7 +14,7 @@
  */
 
 // src/contexts/SocialContext.jsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import FriendService from '../services/friendService';
 
@@ -44,16 +44,6 @@ export function SocialProvider({ children }) {
   
   // Notification data
   const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  
-  // Ensure all social arrays are initialized properly
-  useEffect(() => {
-    if (!Array.isArray(friends)) setFriends([]);
-    if (!Array.isArray(friendRequests)) setFriendRequests([]);
-    if (!Array.isArray(following)) setFollowing([]);
-    if (!Array.isArray(followers)) setFollowers([]);
-    if (!Array.isArray(notifications)) setNotifications([]);
-  }, [friends, friendRequests, following, followers, notifications]);
   
   // Settings
   const [settings, setSettings] = useState({
@@ -70,6 +60,43 @@ export function SocialProvider({ children }) {
     }
   });
   
+  // Calculate unreadCount from notifications
+  const unreadCount = useMemo(() =>
+    Array.isArray(notifications) ? notifications.filter(n => !n.read).length : 0,
+    [notifications]
+  );
+  
+  // Ensure all social arrays are initialized properly
+  useEffect(() => {
+    if (!Array.isArray(friends)) setFriends([]);
+    if (!Array.isArray(friendRequests)) setFriendRequests([]);
+    if (!Array.isArray(following)) setFollowing([]);
+    if (!Array.isArray(followers)) setFollowers([]);
+    if (!Array.isArray(notifications)) setNotifications([]);
+  }, [friends, friendRequests, following, followers, notifications]);
+  
+  // Helper to merge notifications arrays, avoiding duplicates
+  function mergeNotifications(existing, incoming) {
+    const map = new Map();
+    // Add existing notifications
+    for (const n of existing) {
+      if (n._id) {
+        map.set(n._id, n);
+      } else {
+        map.set(`${n.subtype}_${n.postId}_${n.sender?._id}`, n);
+      }
+    }
+    // Add/overwrite with incoming notifications
+    for (const n of incoming) {
+      if (n._id) {
+        map.set(n._id, n);
+      } else {
+        map.set(`${n.subtype}_${n.postId}_${n.sender?._id}`, n);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  
   // Load initial data when authenticated
   useEffect(() => {
     if (!isAuthenticated) {
@@ -85,31 +112,28 @@ export function SocialProvider({ children }) {
       try {
         // Load friends and friend requests
         const friendsRes = await FriendService.getFriends();
-        setFriends(friendsRes.data.friends || []);
+        setFriends(friendsRes.data?.friends ?? friendsRes.friends ?? []);
         
         // Load friend requests
         const requestsRes = await FriendService.getFriendRequests();
-        console.log('Setting friend requests from initial load:', requestsRes.data);
-        
-        // Set all different types of request arrays
-        setFriendRequests(requestsRes.data.friendRequests || []);
-        setSentRequests(requestsRes.data.sent || []);
-        setReceivedRequests(requestsRes.data.received || []);
+        console.log('Setting friend requests from initial load:', requestsRes.data ?? requestsRes);
+        setFriendRequests(requestsRes.data?.friendRequests ?? requestsRes.friendRequests ?? []);
+        setSentRequests(requestsRes.data?.sent ?? requestsRes.sent ?? []);
+        setReceivedRequests(requestsRes.data?.received ?? requestsRes.received ?? []);
         
         // Load following/followers
         const followingRes = await FriendService.getFollowing();
-        setFollowing(followingRes.data.following || []);
-        setFollowers(followingRes.data.followers || []);
+        setFollowing(followingRes.data?.following ?? followingRes.following ?? []);
+        setFollowers(followingRes.data?.followers ?? followingRes.followers ?? []);
         
         // Load notifications
         const notificationsRes = await FriendService.getNotifications(1, 5, true);
-        setNotifications(notificationsRes.data.notifications || []);
-        setUnreadCount(notificationsRes.data.unreadCount || 0);
+        setNotifications(prev => mergeNotifications(prev, notificationsRes.data?.notifications ?? notificationsRes.notifications ?? []));
         
         // Load settings
         const settingsRes = await FriendService.getSettings();
-        if (settingsRes.data.settings) {
-          setSettings(settingsRes.data.settings);
+        if (settingsRes.data?.settings ?? settingsRes.settings) {
+          setSettings(settingsRes.data?.settings ?? settingsRes.settings);
         }
       } catch (err) {
         console.error('Error loading social data:', err);
@@ -126,8 +150,7 @@ export function SocialProvider({ children }) {
       if (isAuthenticated) {
         FriendService.getNotifications(1, 5, true)
           .then(res => {
-            setNotifications(res.data.notifications || []);
-            setUnreadCount(res.data.unreadCount || 0);
+            setNotifications(prev => mergeNotifications(prev, res.data.notifications || []));
           })
           .catch(err => console.error('Error refreshing notifications:', err));
       }
@@ -446,9 +469,6 @@ export function SocialProvider({ children }) {
             : notification
         )
       );
-      
-      // Update unread count
-      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (err) {
       console.error('Error marking notification as read:', err);
     }
@@ -463,9 +483,6 @@ export function SocialProvider({ children }) {
       setNotifications(prev => 
         prev.map(notification => ({ ...notification, read: true }))
       );
-      
-      // Update unread count
-      setUnreadCount(0);
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
     }
@@ -648,6 +665,33 @@ export function SocialProvider({ children }) {
     );
   };
   
+  // AddNotification function for real-time events
+  const addNotification = useCallback((notification) => {
+    console.log('[addNotification] Called with:', notification);
+    setNotifications(prev => {
+      // Avoid duplicates (by postId + subtype + sender)
+      const exists = prev.some(item =>
+        item.subtype === notification.subtype &&
+        item.postId === notification.postId &&
+        item.sender?._id === notification.sender?._id &&
+        Math.abs(new Date(item.createdAt) - new Date(notification.createdAt)) < 10000 // 10s window
+      );
+      if (exists) return prev;
+      return [notification, ...prev];
+    });
+    // Play sound
+    try {
+      const audio = new Audio('/sounds/notification.mp3');
+      audio.volume = 0.5;
+      audio.play().catch(() => {});
+    } catch {}
+  }, []);
+  
+  // When setting notifications, always default to an array
+  const safeSetNotifications = (value) => {
+    setNotifications(Array.isArray(value) ? value : []);
+  };
+  
   // Context value
   const value = {
     // State
@@ -659,7 +703,7 @@ export function SocialProvider({ children }) {
     receivedRequests,
     following,
     followers,
-    notifications,
+    notifications: Array.isArray(notifications) ? notifications : [],
     unreadCount,
     settings,
     
@@ -691,6 +735,21 @@ export function SocialProvider({ children }) {
     hasSentRequestTo,     // Check if sent a request to a user
     hasReceivedRequestFrom  // Check if received a request from a user
   };
+  
+  useEffect(() => {
+    if (!window.addEventListener) return;
+    const handler = (event) => {
+      const data = event.detail;
+      console.log('[FRONTEND SSE] Received notification event:', data);
+      addNotification(data);
+    };
+    window.addEventListener('notification', handler);
+    return () => window.removeEventListener('notification', handler);
+  }, [addNotification]);
+  
+  useEffect(() => {
+    console.log('[SocialContext] notifications:', notifications, 'unreadCount:', unreadCount);
+  }, [notifications, unreadCount]);
   
   return (
     <SocialContext.Provider value={value}>

@@ -30,6 +30,9 @@ const NotificationsPanel = ({ onClose }) => {
     deleteNotification 
   } = useSocial();
   
+  console.log('[NotificationsPanel] notifications:', notifications);
+  const notificationList = Array.isArray(notifications) ? notifications : [];
+  
   const [page, setPage] = useState(1);
   
   // Load notifications when the component mounts
@@ -107,6 +110,30 @@ const NotificationsPanel = ({ onClose }) => {
             </svg>
           </div>
         );
+      case 'WALL_COMMENT':
+        return (
+          <div className="flex-shrink-0 rounded-full p-2 bg-green-100 text-green-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M18 13a1 1 0 01-1 1H7l-4 4V4a1 1 0 011-1h13a1 1 0 011 1v9z" />
+            </svg>
+          </div>
+        );
+      case 'WALL_LIKE':
+        return (
+          <div className="flex-shrink-0 rounded-full p-2 bg-pink-100 text-pink-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
+            </svg>
+          </div>
+        );
+      case 'WALL_MENTION':
+        return (
+          <div className="flex-shrink-0 rounded-full p-2 bg-blue-100 text-blue-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm2 0v10h12V5H4zm2 2h8v2H6V7zm0 4h5v2H6v-2z" />
+            </svg>
+          </div>
+        );
       default:
         return (
           <div className="flex-shrink-0 rounded-full p-2 bg-gray-100 text-gray-600">
@@ -120,7 +147,7 @@ const NotificationsPanel = ({ onClose }) => {
   
   // Function to get the link for a notification
   const getNotificationLink = (notification) => {
-    const { type, sender, relatedData } = notification;
+    const { type, sender, relatedData, postId } = notification;
     
     switch (type) {
       case 'friend_request':
@@ -137,6 +164,13 @@ const NotificationsPanel = ({ onClose }) => {
           return '/server';
         }
         return '/dashboard';
+      case 'WALL_COMMENT':
+      case 'WALL_LIKE':
+      case 'WALL_MENTION':
+        // If postId is present, link to the profile with wall anchor
+        if (postId) return `/profile/${sender?.username || ''}#wall-${postId}`;
+        // Fallback to sender's profile
+        return `/profile/${sender?.username || ''}`;
       default:
         return '/dashboard';
     }
@@ -214,15 +248,31 @@ const NotificationsPanel = ({ onClose }) => {
                 >
                   <div className="flex justify-between items-start">
                     <p className={`text-sm ${!notification.read ? 'font-medium' : 'text-gray-700'}`}>
-                      {notification.message}
+                      {/* Custom message for wall notifications */}
+                      {notification.type === 'WALL_COMMENT' && (
+                        <>
+                          <span className="font-bold">{notification.sender?.username}</span> commented on your wall post.
+                        </>
+                      )}
+                      {notification.type === 'WALL_LIKE' && (
+                        <>
+                          <span className="font-bold">{notification.sender?.username}</span> liked your wall post.
+                        </>
+                      )}
+                      {notification.type === 'WALL_MENTION' && (
+                        <>
+                          <span className="font-bold">{notification.sender?.username}</span> mentioned you in a wall post comment.
+                        </>
+                      )}
+                      {/* Fallback to default message */}
+                      {!(notification.type === 'WALL_COMMENT' || notification.type === 'WALL_LIKE' || notification.type === 'WALL_MENTION') && notification.message}
                     </p>
                     <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
                       {formatNotificationTime(notification.createdAt)}
                     </span>
                   </div>
-                  
-                  {/* If it's a friend request, show a small avatar */}
-                  {notification.type === 'friend_request' && notification.sender && (
+                  {/* Show sender's Minecraft avatar for wall notifications */}
+                  {(notification.type === 'WALL_COMMENT' || notification.type === 'WALL_LIKE' || notification.type === 'WALL_MENTION') && notification.sender && (
                     <div className="mt-1 flex items-center">
                       <MinecraftAvatar 
                         username={notification.sender.mcUsername || notification.sender.username}

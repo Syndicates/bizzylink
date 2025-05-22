@@ -18,6 +18,28 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 module.exports = function(app) {
   console.log('Proxy setup is running!');
   
+  // SSE proxy for /api/events
+  app.use(
+    '/api/events',
+    createProxyMiddleware({
+      target: 'http://localhost:8080',
+      changeOrigin: true,
+      ws: false,
+      logLevel: 'debug',
+      pathRewrite: { '^/api/events': '/api/events' },
+      onProxyReq: (proxyReq, req, res) => {
+        proxyReq.setHeader('Connection', 'keep-alive');
+        proxyReq.setHeader('Cache-Control', 'no-cache');
+      },
+      onProxyRes: (proxyRes, req, res) => {
+        delete proxyRes.headers['content-length'];
+        proxyRes.headers['content-type'] = 'text/event-stream; charset=utf-8';
+      },
+      selfHandleResponse: false,
+      buffer: false,
+    })
+  );
+  
   // Add more detailed debug logs for proxy
   const apiProxy = createProxyMiddleware({
     target: 'http://localhost:8080', // Use the correct port for your backend

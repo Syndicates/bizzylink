@@ -16,6 +16,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
+import useMentions from '../../hooks/useMentions';
+import MentionDropdown from './MentionDropdown';
 
 /**
  * CreateThread component
@@ -33,6 +36,11 @@ const CreateThread = ({ onSubmit, onCancel, activeCategory, topics = [] }) => {
   const [notifyInGame, setNotifyInGame] = useState(false);
   const [errors, setErrors] = useState({});
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  
+  // Use mentions system
+  const mentions = useMentions('');
   
   // Check if user has admin or moderator permissions
   const isAdminOrMod = user && (
@@ -313,33 +321,36 @@ const CreateThread = ({ onSubmit, onCancel, activeCategory, topics = [] }) => {
         
         {/* Thread content */}
         <div className="mb-4">
-          {currentTab === 'write' ? (
-            <div className={`border ${errors.content ? 'border-red-500' : 'border-gray-700'} rounded-b-md`}>
+          <label className="block text-white text-sm font-semibold mb-2">Thread Content</label>
+          <div className="relative">
               <textarea
-                id="thread-content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className={`
-                  w-full px-3 py-2 bg-gray-800 text-white rounded-b-md
-                  focus:outline-none focus:ring-2 focus:ring-green-500
-                  min-h-[200px]
-                `}
-                placeholder="Enter your thread content... (Markdown supported)"
-                required
+              ref={mentions.inputRef}
+              value={mentions.text}
+              onChange={mentions.handleTextChange}
+              className="w-full h-64 bg-gray-800 text-white rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-green-500 border border-gray-600"
+              placeholder="Write your thread content here... Use @username to mention other users"
               ></textarea>
+            
+            {mentions.mentionActive && (
+              <div style={{ 
+                position: 'absolute', 
+                top: '100%', 
+                left: '0', 
+                zIndex: 50,
+                marginTop: '8px'
+              }}>
+                <MentionDropdown 
+                  inputRef={mentions.inputRef}
+                  onSelectUser={mentions.handleSelectMention}
+                  isVisible={mentions.mentionActive}
+                  setIsVisible={mentions.setMentionActive}
+                  mentionText={mentions.mentionText}
+                />
             </div>
-          ) : (
-            <div className="border border-gray-700 rounded-md p-4 bg-gray-800 prose prose-invert prose-sm min-h-[200px]">
-              {content ? (
-                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
-              ) : (
-                <p className="text-gray-500 italic">Nothing to preview...</p>
               )}
             </div>
-          )}
-          
           {errors.content && (
-            <p className="mt-1 text-sm text-red-500">{errors.content}</p>
+            <p className="text-red-500 text-xs mt-1">{errors.content}</p>
           )}
         </div>
         

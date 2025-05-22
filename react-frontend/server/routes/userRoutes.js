@@ -343,4 +343,48 @@ router.delete('/admin/users/:userId', auth, requireAdmin, async (req, res) => {
 
 // Minecraft account linking endpoints will be in a separate file
 
+// Add search endpoint for @mentions
+router.get('/search', async (req, res) => {
+  try {
+    const { username, linked = 'true', limit = 5 } = req.query;
+    
+    if (!username) {
+      return res.status(400).json({ message: 'Username search term is required' });
+    }
+    
+    // Build query - case insensitive search that starts with the search term
+    // Now search for either username OR mcUsername that starts with the search term
+    const query = { 
+      $or: [
+        { username: { $regex: `^${username}`, $options: 'i' } },
+        { mcUsername: { $regex: `^${username}`, $options: 'i' } }
+      ]
+    };
+    
+    // Only include users with Minecraft accounts linked if requested
+    if (linked === 'true') {
+      query.mcUsername = { $exists: true, $ne: null };
+    }
+    
+    // Find users that match the query
+    const users = await User.find(query)
+      .select('username mcUsername avatar webRank')
+      .limit(parseInt(limit))
+      .lean();
+    
+    return res.status(200).json({ 
+      users: users.map(user => ({
+        id: user._id,
+        username: user.username,
+        mcUsername: user.mcUsername,
+        avatar: user.avatar,
+        webRank: user.webRank || 'user'
+      })) 
+    });
+  } catch (error) {
+    console.error('Error searching users:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;

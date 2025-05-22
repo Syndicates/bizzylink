@@ -155,6 +155,83 @@ class MinecraftNotificationService {
       targets: [threadAuthor.mcUsername] // Only send to thread author if online
     });
   }
+
+  // Create a forum thread notification
+  async createForumThreadNotification(userId, threadId, threadTitle, categoryName) {
+    try {
+      const notification = {
+        userId,
+        type: 'forum_thread',
+        title: 'New Notification',
+        message: `You created a new thread "${threadTitle}" in ${categoryName}`,
+        data: {
+          threadId
+        },
+        read: false,
+        createdAt: new Date()
+      };
+      
+      await this.saveNotification(notification);
+      this.notifyUser(userId);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating forum thread notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+  
+  // Create a thread reply notification
+  async createThreadReplyNotification(recipientId, threadId, threadTitle, authorName, postId) {
+    try {
+      const notification = {
+        userId: recipientId,
+        type: 'thread_reply',
+        title: 'New Reply',
+        message: `${authorName} replied to your thread "${threadTitle}"`,
+        data: {
+          threadId,
+          postId
+        },
+        read: false,
+        createdAt: new Date()
+      };
+      
+      await this.saveNotification(notification);
+      this.notifyUser(recipientId);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating thread reply notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+  
+  // Create a user mention notification
+  async createUserMentionNotification(recipientId, threadId, threadTitle, authorName, postId) {
+    try {
+      const notification = {
+        userId: recipientId,
+        type: 'user_mention',
+        title: 'User Mention',
+        message: `${authorName} mentioned you in "${threadTitle}"`,
+        data: {
+          threadId,
+          postId
+        },
+        read: false,
+        createdAt: new Date()
+      };
+      
+      await this.saveNotification(notification);
+      this.notifyUser(recipientId);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating user mention notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = MinecraftNotificationService;

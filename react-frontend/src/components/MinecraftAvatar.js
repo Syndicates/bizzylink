@@ -13,9 +13,10 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import minecraftApi from '../services/minecraft-api';
+import MinecraftSkinViewer3D from './MinecraftSkinViewer3D';
+import MinecraftAvatarError from './MinecraftAvatarError';
 
 /**
  * MinecraftAvatar component - displays a Minecraft player avatar
@@ -23,7 +24,7 @@ import minecraftApi from '../services/minecraft-api';
  * @param {Object} props
  * @param {string} props.username - Minecraft username
  * @param {string} props.uuid - Minecraft UUID (takes precedence over username)
- * @param {string} props.type - Type of avatar ('head', 'bust', 'full')
+ * @param {string} props.type - Type of avatar ('head', 'bust', 'full', '3d', '3d-walking', '3d-running', '3d-flying')
  * @param {string} props.crop - Crop type for the avatar
  * @param {number} props.size - Size in pixels
  * @param {string} props.className - Additional CSS classes
@@ -44,63 +45,56 @@ const MinecraftAvatar = ({
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [imgSrc, setImgSrc] = useState(`https://mc-heads.net/avatar/${username || 'MHF_Steve'}/${size}`);
+  const [fallbackIndex, setFallbackIndex] = useState(0);
 
   // Always use username (mcUsername) for the playerIdentifier, never uuid
   const playerIdentifier = username || 'MHF_Steve';
-
-  // Map your type/crop to API
-  let renderType = 'default';
-  let renderCrop = 'face';
-
-  if (type === 'head') {
-    renderType = 'head';
-    renderCrop = 'full';
-  } else if (type === 'bust') {
-    renderType = 'default';
-    renderCrop = 'bust';
-  } else if (type === 'full') {
-    renderType = 'default';
-    renderCrop = 'full';
-  } else if (type === 'isometric') {
-    renderType = 'isometric';
-    renderCrop = 'head';
-  } else if (type === 'profile') {
-    renderType = 'profile';
-    renderCrop = 'face';
-  } else if (type === 'face') {
-    renderType = 'default';
-    renderCrop = 'face';
+  
+  // Check if we should use 3D renderer
+  const is3D = type.startsWith('3d');
+  
+  // If using 3D renderer, determine the pose
+  let pose = 'idle';
+  if (is3D) {
+    if (type === '3d-walking') pose = 'walking';
+    if (type === '3d-running') pose = 'running';
+    if (type === '3d-flying') pose = 'flying';
   }
-
-  // Allow override via crop prop
-  if (crop) renderCrop = crop;
-
-  // Compose the URL
-  const starlightUrl = `https://starlightskins.lunareclipse.studio/render/${renderType}/${playerIdentifier}/${renderCrop}?scale=${size}`;
-
-  // Fallbacks (as before)
+  
+  // Compose the URL with our proxy as primary source, then fallbacks
+  const proxyUrl = `/api/minecraft/skin/${playerIdentifier}`;
+  
+  // Fallbacks (in order of preference)
   const fallbackUrls = [
-    `https://visage.surgeplay.com/face/${size}/${playerIdentifier}`,
+    `https://mineskin.eu/avatar/${playerIdentifier}/${size}`,
     `https://mc-heads.net/avatar/${playerIdentifier}/${size}`,
-    `https://minotar.net/avatar/${playerIdentifier}/${size}.png`
+    `https://minotar.net/avatar/${playerIdentifier}/${size}.png`,
+    `/minecraft-assets/steve.png` // Local fallback
   ];
 
-  const [imgSrc, setImgSrc] = React.useState(starlightUrl);
-  const [fallbackIndex, setFallbackIndex] = React.useState(0);
-
+  // Handle image load errors
   const handleError = () => {
+    console.log(`Avatar load failed for ${playerIdentifier}, trying fallback ${fallbackIndex}`);
     if (fallbackIndex < fallbackUrls.length) {
       setImgSrc(fallbackUrls[fallbackIndex]);
       setFallbackIndex(fallbackIndex + 1);
     } else {
+      console.log(`All fallbacks failed for ${playerIdentifier}, using local Steve skin`);
       setImgSrc('/minecraft-assets/steve.png');
+      setHasError(true);
     }
   };
 
-  React.useEffect(() => {
-    setImgSrc(starlightUrl);
-    setFallbackIndex(0);
-  }, [starlightUrl]);
+  // Update image source when username or properties change
+  useEffect(() => {
+    if (!is3D) {
+      // Use a reliable direct service instead of proxy
+      setImgSrc(`https://mineskin.eu/avatar/${playerIdentifier}/${size}`);
+      setFallbackIndex(0);
+      setHasError(false);
+    }
+  }, [proxyUrl, is3D, playerIdentifier, size]);
 
   // Animation variants
   const avatarVariants = animate ? {
@@ -112,6 +106,29 @@ const MinecraftAvatar = ({
     tap: { scale: 0.95 }
   } : {};
 
+  // For 3D avatars, render the 3D component
+  if (is3D) {
+    return (
+      <div className={`relative inline-block ${className}`}>
+        <MinecraftSkinViewer3D 
+          username={playerIdentifier}
+          width={size}
+          height={size}
+          pose={pose.replace('3d-', '')}
+          rotate={animate}
+          className={className}
+          onClick={onClick}
+        />
+        {showUsername && playerIdentifier && (
+          <div className="absolute -bottom-6 left-0 right-0 text-center text-sm text-white font-minecraft">
+            {playerIdentifier}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // For 2D avatars, render the image
   return (
     <div className="relative inline-block">
       <motion.div
@@ -132,7 +149,7 @@ const MinecraftAvatar = ({
         
         <img
           src={imgSrc}
-          alt={username || 'Minecraft Player'}
+          alt={playerIdentifier || 'Minecraft Player'}
           className={`w-full h-full rounded-md ${hasError ? 'opacity-70' : ''}`}
           style={{ 
             width: size, 
@@ -143,10 +160,20 @@ const MinecraftAvatar = ({
           onLoad={() => { setIsLoading(false); setHasError(false); }}
         />
         
+        {/* Show error component when image fails to load */}
+        {hasError && !isLoading && (
+          <div className="absolute inset-0">
+            <MinecraftAvatarError 
+              size={size}
+              username={playerIdentifier}
+            />
+          </div>
+        )}
+        
         {/* Username if requested */}
-        {showUsername && username && (
+        {showUsername && playerIdentifier && (
           <div className="absolute -bottom-6 left-0 right-0 text-center text-sm text-white font-minecraft">
-            {username}
+            {playerIdentifier}
           </div>
         )}
         

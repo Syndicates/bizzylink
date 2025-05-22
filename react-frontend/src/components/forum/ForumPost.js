@@ -132,7 +132,7 @@ const ForumPost = ({ post, currentUser, onReply, threadAuthorId, threadId, onThr
     
     // If for some reason the local wallpaper doesn't work, fall back to remote
     if (!document.querySelector(`img[src="/minecraft-assets/wallpapers/${wallpaperId}.jpg"]`)) {
-      wallpaperId = 'herobrine_hill';
+    wallpaperId = 'herobrine_hill';
     }
   }
   

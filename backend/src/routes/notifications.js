@@ -33,6 +33,29 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
+// Test endpoint to create a notification for the current user
+router.post('/test', protect, async (req, res) => {
+  try {
+    const user = req.user;
+    const newNotification = new Notification({
+      user: user._id,
+      message: `Test notification created at ${new Date().toLocaleTimeString()}`,
+      read: false,
+      createdAt: new Date()
+    });
+    
+    await newNotification.save();
+    res.json({ 
+      success: true, 
+      message: 'Test notification created successfully',
+      notification: newNotification
+    });
+  } catch (error) {
+    console.error('Error creating test notification:', error);
+    res.status(500).json({ success: false, error: 'Failed to create test notification' });
+  }
+});
+
 // Mark a notification as read
 router.post('/read', protect, async (req, res) => {
   try {
