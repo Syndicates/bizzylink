@@ -27,6 +27,11 @@ const eventEmitter = require('../eventEmitter');
  * GET /api/wall/:username
  */
 router.get('/:username', async (req, res) => {
+  // Prevent caching for real-time wall post updates
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
   try {
     const { username } = req.params;
     const { page = 1, limit = 10 } = req.query;
@@ -47,19 +52,27 @@ router.get('/:username', async (req, res) => {
     // Get total count
     const total = await WallPost.countDocuments({ recipient: recipient._id });
     
-    // Get wall posts with populated author data
+    // Fetch wall posts for the user, sorted by newest first (createdAt and _id)
     const posts = await WallPost.find({ recipient: recipient._id })
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 }) // Newest first by ObjectID
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('author', 'username displayName avatar mcUsername')
-      .lean();
+      .populate('author', 'username displayName avatar mcUsername');
+    
+    // Heavy debug: log IDs and createdAt of all posts being returned
+    console.log('[WALLPOST][DEBUG] Returning', posts.length, 'posts for', username);
+    posts.forEach((p, i) => {
+      console.log(`[WALLPOST][DEBUG] [${i}] _id: ${p._id}, createdAt: ${p.createdAt}`);
+    });
+    console.log('[WALLPOST][DEBUG] Pagination:', { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) });
     
     // Populate comment authors for each post
     const populatedPosts = await Promise.all(posts.map(async post => {
-      if (post.comments && post.comments.length > 0) {
+      // Always work with a plain object
+      const postObj = post.toObject ? post.toObject() : post;
+      if (postObj.comments && postObj.comments.length > 0) {
         // Get all unique author IDs from comments
-        const authorIds = [...new Set(post.comments.map(c => c.author?.toString()).filter(Boolean))];
+        const authorIds = [...new Set(postObj.comments.map(c => c.author?.toString()).filter(Boolean))];
         // Fetch all authors in one go
         const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
         const authorMap = {};
@@ -74,15 +87,38 @@ router.get('/:username', async (req, res) => {
           };
         });
         // Replace comment author IDs with full objects
-        post.comments = post.comments.map(comment => {
+        postObj.comments = await Promise.all(postObj.comments.map(async comment => {
           if (comment.author && authorMap[comment.author.toString()]) {
             return { ...comment, author: authorMap[comment.author.toString()] };
           }
-          return comment;
-        });
+          // Try to fetch the user directly if not in authorMap
+          if (comment.author) {
+            try {
+              const user = await User.findById(comment.author).select('username mcUsername minecraftUsername avatar displayName');
+              if (user) {
+                return { ...comment, author: {
+                  _id: user._id,
+                  username: user.username,
+                  mcUsername: user.mcUsername || user.minecraftUsername || user.username,
+                  minecraftUsername: user.minecraftUsername,
+                  avatar: user.avatar,
+                  displayName: user.displayName
+                }};
+              }
+            } catch (e) {
+              console.warn('[WALLPOST][DEBUG] Failed to fetch author for comment:', comment.author, e);
+            }
+          }
+          // Fallback
+          console.warn('[WALLPOST][DEBUG] Comment author not found for comment:', comment._id, 'author:', comment.author);
+          return { ...comment, author: { username: 'Unknown User', mcUsername: 'Steve' } };
+        }));
       }
-      return post;
+      return postObj;
     }));
+    
+    // Debug log the populated posts
+    console.log('[DEBUG][API] Populated posts:', JSON.stringify(populatedPosts, null, 2));
     
     // Return response
     res.json({
@@ -152,10 +188,73 @@ router.post('/:username', protect, async (req, res) => {
     await newPost.save();
     
     // Populate author data for response
-    const populatedPost = await WallPost.findById(newPost._id)
-      .populate('author', 'username displayName avatar mcUsername')
-      .lean();
-    
+    const rawPost = await WallPost.findById(newPost._id)
+      .populate('author', 'username displayName avatar mcUsername');
+    let populatedPost = rawPost;
+    if (rawPost.comments && rawPost.comments.length > 0) {
+      const authorIds = [...new Set(rawPost.comments.map(c => c.author?.toString()).filter(Boolean))];
+      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
+      const authorMap = {};
+      authors.forEach(a => {
+        authorMap[a._id.toString()] = {
+          _id: a._id,
+          username: a.username,
+          mcUsername: a.mcUsername || a.minecraftUsername || a.username,
+          minecraftUsername: a.minecraftUsername,
+          avatar: a.avatar,
+          displayName: a.displayName
+        };
+      });
+      populatedPost = rawPost.toObject ? rawPost.toObject() : rawPost;
+      populatedPost.comments = rawPost.comments.map(comment => {
+        if (comment.author && authorMap[comment.author.toString()]) {
+          return { ...comment.toObject(), author: authorMap[comment.author.toString()] };
+        }
+        return comment.toObject ? comment.toObject() : comment;
+      });
+    }
+
+    // Create notification for recipient (if not self-post)
+    if (recipient._id.toString() !== req.user._id.toString()) {
+      try {
+        const notification = await Notification.create({
+          recipient: recipient._id,
+          sender: req.user._id,
+          type: 'WALL_POST',
+          message: `${req.user.username} posted on your wall!`,
+          data: { postId: newPost._id },
+          createdAt: new Date()
+        });
+        console.log('[WALL POST] Created notification:', notification);
+        // Emit SSE userEvent for real-time notification
+        const ssePayload = {
+          userId: recipient._id.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'WALL_POST',
+            sender: { _id: req.user._id, username: req.user.username },
+            message: `${req.user.username} posted on your wall!`,
+            postId: newPost._id,
+            createdAt: new Date()
+          }
+        };
+        console.log('[SSE][WALL_POST] Emitting userEvent for wall post:', ssePayload);
+        eventEmitter.emit('userEvent', ssePayload);
+      } catch (e) { console.error('[WALL POST] Failed to create wall post notification:', e); }
+    }
+
+    // Emit real-time wall_post event for frontend real-time updates
+    setTimeout(() => {
+      // Broadcast to all clients, include wallOwnerUsername
+      eventEmitter.emit('wall_post', {
+        type: 'new_post',
+        post: populatedPost,
+        wallOwnerUsername: username, // the wall being posted on
+        authorUsername: req.user.username
+      });
+    }, 200);
+
     res.status(201).json({
       success: true,
       post: populatedPost
@@ -200,7 +299,29 @@ router.delete('/post/:postId', protect, async (req, res) => {
     
     // Delete the post
     await WallPost.findByIdAndDelete(postId);
-    
+
+    // Emit real-time wall_post event for frontend real-time updates
+    if (post) {
+      // Find wall owner username
+      let wallOwnerUsername;
+      try {
+        const wallOwnerUser = await User.findById(post.recipient).select('username');
+        wallOwnerUsername = wallOwnerUser ? wallOwnerUser.username : undefined;
+      } catch (e) { wallOwnerUsername = undefined; }
+      // Find author username
+      let authorUsername;
+      try {
+        const authorUser = await User.findById(post.author).select('username');
+        authorUsername = authorUser ? authorUser.username : undefined;
+      } catch (e) { authorUsername = undefined; }
+      eventEmitter.emit('wall_post', {
+        type: 'delete_post',
+        postId: postId,
+        wallOwnerUsername,
+        authorUsername
+      });
+    }
+
     res.json({
       success: true,
       message: 'Post deleted successfully'
@@ -222,31 +343,25 @@ router.post('/post/:postId/like', protect, async (req, res) => {
   console.log('[WALL LIKE] Like endpoint hit by user:', req.user.username, 'userId:', req.user._id.toString(), 'for post:', req.params.postId);
   try {
     const { postId } = req.params;
-    
     // Verify post exists
     const post = await WallPost.findById(postId);
-    
     if (!post) {
       return res.status(404).json({ 
         success: false, 
         error: 'Post not found' 
       });
     }
-    
     // Check if user already liked the post
     const alreadyLiked = post.likes.some(like => like.toString() === req.user._id.toString());
-    
     if (alreadyLiked) {
       return res.json({
         success: true,
         message: 'Post already liked'
       });
     }
-    
     // Add like
     post.likes.push(req.user._id);
     await post.save();
-    
     // Notify the original poster if not self-like
     console.log('[WALL LIKE] post.author:', post.author.toString(), 'req.user._id:', req.user._id.toString());
     if (post.author.toString() !== req.user._id.toString()) {
@@ -258,33 +373,37 @@ router.post('/post/:postId/like', protect, async (req, res) => {
           type: 'WALL_LIKE',
           data: { postId: post._id },
         });
-        // Log eventEmitter type before emit
-        console.log('[WALL LIKE] eventEmitter:', typeof eventEmitter, 'emit:', typeof eventEmitter?.emit);
-        // Emit SSE event for real-time notification
-        if (eventEmitter && typeof eventEmitter.emit === 'function') {
-          console.log('[WALL LIKE] Emitting SSE notification for user:', post.author.toString(), 'postId:', post._id.toString());
-          eventEmitter.emit('userEvent', {
-            userId: post.author.toString(),
-            event: 'notification',
-            data: {
-              subtype: 'WALL_LIKE',
-              sender: {
-                _id: req.user._id,
-                username: req.user.username,
-                mcUsername: req.user.mcUsername || req.user.minecraftUsername || req.user.username,
-                avatar: req.user.avatar
-              },
-              message: `${req.user.username} liked your wall post!`,
-              postId: post._id,
-              createdAt: new Date()
-            }
-          });
-        }
+        // Emit SSE userEvent for real-time notification (to post author only)
+        const ssePayload = {
+          userId: post.author.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'WALL_LIKE',
+            sender: { _id: req.user._id, username: req.user.username },
+            message: `${req.user.username} liked your wall post!`,
+            postId: post._id,
+            createdAt: new Date()
+          }
+        };
+        console.log('[SSE][WALL_LIKE] Emitting userEvent for wall like:', ssePayload);
+        eventEmitter.emit('userEvent', ssePayload);
       } catch (e) { console.error('Failed to create wall like notification:', e); }
     } else {
       console.log('[WALL LIKE] Skipping notification emit: self-like detected.');
     }
-    
+    // --- PATCH: Emit real-time wall_like event to ALL clients for instant UI updates ---
+    try {
+      // Find wall owner username
+      const wallOwnerUser = await User.findById(post.recipient).select('username');
+      const wallOwnerUsername = wallOwnerUser ? wallOwnerUser.username : undefined;
+      eventEmitter.emit('wall_like', {
+        type: 'like_added',
+        postId: post._id.toString(),
+        wallOwnerUsername,
+        liker: { _id: req.user._id, username: req.user.username }
+      });
+    } catch (e) { console.error('[SSE][WALL_LIKE] Failed to emit wall_like event:', e); }
     res.json({
       success: true,
       message: 'Post liked successfully'
@@ -305,21 +424,29 @@ router.post('/post/:postId/like', protect, async (req, res) => {
 router.post('/post/:postId/unlike', protect, async (req, res) => {
   try {
     const { postId } = req.params;
-    
     // Verify post exists
     const post = await WallPost.findById(postId);
-    
     if (!post) {
       return res.status(404).json({ 
         success: false, 
         error: 'Post not found' 
       });
     }
-    
     // Remove like
     post.likes = post.likes.filter(like => like.toString() !== req.user._id.toString());
     await post.save();
-    
+    // --- PATCH: Emit real-time wall_like event to ALL clients for instant UI updates ---
+    try {
+      // Find wall owner username
+      const wallOwnerUser = await User.findById(post.recipient).select('username');
+      const wallOwnerUsername = wallOwnerUser ? wallOwnerUser.username : undefined;
+      eventEmitter.emit('wall_like', {
+        type: 'like_removed',
+        postId: post._id.toString(),
+        wallOwnerUsername,
+        liker: { _id: req.user._id, username: req.user.username }
+      });
+    } catch (e) { console.error('[SSE][WALL_LIKE] Failed to emit wall_like event (unlike):', e); }
     res.json({
       success: true,
       message: 'Post unliked successfully'
@@ -381,10 +508,37 @@ router.post('/system', protect, async (req, res) => {
     
     await systemPost.save();
     
+    // Populate author data for response
+    const rawPost = await WallPost.findById(systemPost._id)
+      .populate('author', 'username displayName avatar mcUsername');
+    let populatedPost = rawPost;
+    if (rawPost.comments && rawPost.comments.length > 0) {
+      const authorIds = [...new Set(rawPost.comments.map(c => c.author?.toString()).filter(Boolean))];
+      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
+      const authorMap = {};
+      authors.forEach(a => {
+        authorMap[a._id.toString()] = {
+          _id: a._id,
+          username: a.username,
+          mcUsername: a.mcUsername || a.minecraftUsername || a.username,
+          minecraftUsername: a.minecraftUsername,
+          avatar: a.avatar,
+          displayName: a.displayName
+        };
+      });
+      populatedPost = rawPost.toObject ? rawPost.toObject() : rawPost;
+      populatedPost.comments = rawPost.comments.map(comment => {
+        if (comment.author && authorMap[comment.author.toString()]) {
+          return { ...comment.toObject(), author: authorMap[comment.author.toString()] };
+        }
+        return comment.toObject ? comment.toObject() : comment;
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'System post created successfully',
-      post: systemPost
+      post: populatedPost
     });
   } catch (error) {
     console.error('Error creating system wall post:', error);
@@ -431,7 +585,10 @@ router.post('/post/:postId/comment', protect, async (req, res) => {
     };
     post.comments.push(comment);
     await post.save();
-    await post.populate('comments.author', 'username displayName avatar mcUsername');
+    // Always refetch and populate comments.author for the response
+    const refetchedPost = await WallPost.findById(post._id)
+      .populate('comments.author', 'username displayName avatar mcUsername');
+    res.json({ success: true, comments: refetchedPost.comments });
 
     // Notify the original poster if not self-comment
     if (post.author.toString() !== req.user._id.toString()) {
@@ -443,26 +600,21 @@ router.post('/post/:postId/comment', protect, async (req, res) => {
           type: 'WALL_COMMENT',
           data: { postId: post._id },
         });
-        // Emit SSE event for real-time notification
-        if (eventEmitter && typeof eventEmitter.emit === 'function') {
-          console.log('[WALL COMMENT] Emitting SSE notification for user:', post.author.toString(), 'postId:', post._id.toString());
-          eventEmitter.emit('userEvent', {
-            userId: post.author.toString(),
-            event: 'notification',
-            data: {
-              subtype: 'WALL_COMMENT',
-              sender: {
-                _id: req.user._id,
-                username: req.user.username,
-                mcUsername: req.user.mcUsername || req.user.minecraftUsername || req.user.username,
-                avatar: req.user.avatar
-              },
-              message: `${req.user.username} commented on your wall post!`,
-              postId: post._id,
-              createdAt: new Date()
-            }
-          });
-        }
+        // Emit SSE userEvent for real-time notification
+        const ssePayload = {
+          userId: post.author.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'WALL_COMMENT',
+            sender: { _id: req.user._id, username: req.user.username },
+            message: `${req.user.username} commented on your wall post!`,
+            postId: post._id,
+            createdAt: new Date()
+          }
+        };
+        console.log('[SSE][WALL_COMMENT] Emitting userEvent for wall comment:', ssePayload);
+        eventEmitter.emit('userEvent', ssePayload);
       } catch (e) { console.error('Failed to create wall comment notification:', e); }
     }
 
@@ -487,32 +639,39 @@ router.post('/post/:postId/comment', protect, async (req, res) => {
               type: 'WALL_MENTION',
               data: { postId: post._id },
             });
-            // Emit SSE event for real-time notification
-            if (eventEmitter && typeof eventEmitter.emit === 'function') {
-              console.log('[WALL MENTION] Emitting SSE notification for user:', mentionedUser._id.toString(), 'postId:', post._id.toString());
-              eventEmitter.emit('userEvent', {
-                userId: mentionedUser._id.toString(),
-                event: 'notification',
-                data: {
-                  subtype: 'WALL_MENTION',
-                  sender: {
-                    _id: req.user._id,
-                    username: req.user.username,
-                    mcUsername: req.user.mcUsername || req.user.minecraftUsername || req.user.username,
-                    avatar: req.user.avatar
-                  },
-                  message: `${req.user.username} mentioned you in a wall post comment!`,
-                  postId: post._id,
-                  createdAt: new Date()
-                }
-              });
-            }
+            // Emit SSE userEvent for real-time notification
+            const ssePayload = {
+              userId: mentionedUser._id.toString(),
+              event: 'notification',
+              data: {
+                type: 'notification',
+                subtype: 'WALL_MENTION',
+                sender: { _id: req.user._id, username: req.user.username },
+                message: `${req.user.username} mentioned you in a wall post comment!`,
+                postId: post._id,
+                createdAt: new Date()
+              }
+            };
+            console.log('[SSE][WALL_MENTION] Emitting userEvent for wall mention:', ssePayload);
+            eventEmitter.emit('userEvent', ssePayload);
           } catch (e) { console.error('Failed to create wall mention notification:', e); }
         }
       }
     }
 
-    res.json({ success: true, comments: post.comments });
+    // After saving a comment, refetch the post and emit wall_comment event
+    try {
+      const refetchedPost = await WallPost.findById(post._id)
+        .populate('comments.author', 'username displayName avatar mcUsername');
+      const wallOwnerUsername = (await User.findById(post.recipient)).username;
+      console.log('[WALL_COMMENT][DEBUG] Emitting wall_comment event after response (refetched):', post._id.toString());
+      eventEmitter.emit('wall_comment', {
+        type: 'comment_added',
+        postId: post._id.toString(),
+        wallOwnerUsername,
+        comment: refetchedPost.comments[refetchedPost.comments.length - 1] // the newly added comment
+      });
+    } catch (e) { console.error('[SSE][WALL_COMMENT] Failed to emit wall_comment event:', e); }
   } catch (error) {
     console.error('Error adding comment:', error);
     res.status(500).json({ success: false, error: 'Failed to add comment' });
@@ -547,9 +706,80 @@ router.delete('/post/:postId/comment/:commentId', protect, async (req, res) => {
     // Now populate for the response
     await post.populate('comments.author', 'username displayName avatar mcUsername');
     res.json({ success: true, comments: post.comments });
+
+    // After deleting a comment, refetch the post and emit wall_comment event
+    try {
+      const refetchedPost = await WallPost.findById(post._id)
+        .populate('comments.author', 'username displayName avatar mcUsername');
+      const wallOwnerUsername = (await User.findById(post.recipient)).username;
+      console.log('[WALL_COMMENT][DEBUG] Emitting wall_comment event (delete) after response (refetched):', post._id.toString());
+      eventEmitter.emit('wall_comment', {
+        type: 'comment_deleted',
+        postId: post._id.toString(),
+        wallOwnerUsername,
+        commentId: commentId,
+        comments: refetchedPost.comments // send updated comments array for extra safety
+      });
+    } catch (e) { console.error('[SSE][WALL_COMMENT] Failed to emit wall_comment event (delete):', e); }
   } catch (error) {
     console.error('Error deleting comment:', error);
     res.status(500).json({ success: false, error: 'Failed to delete comment' });
+  }
+});
+
+/**
+ * Bulk delete wall posts for a user
+ * DELETE /api/wall/:username/bulk-delete
+ * Body: { postIds: [array of post IDs] }
+ */
+router.delete('/:username/bulk-delete', protect, async (req, res) => {
+  try {
+    const { username } = req.params;
+    const { postIds } = req.body;
+    if (!Array.isArray(postIds) || postIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'No post IDs provided.' });
+    }
+    // Find the profile owner
+    const user = await User.findOne({ username }).select('_id');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+    // Only allow the profile owner or admin to delete
+    if (req.user._id.toString() !== user._id.toString() && req.user.webRank !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Not authorized.' });
+    }
+    const deleted = [];
+    const failed = [];
+    for (const postId of postIds) {
+      const post = await WallPost.findById(postId);
+      if (!post) {
+        failed.push(postId);
+        continue;
+      }
+      // Only allow deleting posts on this wall
+      if (post.recipient.toString() !== user._id.toString()) {
+        failed.push(postId);
+        continue;
+      }
+      await WallPost.findByIdAndDelete(postId);
+      // Emit real-time delete event (reuse your existing logic)
+      let authorUsername;
+      try {
+        const authorUser = await User.findById(post.author).select('username');
+        authorUsername = authorUser ? authorUser.username : undefined;
+      } catch (e) { authorUsername = undefined; }
+      eventEmitter.emit('wall_post', {
+        type: 'delete_post',
+        postId,
+        wallOwnerUsername: username,
+        authorUsername
+      });
+      deleted.push(postId);
+    }
+    res.json({ success: true, deleted, failed });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    res.status(500).json({ success: false, error: 'Bulk delete failed.' });
   }
 });
 

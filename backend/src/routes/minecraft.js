@@ -21,6 +21,7 @@ const { SecurityLog } = require('../models/SecurityLog');
 const ErrorResponse = require('../utils/errorResponse');
 const LuckPermsSync = require('../services/LuckPermsSync');
 const { v4: uuidv4 } = require('uuid');
+const eventEmitter = require('../eventEmitter');
 
 // Add debugLog utility for conditional debug output if not already present
 const isDebug = process.env.DEBUG_LOGS === 'true';
@@ -233,10 +234,10 @@ router.post('/link/verify', async (req, res, next) => {
     };
     
     // 1. Emit SSE event via eventEmitter (primary method)
-    if (global.eventEmitter) {
+    if (eventEmitter) {
       debugLog(`[LINK VERIFY] Emitting minecraft_linked event via eventEmitter for user ${user._id}`);
       try {
-        global.eventEmitter.emit('userEvent', { 
+        eventEmitter.emit('userEvent', { 
           userId: user._id.toString(), 
           event: 'minecraft_linked', 
           data: eventPayload 
@@ -246,7 +247,7 @@ router.post('/link/verify', async (req, res, next) => {
         debugLog('[LINK VERIFY] Error emitting event via eventEmitter:', emitError);
       }
     } else {
-      debugLog('[LINK VERIFY] global.eventEmitter not available!');
+      debugLog('[LINK VERIFY] eventEmitter not available!');
     }
     
     // 2. Also emit traditional notification to user

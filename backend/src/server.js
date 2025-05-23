@@ -407,6 +407,55 @@ if (eventEmitter && eventEmitter.on) {
       global.sendSseToUser(payload.userId, eventData);
     }
   });
+  // --- Add wall_post event handler for real-time wall post updates ---
+  eventEmitter.on('wall_post', (eventData) => {
+    // Broadcast to all SSE clients in sseUserClients
+    if (typeof sseUserClients !== 'undefined' && sseUserClients.size > 0) {
+      for (const [clientId, client] of sseUserClients.entries()) {
+        console.log('[SSE] Broadcasting wall_post event to client', clientId, ':', eventData);
+        try {
+          client.res.write(`data: ${JSON.stringify({ type: 'wall_post', ...eventData })}\n\n`);
+        } catch (err) {
+          sseUserClients.delete(clientId);
+          console.error(`[SSE] Failed to write wall_post event to clientId: ${clientId}`, err);
+        }
+      }
+    } else {
+      console.warn('[SSE] No sseUserClients found for wall_post broadcast');
+    }
+  });
+  // --- Add wall_comment event handler for real-time wall post comment updates ---
+  eventEmitter.on('wall_comment', (eventData) => {
+    if (typeof sseUserClients !== 'undefined' && sseUserClients.size > 0) {
+      for (const [clientId, client] of sseUserClients.entries()) {
+        console.log('[SSE] Broadcasting wall_comment event to client', clientId, ':', eventData);
+        try {
+          client.res.write(`data: ${JSON.stringify({ type: 'wall_comment', ...eventData })}\n\n`);
+        } catch (err) {
+          sseUserClients.delete(clientId);
+          console.error(`[SSE] Failed to write wall_comment event to clientId: ${clientId}`, err);
+        }
+      }
+    } else {
+      console.warn('[SSE] No sseUserClients found for wall_comment broadcast');
+    }
+  });
+  // --- Add wall_like event handler for real-time wall post like updates ---
+  eventEmitter.on('wall_like', (eventData) => {
+    if (typeof sseUserClients !== 'undefined' && sseUserClients.size > 0) {
+      for (const [clientId, client] of sseUserClients.entries()) {
+        console.log('[SSE] Broadcasting wall_like event to client', clientId, ':', eventData);
+        try {
+          client.res.write(`data: ${JSON.stringify({ type: 'wall_like', ...eventData })}\n\n`);
+        } catch (err) {
+          sseUserClients.delete(clientId);
+          console.error(`[SSE] Failed to write wall_like event to clientId: ${clientId}`, err);
+        }
+      }
+    } else {
+      console.warn('[SSE] No sseUserClients found for wall_like broadcast');
+    }
+  });
   // Direct test emit to verify handler
   eventEmitter.emit('userEvent', {
     userId: '682a55afa6dbf5d8f6950d88',

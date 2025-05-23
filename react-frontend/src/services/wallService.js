@@ -112,6 +112,7 @@ class WallService {
       };
     }
     
+    console.log('[DEBUG][WallService] API response posts:', response.posts.map(p => ({ id: p._id, content: p.content })));
     console.log(`[WallService] Returning ${response.posts.length} posts for ${username}`);
     return response;
   }
@@ -238,6 +239,22 @@ class WallService {
     if (!postId || !commentId) throw new Error('Post ID and comment ID are required');
     const response = await this.#makeRequest('DELETE', `/api/wall/post/${postId}/comment/${commentId}`);
     return response;
+  }
+
+  /**
+   * Get a single wall post by its ID
+   * @param {string} postId - ID of the post to fetch
+   * @returns {Promise} - The post object
+   */
+  static async getWallPostById(postId) {
+    if (!postId) {
+      throw new Error('Post ID is required');
+    }
+    const response = await this.#makeRequest('GET', `/api/wall/post/${postId}`);
+    // Normalize response
+    if (response && response.post) return response.post;
+    if (response && response.data && response.data.post) return response.data.post;
+    return null;
   }
 }
 

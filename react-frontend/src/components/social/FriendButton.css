@@ -5,7 +5,7 @@
  * +-------------------------------------------------+
  * 
  * @file FriendButton.css
- * @description 
+ * @description Modern, minimal, animated styles for friend action buttons
  * @copyright © Bizzy Nation - All Rights Reserved
  * @license Proprietary - Not for distribution
  * 
@@ -13,95 +13,89 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-.friend-button-wrapper {
+.friend-btn-wrapper {
   display: inline-block;
   position: relative;
 }
 
-.friend-button {
+.friend-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0.5em;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  padding: 6px 16px;
-}
-
-.friend-button.small {
-  padding: 4px 8px;
-  font-size: 0.875rem;
-}
-
-.friend-button.medium {
-  padding: 6px 16px;
+  border-radius: 999px;
+  font-weight: 600;
   font-size: 1rem;
+  padding: 0.5em 1.5em;
+  min-width: 130px;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+  transition: box-shadow 0.18s, transform 0.18s, background 0.18s, color 0.18s;
+  outline: none;
+  cursor: pointer;
+  background: #23272f;
+  color: #eaf6ff;
 }
 
-.friend-button.large {
-  padding: 8px 24px;
-  font-size: 1.125rem;
+.friend-btn-add {
+  background: #0891b2;
+  color: #fff;
+}
+.friend-btn-add:hover, .friend-btn-add:focus {
+  background: #0ea5e9;
+  box-shadow: 0 4px 16px 0 rgba(14,165,233,0.15);
+  transform: scale(1.04);
 }
 
-.friend-button.primary {
-  background-color: #1976d2;
-  color: white;
+.friend-btn-remove {
+  background: #ef4444;
+  color: #fff;
+}
+.friend-btn-remove:hover, .friend-btn-remove:focus {
+  background: #dc2626;
+  box-shadow: 0 4px 16px 0 rgba(239,68,68,0.15);
+  transform: scale(1.04);
 }
 
-.friend-button.primary:hover {
-  background-color: #1565c0;
+.friend-btn-accept {
+  background: #22c55e;
+  color: #fff;
+}
+.friend-btn-accept:hover, .friend-btn-accept:focus {
+  background: #16a34a;
+  box-shadow: 0 4px 16px 0 rgba(34,197,94,0.15);
+  transform: scale(1.04);
 }
 
-.friend-button.error {
-  background-color: #d32f2f;
-  color: white;
+.friend-btn-cancel {
+  background: #64748b;
+  color: #fff;
+}
+.friend-btn-cancel:hover, .friend-btn-cancel:focus {
+  background: #334155;
+  box-shadow: 0 4px 16px 0 rgba(100,116,139,0.15);
+  transform: scale(1.04);
 }
 
-.friend-button.error:hover {
-  background-color: #c62828;
+.friend-btn:active {
+  transform: scale(0.97);
 }
 
-.friend-button.warning {
-  background-color: #ed6c02;
-  color: white;
-}
-
-.friend-button.warning:hover {
-  background-color: #e65100;
-}
-
-.friend-button.success {
-  background-color: #2e7d32;
-  color: white;
-}
-
-.friend-button.success:hover {
-  background-color: #1b5e20;
-}
-
-.friend-button:disabled {
-  background-color: #e0e0e0;
-  color: #9e9e9e;
+.friend-btn:disabled, .friend-btn-loading {
+  background: #374151;
+  color: #a1a1aa;
   cursor: not-allowed;
-}
-
-.friend-button.loading {
   opacity: 0.7;
-  cursor: wait;
+  box-shadow: none;
 }
 
-.friend-button .icon {
+.friend-btn .icon {
+  display: flex;
+  align-items: center;
   font-size: 1.2em;
   line-height: 1;
 }
 
-.friend-button.small .icon {
-  font-size: 1em;
-}
-
-.friend-button .text {
+.friend-btn .text {
   line-height: 1.2;
 } 

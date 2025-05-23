@@ -55,7 +55,8 @@ import {
   TrophyIcon,
   CheckIcon,
   UserPlusIcon,
-  XMarkIcon
+  XMarkIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline';
 import AnimatedPlayerStats from '../components/AnimatedPlayerStats';
 // Import WallService after all React, UI and context imports
@@ -65,6 +66,7 @@ import { SocialService } from '../services/api';
 import { timeAgo, formatDate } from '../utils/timeUtils';
 // Import the useSocialStats hook after all service imports
 import useSocialStats from '../hooks/useSocialStats';
+import { useEventSource } from '../contexts/EventSourceContext';
 
 // Using imported timeAgo from utils
 
@@ -637,10 +639,11 @@ const Profile = () => {
   const { 
     getRelationship = async () => ({ status: 'not_friends', following: false }),
     friendRequests = [],
-    handleFriendRequest,
-    handleFriendRequestResponse,
-    handleFollow,
-    handleUnfollow
+    sendFriendRequest,
+    acceptFriendRequest,
+    rejectFriendRequest,
+    followUser,
+    unfollowUser
   } = socialContext;
   
   // Custom hooks
@@ -678,6 +681,15 @@ const Profile = () => {
   const [commentLoading, setCommentLoading] = useState({}); // { [postId]: false }
   const [commentError, setCommentError] = useState({}); // { [postId]: "" }
   const [expandedComments, setExpandedComments] = useState({});
+  const [wallPostsRefreshKey, setWallPostsRefreshKey] = useState(0);
+  const { addEventListener, isConnected } = useEventSource();
+  // --- Moved up to fix React Hook order ---
+  const [showManagePostsModal, setShowManagePostsModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState('');
+  
+  const profileUserRef = useRef();
+  const userRef = useRef();
   
   // Check if profile should be displayed - Setting this at the top level
   const shouldDisplayProfile = username || user?.username;
@@ -845,32 +857,19 @@ const Profile = () => {
             const userAccountName = userProfileData.username;
             const userMinecraftName = userProfileData.mcUsername;
             console.log(`Getting relationship for user ${userAccountName} (MC: ${userMinecraftName})`);
-            // Use a rate-limited API call with cache
-            const cacheKey = `relationship_${userAccountName}_${Date.now() - (Date.now() % 300000)}`; // Cache key with 5-minute granularity
-            const cachedRelationship = sessionStorage.getItem(cacheKey);
-            if (cachedRelationship) {
-              relationshipData = JSON.parse(cachedRelationship);
-              console.log('Using cached relationship data:', relationshipData);
-            } else {
-              try {
-                // Fetch relationship with timeout
-                const fetchRelationshipPromise = getRelationship(userAccountName, userMinecraftName);
-                const timeoutPromise = new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error('Relationship fetch timeout')), 3000)
-                );
-                const relationshipResponse = await Promise.race([fetchRelationshipPromise, timeoutPromise]);
+            try {
+              // Always fetch from API
+              const relationshipResponse = await getRelationship(userAccountName, userMinecraftName);
                 console.log('API relationship response:', relationshipResponse);
                 if (relationshipResponse) {
                   relationshipData = {
                     status: relationshipResponse.status || 'not_friends',
-                    following: relationshipResponse.following || false
+                  following: relationshipResponse.following || false,
+                  followsYou: relationshipResponse.followsYou || false
                   };
-                  // Cache the relationship data
-                  sessionStorage.setItem(cacheKey, JSON.stringify(relationshipData));
                 }
               } catch (err) {
                 console.warn('Error fetching relationship, using default');
-              }
             }
             if (isMounted) {
               setRelationship(relationshipData);
@@ -999,6 +998,11 @@ const Profile = () => {
     // We need to include the shouldDisplayProfile, username, and user deps
     // but exclude getRelationship as it can change between renders and cause issues
   }, [user, username, shouldDisplayProfile]);
+  
+  useEffect(() => {
+    profileUserRef.current = profileUser;
+    userRef.current = user;
+  }, [profileUser, user]);
   
   // Listen for minecraft_linked events to refresh the profile
   useEffect(() => {
@@ -1189,6 +1193,9 @@ const Profile = () => {
   const refreshWallPosts = async () => {
     console.log('[DEBUG] refreshWallPosts called');
     if (!username) return;
+
+    // Always reset to page 1 before fetching
+    setWallPage(1);
     
     try {
       setWallLoading(true);
@@ -1207,7 +1214,7 @@ const Profile = () => {
       
       console.log('[Profile] Refreshing wall posts for', username);
       const res = await WallService.getWallPosts(username, 1, 10);
-      console.log('[Profile] Wall posts refresh response:', res);
+      console.log('[Profile][SSE] Wall posts refresh response:', res);
       
       let postsToSet = [];
       
@@ -1293,71 +1300,64 @@ const Profile = () => {
   
   // Fetch wall posts for the profile user
   useEffect(() => {
+    if (isConnected && user && username) {
     fetchWallPosts();
-  }, [fetchWallPosts]);
+    }
+  }, [isConnected, user, username, fetchWallPosts]);
   
   // Friend request handlers
-  const handleSendFriendRequest = async (targetUserId) => {
+  const handleSendFriendRequest = async (username) => {
     try {
-      await handleFriendRequest(targetUserId);
-      setRelationship(prev => ({ ...prev, status: 'pending_sent' }));
-      setNotification({
-        show: true,
-        type: 'success',
-        message: 'Friend request sent!'
-      });
+      await sendFriendRequest(username);
+      setNotification({ show: true, type: 'success', message: 'Friend request sent!' });
       socialStats.refetch();
+      invalidateRelationshipCache(username);
     } catch (error) {
-      setNotification({
-        show: true,
-        type: 'error',
-        message: 'Failed to send friend request'
-      });
+      setNotification({ show: true, type: 'error', message: 'Failed to send friend request' });
+    } finally {
+      if (profileUser?.username) {
+        const updated = await getRelationship(profileUser.username, profileUser.mcUsername);
+        setRelationship(updated);
+      }
     }
   };
   
-  const handleAcceptFriendRequest = async (targetUserId) => {
+  const handleAcceptFriendRequest = async (username) => {
     try {
-      await handleFriendRequestResponse(targetUserId, 'accept');
-      setRelationship(prev => ({ ...prev, status: 'friends' }));
-      setNotification({
-        show: true,
-        type: 'success',
-        message: 'Friend request accepted!'
-      });
+      await acceptFriendRequest(username);
+      setNotification({ show: true, type: 'success', message: 'Friend request accepted!' });
       socialStats.refetch();
+      invalidateRelationshipCache(username);
     } catch (error) {
-      setNotification({
-        show: true,
-        type: 'error',
-        message: 'Failed to accept friend request'
-      });
+      setNotification({ show: true, type: 'error', message: 'Failed to accept friend request' });
+    } finally {
+      if (profileUser?.username) {
+        const updated = await getRelationship(profileUser.username, profileUser.mcUsername);
+        setRelationship(updated);
+      }
     }
   };
   
-  const handleRejectFriendRequest = async (targetUserId) => {
+  const handleRejectFriendRequest = async (username) => {
     try {
-      await handleFriendRequestResponse(targetUserId, 'reject');
-      setRelationship(prev => ({ ...prev, status: 'not_friends' }));
-      setNotification({
-        show: true,
-        type: 'success',
-        message: 'Friend request declined'
-      });
+      await rejectFriendRequest(username);
+      setNotification({ show: true, type: 'success', message: 'Friend request declined' });
       socialStats.refetch();
+      invalidateRelationshipCache(username);
     } catch (error) {
-      setNotification({
-        show: true,
-        type: 'error',
-        message: 'Failed to decline friend request'
-      });
+      setNotification({ show: true, type: 'error', message: 'Failed to decline friend request' });
+    } finally {
+      if (profileUser?.username) {
+        const updated = await getRelationship(profileUser.username, profileUser.mcUsername);
+        setRelationship(updated);
+      }
     }
   };
   
   // Follow handlers
-  const handleFollowUser = async (targetUserId) => {
+  const handleFollowUser = async (username) => {
     try {
-      await handleFollow(targetUserId);
+      await followUser(username);
       setRelationship(prev => ({ ...prev, following: true }));
       setNotification({
         show: true,
@@ -1365,18 +1365,26 @@ const Profile = () => {
         message: `Now following ${profileUser?.username}`
       });
       socialStats.refetch();
+      invalidateRelationshipCache(username);
     } catch (error) {
+      console.error('[Profile] Failed to follow user:', error, error?.response?.data, { username });
       setNotification({
         show: true,
         type: 'error',
         message: 'Failed to follow user'
       });
+      console.debug('[Profile] Toast error: Failed to follow user', { error, username });
+    } finally {
+      if (profileUser?.username) {
+        const updated = await getRelationship(profileUser.username, profileUser.mcUsername);
+        setRelationship(updated);
+      }
     }
   };
   
-  const handleUnfollowUser = async (targetUserId) => {
+  const handleUnfollowUser = async (username) => {
     try {
-      await handleUnfollow(targetUserId);
+      await unfollowUser(username);
       setRelationship(prev => ({ ...prev, following: false }));
       setNotification({
         show: true,
@@ -1384,12 +1392,20 @@ const Profile = () => {
         message: `Unfollowed ${profileUser?.username}`
       });
       socialStats.refetch();
+      invalidateRelationshipCache(username);
     } catch (error) {
+      console.error('[Profile] Failed to unfollow user:', error, error?.response?.data, { username });
       setNotification({
         show: true,
         type: 'error',
         message: 'Failed to unfollow user'
       });
+      console.debug('[Profile] Toast error: Failed to unfollow user', { error, username });
+    } finally {
+      if (profileUser?.username) {
+        const updated = await getRelationship(profileUser.username, profileUser.mcUsername);
+        setRelationship(updated);
+      }
     }
   };
   
@@ -1413,7 +1429,7 @@ const Profile = () => {
     
     try {
       // Try to get real friends data first
-      const response = await SocialService.getFriends(username);
+      const response = await SocialService.getFriends();
       if (response && response.data && Array.isArray(response.data.friends)) {
         // Cache the response
         try {
@@ -1735,7 +1751,7 @@ const Profile = () => {
   const handleLikeWallPost = async (postId) => {
     try {
       await WallService.likeWallPost(postId);
-      setWallPosts(wallPosts.map(post => post._id === postId ? { ...post, likes: [...(post.likes || []), user._id] } : post));
+      await fetchWallPostsDirectly(); // Always refetch after like
     } catch (err) {
       setWallError(err.message || 'Failed to like wall post');
     }
@@ -1745,7 +1761,7 @@ const Profile = () => {
   const handleUnlikeWallPost = async (postId) => {
     try {
       await WallService.unlikeWallPost(postId);
-      setWallPosts(wallPosts.map(post => post._id === postId ? { ...post, likes: (post.likes || []).filter(id => id !== user._id) } : post));
+      await fetchWallPostsDirectly(); // Always refetch after unlike
     } catch (err) {
       setWallError(err.message || 'Failed to unlike wall post');
     }
@@ -1791,15 +1807,43 @@ const Profile = () => {
     console.log('[Profile] About to render', wallPosts.length, 'posts, array:', JSON.stringify(wallPosts.map(p => ({ id: p._id, author: p.author?.username }))));
   }, [wallPosts]);
   
-  const renderedWallPosts = useMemo(() => wallPosts.map((post, index) => {
-    // Enhanced null check for post and post.author
-    if (!post) {
-      console.warn('[Profile] Null post encountered at index', index);
-      return null; // Skip rendering this post
+  // Unified, smoother wall post animation variants
+  const postVariants = {
+    hidden: { opacity: 0, y: 30, scale: 0.98 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { type: 'spring', stiffness: 300, damping: 35, mass: 0.9 }
+    },
+    exit: {
+      opacity: 0,
+      y: -20,
+      scale: 0.95,
+      transition: { type: 'spring', stiffness: 300, damping: 35, mass: 0.9, duration: 0.35, ease: 'easeInOut' }
     }
+  };
+
+  // Smoother, more relaxed stagger for wall posts (applies to both enter and exit)
+  const staggerContainer = {
+    visible: { transition: { staggerChildren: 0.12 } },
+    exit: { transition: { staggerChildren: 0.12 } },
+    hidden: {}
+  };
+
+  // Render wall posts with a single AnimatePresence and motion.div, layout everywhere, unique keys, and mode='wait'
+  const renderedWallPosts = useMemo(() => (
+    <AnimatePresence mode="wait">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        variants={staggerContainer}
+        layout
+      >
+        {wallPosts.map((post, index) => {
+          if (!post) return null;
     if (!post.author) {
-      console.warn('[Profile] Post without author encountered:', post);
-      // Instead of skipping, fix it
       post = {
         ...post,
         author: {
@@ -1809,12 +1853,18 @@ const Profile = () => {
         }
       };
     }
-    // Ensure mcUsername or username is available for avatar
     const avatarUsername = post.author.mcUsername || post.author.username;
-    console.log('[DEBUG] Rendering post', post._id, 'with key:', post._id || `post-${Date.now()}-${Math.random()}`);
     const postId = post._id || `post-${Date.now()}-${Math.random()}`;
     return (
-      <div key={postId} className="bg-white/10 rounded-md p-4">
+            <motion.div
+              key={postId}
+              variants={postVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              layout
+              className="bg-white/10 rounded-md p-4 mb-2"
+            >
         <div className="flex items-start">
           <Link to={`/profile/${post.author.username}`} className="flex-shrink-0">
             <MinecraftAvatar 
@@ -1876,8 +1926,6 @@ const Profile = () => {
                 <HandThumbUpIcon className="h-4 w-4 mr-1" />
                 {post.likes?.length || 0} {post.likes?.length === 1 ? 'Like' : 'Likes'}
               </button>
-              
-              {/* Visual indicator for posts with comments */}
               {post.comments && post.comments.length > 0 && (
                 <div className="relative h-2 w-2 mr-2">
                   <span className="absolute inset-0 inline-flex h-2 w-2 rounded-full bg-minecraft-habbo-blue opacity-75 animate-ping"></span>
@@ -1885,8 +1933,6 @@ const Profile = () => {
                 </div>
               )}
             </div>
-            
-            {/* Comment Section */}
             <CommentSection
               post={post}
               commentInput={commentInputs[postId] || ''}
@@ -1901,9 +1947,207 @@ const Profile = () => {
             />
           </div>
         </div>
-      </div>
-    );
-  }), [wallPosts, user, isOwnProfile, commentInputs, commentLoading, commentError, expandedComments, profileUser, username]);
+            </motion.div>
+          );
+        })}
+      </motion.div>
+    </AnimatePresence>
+  ), [wallPosts, user, isOwnProfile, commentInputs, commentLoading, commentError, expandedComments, profileUser, username]);
+  
+  useEffect(() => {
+    if (!profileUser) return; // Only set up listener if profileUser is loaded
+    const handleNotification = (event) => {
+      const notification = event.detail;
+      if (
+        notification.type === 'notification' &&
+        (notification.subtype === 'FOLLOW' || notification.subtype === 'UNFOLLOW')
+      ) {
+        if (
+          notification.sender?.username === profileUser.username ||
+          notification.recipient?.username === profileUser.username
+        ) {
+          getRelationship(profileUser.username, profileUser.mcUsername).then(setRelationship);
+        }
+      }
+      // Existing friend request logic
+      if (
+        notification.type === 'friend_request' ||
+        notification.type === 'friend_accept' ||
+        notification.type === 'friend_decline'
+      ) {
+        if (
+          notification.sender?.username === profileUser.username ||
+          notification.recipient?.username === profileUser.username
+        ) {
+          getRelationship(profileUser.username, profileUser.mcUsername).then(setRelationship);
+        }
+      }
+    };
+    window.addEventListener('notification', handleNotification);
+    return () => window.removeEventListener('notification', handleNotification);
+  }, [profileUser?.username, profileUser?.mcUsername]);
+  
+  // Add this function near other fetch functions
+  const fetchWallPostsDirectly = async () => {
+    try {
+      console.log('[DEBUG][fetchWallPostsDirectly] Called for', username);
+      // Clear sessionStorage for wall posts before fetching
+      try {
+        const cacheKey = `wall_posts_${username}`;
+        sessionStorage.removeItem(cacheKey);
+        console.log('[Profile][SSE] Cleared wall posts cache for', username);
+      } catch (e) {
+        console.warn('[Profile][SSE] Failed to clear wall posts cache:', e);
+      }
+      // Add a 300ms delay to ensure backend commit
+      await new Promise(resolve => setTimeout(resolve, 300));
+      console.log('[Profile][SSE] Fetching wall posts for', username, 'after SSE event');
+      const res = await WallService.getWallPosts(username, 1, 10);
+      console.log('[DEBUG][fetchWallPostsDirectly] API response:', res);
+      if (res && Array.isArray(res.posts)) {
+        // PATCH: Normalize posts and comments just like fetchWallPosts
+        const postsToSet = res.posts.map(post => ({
+          ...post,
+          author: post.author || {
+            username: username,
+            mcUsername: username,
+            _id: post.author_id || `user-${Date.now()}`
+          },
+          comments: (post.comments || []).map(comment => ({
+            ...comment,
+            author: comment.author && comment.author.username ? comment.author : {
+              username: 'Unknown User',
+              mcUsername: 'Steve'
+            }
+          }))
+        }));
+        console.log('[DEBUG][fetchWallPostsDirectly] Setting wall posts:', postsToSet);
+        setWallPosts(postsToSet);
+        setWallPage(1);
+        setWallTotalPages(res?.pagination?.totalPages || 1);
+      }
+    } catch (err) {
+      // Optionally handle error
+      console.error('[Profile][SSE] Failed to fetch wall posts directly:', err);
+    }
+  };
+  
+  // --- PATCH: Real-time wall_post event handler (top-level) ---
+  const handleWallPostEvent = (event) => {
+    const currentProfileUser = profileUserRef.current;
+    // Debug log all event fields
+    console.log('[SSE][WALL_POST][DEBUG] Event received:', event);
+    if (!event) return;
+    // Check if the event is relevant to the wall currently being viewed
+    const viewedUsername = currentProfileUser?.username || currentProfileUser?.mcUsername;
+    console.log('[SSE][WALL_POST][DEBUG] wallOwnerUsername:', event.wallOwnerUsername, 'viewedUsername:', viewedUsername);
+    if (event.wallOwnerUsername === viewedUsername) {
+      if (event.type === 'new_post') {
+        setNotification({
+          show: true,
+          type: 'success',
+          message: `New wall post received!`
+        });
+      }
+      if (event.type === 'delete_post') {
+        setNotification({
+          show: true,
+          type: 'success',
+          message: `A wall post was deleted.`
+        });
+      }
+      fetchWallPostsDirectly(); // Always fetch fresh wall posts after SSE event
+    }
+  };
+  // ... existing code ...
+  // In the useEffect for wall_post, remove the inner definition and use the top-level handleWallPostEvent
+  useEffect(() => {
+    if (!addEventListener) return;
+    const removeWallPost = addEventListener('wall_post', handleWallPostEvent);
+    const removeNewPost = addEventListener('new_post', handleWallPostEvent);
+    const removeDeletePost = addEventListener('delete_post', handleWallPostEvent);
+    return () => {
+      if (removeWallPost) removeWallPost();
+      if (removeNewPost) removeNewPost();
+      if (removeDeletePost) removeDeletePost();
+    };
+  }, [addEventListener]);
+  // ... existing code ...
+  
+  // --- PATCH: Real-time wall_comment event handler (top-level) ---
+  const handleWallCommentEvent = (event) => {
+    console.log('[DEBUG][SSE] handleWallCommentEvent fired:', event);
+    const currentProfileUser = profileUserRef.current;
+    const viewedUsername = currentProfileUser?.username || currentProfileUser?.mcUsername;
+    if (event.wallOwnerUsername === viewedUsername) {
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'New comment received!'
+      });
+      fetchWallPostsDirectly();
+    }
+  };
+  // ... existing code ...
+  // In the useEffect for wall_comment, remove the inner definition and use the top-level handleWallCommentEvent
+  useEffect(() => {
+    if (!addEventListener || !isConnected) return;
+    addEventListener('wall_comment', handleWallCommentEvent);
+    return () => {
+      if (addEventListener) addEventListener('wall_comment', null);
+    };
+  }, [addEventListener, isConnected, fetchWallPostsDirectly]);
+  // ... existing code ...
+  
+  useEffect(() => {
+    if (!addEventListener || !isConnected) return;
+    const removeWallLike = addEventListener('wall_like', handleWallLikeEvent);
+    return () => {
+      if (removeWallLike) removeWallLike();
+    };
+  }, [addEventListener, isConnected]);
+  
+  useEffect(() => {
+    if (!addEventListener || !isConnected) return;
+    const removeLikeAdded = addEventListener('like_added', handleWallLikeEvent);
+    const removeLikeRemoved = addEventListener('like_removed', handleWallLikeEvent);
+    return () => {
+      if (removeLikeAdded) removeLikeAdded();
+      if (removeLikeRemoved) removeLikeRemoved();
+    };
+  }, [addEventListener, isConnected]);
+  
+  useEffect(() => {
+    if (!addEventListener || !isConnected) return;
+    // Listen for delete_post events (real-time post deletion)
+    const removeDeletePost = addEventListener('delete_post', handleWallPostEvent);
+    return () => {
+      if (removeDeletePost) removeDeletePost();
+    };
+  }, [addEventListener, isConnected]);
+  
+  // --- PATCH: Real-time wall_like event handler (top-level) ---
+  const handleWallLikeEvent = (event) => {
+    console.log('[DEBUG][SSE] handleWallLikeEvent fired:', event);
+    const currentProfileUser = profileUserRef.current;
+    const viewedUsername = currentProfileUser?.username || currentProfileUser?.mcUsername;
+    if (event.wallOwnerUsername === viewedUsername) {
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'A post was liked!'
+      });
+      fetchWallPostsDirectly();
+    }
+  };
+  
+  useEffect(() => {
+    if (!addEventListener || !isConnected) return;
+    const removeCommentAdded = addEventListener('comment_added', handleWallCommentEvent);
+    return () => {
+      if (removeCommentAdded) removeCommentAdded();
+    };
+  }, [addEventListener, isConnected]);
   
   if (!shouldDisplayProfile) {
     return (
@@ -2015,6 +2259,46 @@ const Profile = () => {
     } finally {
       setSavingWallpaper(false);
       setPendingWallpaperId(null);
+    }
+  };
+  
+  const invalidateRelationshipCache = (username) => {
+    // Remove all possible relationship cache keys for this user
+    const keys = Object.keys(sessionStorage).filter(k => k.startsWith(`relationship_${username}_`));
+    keys.forEach(k => sessionStorage.removeItem(k));
+  };
+  
+  // Add state for manage posts modal and loading
+  const openManagePostsModal = () => {
+    setShowManagePostsModal(true);
+    setBulkDeleteError('');
+  };
+
+  // Handler to close modal
+  const closeManagePostsModal = () => {
+    setShowManagePostsModal(false);
+    setBulkDeleteError('');
+  };
+
+  // Handler to delete all posts
+  const handleDeleteAllPosts = async () => {
+    setBulkDeleteLoading(true);
+    setBulkDeleteError('');
+    try {
+      const allPostIds = wallPosts.map(p => p._id);
+      if (allPostIds.length === 0) {
+        setBulkDeleteError('No posts to delete.');
+        setBulkDeleteLoading(false);
+        return;
+      }
+      await API.delete(`/api/wall/${username}/bulk-delete`, { data: { postIds: allPostIds } });
+      await refreshWallPosts();
+      setShowManagePostsModal(false);
+      setBulkDeleteLoading(false);
+      setNotification({ show: true, type: 'success', message: 'All posts deleted!' });
+    } catch (err) {
+      setBulkDeleteError(err?.response?.data?.error || 'Failed to delete posts.');
+      setBulkDeleteLoading(false);
     }
   };
   
@@ -2183,57 +2467,19 @@ const Profile = () => {
                     <div className="flex items-center space-x-3 mt-4 md:mt-0">
                 {!isOwnProfile && (
                   <>
-                          <button
-                            onClick={() => {
-                              if (relationship?.status === 'not_friends') {
-                                handleSendFriendRequest(profileUser?._id);
-                              } else if (relationship?.status === 'pending_received') {
-                                handleAcceptFriendRequest(profileUser?._id);
-                              }
-                            }}
-                            className={`habbo-btn flex items-center ${
-                              relationship?.status === 'friends' ? 'bg-green-600' :
-                              relationship?.status === 'pending_sent' ? 'bg-gray-600' :
-                              relationship?.status === 'pending_received' ? 'bg-blue-600' :
-                              'bg-minecraft-habbo-blue'
-                            }`}
-                            disabled={relationship?.status === 'pending_sent'}
-                          >
-                            <UsersIcon className="h-5 w-5 mr-2" />
-                            {relationship?.status === 'friends' ? 'Friends' :
-                             relationship?.status === 'pending_sent' ? 'Request Sent' :
-                             relationship?.status === 'pending_received' ? 'Accept Request' :
-                             'Add Friend'}
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              if (relationship?.following) {
-                                handleUnfollowUser(profileUser?._id);
-                              } else {
-                                handleFollowUser(profileUser?._id);
-                              }
-                            }}
-                            className={`habbo-btn-secondary flex items-center ${
-                              relationship?.following ? 'bg-gray-700' : ''
-                            }`}
-                          >
-                            {relationship?.following ? (
-                              <>
-                                <CheckIcon className="h-5 w-5 mr-2" />
-                                Following
-                              </>
-                            ) : (
-                              <>
-                                <UserPlusIcon className="h-5 w-5 mr-2" />
-                                Follow
-                  </>
-                )}
-                          </button>
-
+                    <FriendButton username={profileUser?.username} />
+                    {/* Replace the manual Follow/Unfollow button with the modern FollowButton component */}
+                    <FollowButton
+                      username={profileUser?.username}
+                      mcUsername={profileUser?.mcUsername}
+                      initialFollowing={relationship?.following}
+                      followsYou={relationship?.followsYou}
+                    />
                           <button
                             onClick={() => navigate(`/messages/new/${profileUser?.username}`)}
-                            className="habbo-btn-outline flex items-center"
+                      className="message-btn flex items-center px-4 py-2 rounded-lg border border-blue-500 bg-transparent text-blue-300 font-semibold shadow-sm hover:bg-blue-600 hover:text-white hover:shadow-lg focus:ring-2 focus:ring-blue-400 transition-all duration-150 scale-100 hover:scale-105 active:scale-95"
+                      aria-label="Send Message"
+                      tabIndex={0}
                           >
                             <ChatBubbleLeftIcon className="h-5 w-5 mr-2" />
                             Message
@@ -2251,13 +2497,13 @@ const Profile = () => {
                       </p>
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => handleAcceptFriendRequest(profileUser?._id)}
+                          onClick={() => handleAcceptFriendRequest(profileUser?.username)}
                           className="habbo-btn-success text-sm px-3 py-1"
                         >
                           Accept
                         </button>
                         <button
-                          onClick={() => handleRejectFriendRequest(profileUser?._id)}
+                          onClick={() => handleRejectFriendRequest(profileUser?.username)}
                           className="habbo-btn-danger text-sm px-3 py-1"
                         >
                           Decline
@@ -2530,6 +2776,22 @@ const Profile = () => {
                       </div>
                     </form>
                   </div>
+                  {/* Manage Posts Icon Button (only for profile owner) */}
+                  {isOwnProfile && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        onClick={openManagePostsModal}
+                        className="p-2 rounded-full bg-minecraft-navy-light hover:bg-minecraft-habbo-blue transition-colors relative group"
+                        title="Manage Posts"
+                        aria-label="Manage Posts"
+                      >
+                        <Cog6ToothIcon className="h-6 w-6 text-gray-300 group-hover:text-white" />
+                        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                          Manage Posts
+                        </span>
+                      </button>
+                    </div>
+                  )}
                   
                   {/* Wall Posts */}
                   <div className="space-y-4">
@@ -2555,10 +2817,7 @@ const Profile = () => {
                       </div>
                     ) : (
                       <>
-                        <AnimatePresence>
-                          {console.log('[DEBUG] AnimatePresence rendering wall posts:', wallPosts.map(p => p._id))}
                           {renderedWallPosts}
-                        </AnimatePresence>
                         
                         {/* Pagination */}
                         {wallTotalPages > 1 && (
@@ -3230,6 +3489,31 @@ const Profile = () => {
                 className="habbo-btn px-4 py-2"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showManagePostsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-minecraft-navy-dark rounded-md p-5 max-w-md w-full border border-minecraft-habbo-blue shadow-lg">
+            <h3 className="text-lg font-minecraft text-minecraft-habbo-blue mb-3">Manage Posts</h3>
+            <p className="text-gray-300 mb-4">You can delete <b>all</b> your wall posts at once. This action cannot be undone.</p>
+            {bulkDeleteError && <div className="text-red-400 mb-2">{bulkDeleteError}</div>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={closeManagePostsModal}
+                className="px-4 py-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600"
+                disabled={bulkDeleteLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAllPosts}
+                className="habbo-btn px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold"
+                disabled={bulkDeleteLoading || wallPosts.length === 0}
+              >
+                {bulkDeleteLoading ? 'Deleting...' : 'Delete All Posts'}
               </button>
             </div>
           </div>

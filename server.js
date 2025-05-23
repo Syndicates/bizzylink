@@ -1901,26 +1901,20 @@ const PORT = process.env.PORT || 8080;
 })();
 
 // Add this logging to the SSE userEvent handler
-if (global.eventEmitter && typeof global.eventEmitter.on === 'function') {
-  global.eventEmitter.on('userEvent', (event) => {
-    console.log('[SSE] userEvent received:', {
-      userId: event.userId,
-      event: event.event,
-      data: event.data
-    });
-    if (sseClients && event.userId) {
-      const userClients = Array.from(sseClients.entries()).filter(([id, client]) => client.userId === event.userId);
-      console.log(`[SSE] Found ${userClients.length} SSE clients for userId:`, event.userId);
-      userClients.forEach(([clientId, client]) => {
-        try {
-          const payload = JSON.stringify(event.data);
-          console.log(`[SSE] Sending notification to clientId: ${clientId}, userId: ${event.userId}, payload:`, payload);
-          client.res.write(`data: ${payload}\n\n`);
-          console.log(`[SSE] Notification sent to clientId: ${clientId}`);
-        } catch (err) {
-          console.error(`[SSE] Error sending notification to clientId: ${clientId}`, err);
-        }
-      });
+if (eventEmitter && eventEmitter.on) {
+  eventEmitter.on('userEvent', (payload) => {
+    console.log('[SSE][DEBUG] userEvent received:', JSON.stringify(payload, null, 2));
+    if (payload && payload.userId) {
+      let eventData;
+      if (payload.event === 'notification') {
+        eventData = { type: 'notification', ...payload.data };
+      } else {
+        eventData = { type: payload.event, ...payload.data };
+      }
+      console.log('[SSE][DEBUG] Outgoing event to user', payload.userId, ':', eventData);
+      global.sendSseToUser(payload.userId, eventData);
+    } else {
+      console.warn('[SSE][DEBUG] userEvent received without userId:', payload);
     }
   });
 }

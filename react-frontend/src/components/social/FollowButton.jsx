@@ -17,8 +17,32 @@
 import React, { useState, useEffect } from 'react';
 import { useSocial } from '../../contexts/SocialContext';
 
-const FollowButton = ({ username, mcUsername, userId, initialFollowing = null }) => {
-  const [isFollowing, setIsFollowing] = useState(initialFollowing);
+const ICONS = {
+  follow: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    </svg>
+  ),
+  following: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  ),
+  unfollow: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  ),
+  followBack: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2h2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6m0 0v6m0-6L10 14" />
+    </svg>
+  ),
+};
+
+const FollowButton = ({ username, mcUsername, initialFollowing = null, followsYou = false }) => {
+  const [following, setFollowing] = useState(initialFollowing);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isHovering, setIsHovering] = useState(false);
@@ -33,103 +57,99 @@ const FollowButton = ({ username, mcUsername, userId, initialFollowing = null })
     getRelationship = async () => ({ following: false }) 
   } = socialContext;
 
-  // Load relationship status if not provided
+  // Invalidate cache helper
+  const invalidateRelationshipCache = (username) => {
+    const keys = Object.keys(sessionStorage).filter(k => k.startsWith(`relationship_${username}_`));
+    keys.forEach(k => sessionStorage.removeItem(k));
+  };
+
   useEffect(() => {
-    // Always force a value refresh for each render, using the prop
-    console.log(`FollowButton.jsx: Using initial following status: ${initialFollowing}`);
-    setIsFollowing(!!initialFollowing);
+    setFollowing(!!initialFollowing);
   }, [initialFollowing, username, mcUsername]);
 
   // Handle follow/unfollow
   const handleToggleFollow = async () => {
-    // Prevent action if already loading
-    if (loading) return;
-    
+    if (loading || !username) return;
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Ensure we have a valid username to avoid null/undefined errors
-      if (!username) {
-        setError("Invalid username");
-        return;
-      }
-      
-      console.log(`FollowButton.jsx: ${isFollowing ? 'Unfollowing' : 'Following'} user: ${username}`);
-      
-      // For special case handling of known usernames
-      let accountUsername = username;
-      let minecraftUsername = mcUsername || username;
-      
-      // Special case for n0t_awake who is actually bizzy
-      if (username === 'n0t_awake' || minecraftUsername === 'n0t_awake') {
-        accountUsername = 'bizzy';
-        console.log('Special case: Using account username bizzy for n0t_awake');
-      }
-      
-      if (isFollowing) {
-        // Use account username for unfollowing and pass Minecraft username as well
-        // This allows the server to find the user by either identifier
-        console.log(`Unfollowing with username: ${accountUsername}, mcUsername: ${minecraftUsername}`);
-        await unfollowUser(accountUsername, minecraftUsername);
+      if (following) {
+        await unfollowUser(username, mcUsername);
       } else {
-        // Use account username for following and pass Minecraft username as well
-        // This allows the server to find the user by either identifier
-        console.log(`Following with username: ${accountUsername}, mcUsername: ${minecraftUsername}`);
-        await followUser(accountUsername, minecraftUsername);
+        await followUser(username, mcUsername);
       }
-      
-      setIsFollowing(!isFollowing);
+      invalidateRelationshipCache(username);
+      // Always fetch fresh state after mutation
+      const rel = await getRelationship(username, mcUsername);
+      setFollowing(!!rel.following);
     } catch (err) {
-      console.error(`Error ${isFollowing ? 'unfollowing' : 'following'} user:`, err);
-      setError(`Failed to ${isFollowing ? 'unfollow' : 'follow'} user. ${err.response?.data?.error || ''}`);
+      setError(`Failed to ${following ? 'unfollow' : 'follow'} user. ${err?.message || ''}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Button appearance
+  // Modern, pill-shaped, shadowed, animated button
   const getButtonClass = () => {
-    if (loading) {
-      return "px-4 py-2 rounded bg-gray-700 text-white text-sm cursor-wait";
-    }
-    
-    if (isFollowing) {
+    if (loading) return "flex items-center gap-2 px-5 py-2 rounded-full font-bold shadow bg-gray-400 text-white text-sm cursor-wait transition-all duration-200";
+    if (following) {
       return isHovering
-        ? "px-4 py-2 rounded bg-red-600 text-white text-sm font-bold transition-colors duration-300"
-        : "px-4 py-2 rounded bg-blue-600 hover:bg-red-600 text-white text-sm font-bold transition-colors duration-300";
+        ? "flex items-center gap-2 px-5 py-2 rounded-full font-bold shadow bg-red-500 text-white text-sm scale-105 transition-all duration-200"
+        : "flex items-center gap-2 px-5 py-2 rounded-full font-bold shadow bg-blue-600 text-white text-sm hover:bg-red-500 transition-all duration-200";
     }
-    
-    return "px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm transition-colors duration-300";
+    if (followsYou) {
+      return "flex items-center gap-2 px-5 py-2 rounded-full font-bold shadow bg-yellow-500 text-white text-sm hover:bg-yellow-600 transition-all duration-200";
+    }
+    return "flex items-center gap-2 px-5 py-2 rounded-full font-bold shadow bg-neutral-800 text-white text-sm hover:bg-neutral-700 transition-all duration-200";
   };
 
   return (
     <div>
-      <button 
-        className={getButtonClass()} 
+      <button
+        className={getButtonClass()}
         onClick={handleToggleFollow}
         disabled={loading}
+        aria-pressed={!!following}
+        aria-label={following ? (isHovering ? "Unfollow" : "Following") : (followsYou ? "Follow Back" : "Follow")}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
+        tabIndex={0}
+        style={{ minWidth: 110 }}
       >
         {loading ? (
+          <span className="animate-spin mr-2">⏳</span>
+        ) : following ? (
           <>
-            <i className="fas fa-spinner fa-spin mr-2"></i>
-            Loading...
-          </>
-        ) : isFollowing ? (
-          <>
-            <i className={isHovering ? "fas fa-user-times mr-2" : "fas fa-user-check mr-2"}></i>
+            <span className="mr-1">{isHovering ? ICONS.unfollow : ICONS.following}</span>
             {isHovering ? "Unfollow" : "Following"}
+          </>
+        ) : followsYou ? (
+          <>
+            <span className="mr-1">{ICONS.followBack}</span>
+            Follow Back
           </>
         ) : (
           <>
-            <i className="fas fa-user-plus mr-2"></i>
+            <span className="mr-1">{ICONS.follow}</span>
             Follow
           </>
         )}
       </button>
-      {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+      {error && (
+        <div className="text-red-500 text-xs mt-1 flex items-center">
+          {error}
+          <button
+            className="ml-2 underline"
+            onClick={() => {
+              setError(null);
+              handleToggleFollow();
+            }}
+            aria-label="Retry follow/unfollow"
+          >
+            Retry
+          </button>
+        </div>
+      )}
     </div>
   );
 };

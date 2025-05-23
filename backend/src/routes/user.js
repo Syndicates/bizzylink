@@ -302,4 +302,26 @@ router.get('/search', async (req, res) => {
   }
 });
 
+// Get user privacy settings
+router.get('/settings/privacy', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('settings.privacy');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ privacy: user.settings?.privacy || {} });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user notification settings
+router.get('/settings/notifications', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('settings.notifications');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ notifications: user.settings?.notifications || {} });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;

@@ -163,6 +163,12 @@ api.interceptors.request.use(config => {
 // Add a request interceptor to include the auth token and handle caching
 api.interceptors.request.use(
   (config) => {
+    // Bypass cache for wall endpoints
+    if (config.url && config.url.includes('/api/wall/')) {
+      config.skipCache = true;
+      console.log('[API][CACHE] Bypassing cache for wall endpoint:', config.url);
+    }
+    
     // Check if this is a GET request that we can cache
     if (config.method === 'get' && !config.skipCache) {
       const cacheKey = apiCache.getKey(config);
@@ -247,7 +253,12 @@ api.interceptors.response.use(
     console.log(`API Response [${response.config.url}]:`, response.data);
     
     // Cache successful GET responses
-    if (response.config.method === 'get' && !response.cached && !response.config.skipCache) {
+    if (
+      response.config.method === 'get' &&
+      !response.cached &&
+      !response.config.skipCache &&
+      !(response.config.url && response.config.url.includes('/api/wall/')) // <-- Do not cache wall endpoints
+    ) {
       const cacheKey = apiCache.getKey(response.config);
       
       // Determine cache TTL based on the endpoint
@@ -1239,8 +1250,9 @@ export const SocialService = {
     }
   },
 
-  sendFriendRequest: async (targetUserId) => {
-    const response = await api.post(`/api/social/friends/request`, { targetUserId });
+  sendFriendRequest: async (username) => {
+    // Industry standard: use clear, RESTful endpoint and descriptive payload
+    const response = await api.post(`/api/friends/request`, { username });
     return response.data;
   },
 
@@ -1254,13 +1266,15 @@ export const SocialService = {
     return response.data;
   },
   
-  follow: async (targetUserId) => {
-    const response = await api.post(`/api/social/follow`, { targetUserId });
+  follow: async (username) => {
+    // Industry standard: use clear, RESTful endpoint and descriptive payload
+    const response = await api.post(`/api/following/follow`, { username });
     return response.data;
   },
   
-  unfollow: async (targetUserId) => {
-    const response = await api.post(`/api/social/unfollow`, { targetUserId });
+  unfollow: async (username) => {
+    // Industry standard: use clear, RESTful endpoint and descriptive payload
+    const response = await api.post(`/api/following/unfollow`, { username });
     return response.data;
   },
 
@@ -1269,12 +1283,12 @@ export const SocialService = {
     return response.data;
   },
 
-  getFriends: async (username) => {
+  getFriends: async () => {
     try {
-      const response = await api.get(`/api/social/friends/${username}`);
+      const response = await api.get(`/api/friends`);
       return response.data;
     } catch (error) {
-      console.warn(`Failed to get friends for ${username}:`, error.message);
+      console.warn(`Failed to get friends:`, error.message);
       // Return fallback data when API fails
       return {
         data: {

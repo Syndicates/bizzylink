@@ -17,6 +17,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const User = require('../models/User');
+const eventEmitter = require('../eventEmitter');
+const Notification = require('../backend/src/models/Notification');
 
 /**
  * Get following list for the authenticated user
@@ -47,6 +49,19 @@ router.get('/', authenticateToken, async (req, res) => {
     });
   }
 });
+
+const getRelationshipState = async (currentUser, targetUser) => {
+  // Defensive: fetch latest from DB
+  const freshCurrent = await User.findById(currentUser._id);
+  const freshTarget = await User.findById(targetUser._id);
+  const isFollowing = freshCurrent.following && freshCurrent.following.some(id => id.toString() === freshTarget._id.toString());
+  const isFollower = freshTarget.following && freshTarget.following.some(id => id.toString() === freshCurrent._id.toString());
+  return {
+    status: isFollowing ? 'following' : 'not_following',
+    following: isFollowing,
+    follower: isFollower
+  };
+};
 
 /**
  * Follow a user
@@ -85,9 +100,12 @@ router.post('/follow', authenticateToken, async (req, res) => {
     
     // Check if already following
     if (currentUser.following && currentUser.following.some(id => id.toString() === targetUser._id.toString())) {
+      // Already following, return current state
+      const relationship = await getRelationshipState(currentUser, targetUser);
       return res.json({
         success: true,
-        message: 'Already following this user'
+        message: 'Already following this user',
+        ...relationship
       });
     }
     
@@ -109,9 +127,49 @@ router.post('/follow', authenticateToken, async (req, res) => {
       targetUser.save()
     ]);
     
+    // Create persistent notification for follow
+    try {
+      const notification = await Notification.create({
+        recipient: targetUser._id,
+        sender: currentUser._id,
+        type: 'FOLLOW',
+        message: `${currentUser.username} started following you`,
+        createdAt: new Date()
+      });
+      console.log('[FOLLOW] Created notification:', notification);
+      // Emit notification for follow
+      if (eventEmitter && typeof eventEmitter.emit === 'function') {
+        eventEmitter.emit('notification', {
+          type: 'follow',
+          sender: { _id: currentUser._id, username: currentUser.username },
+          recipient: { _id: targetUser._id, username: targetUser.username },
+          message: `${currentUser.username} started following you` 
+        });
+        // Emit SSE userEvent for real-time notification
+        const ssePayload = {
+          userId: targetUser._id.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'FOLLOW',
+            sender: { _id: currentUser._id, username: currentUser.username },
+            message: `${currentUser.username} started following you`,
+            createdAt: new Date()
+          }
+        };
+        console.log('[SSE][FOLLOW] Emitting userEvent for follow:', ssePayload);
+        eventEmitter.emit('userEvent', ssePayload);
+      }
+    } catch (err) {
+      console.error('[FOLLOW] Error creating notification:', err);
+    }
+    
+    // Return current relationship state
+    const relationship = await getRelationshipState(currentUser, targetUser);
     res.json({
       success: true,
-      message: `Now following ${username}`
+      message: `Now following ${username}`,
+      ...relationship
     });
   } catch (error) {
     console.error('Error following user:', error);
@@ -159,9 +217,12 @@ router.post('/unfollow', authenticateToken, async (req, res) => {
     
     // Check if not following
     if (!currentUser.following || !currentUser.following.some(id => id.toString() === targetUser._id.toString())) {
+      // Not following, return current state
+      const relationship = await getRelationshipState(currentUser, targetUser);
       return res.json({
         success: true,
-        message: 'Not following this user'
+        message: 'Not following this user',
+        ...relationship
       });
     }
     
@@ -179,9 +240,41 @@ router.post('/unfollow', authenticateToken, async (req, res) => {
       targetUser.save()
     ]);
     
+    // Create persistent notification for unfollow
+    await Notification.create({
+      recipient: targetUser._id,
+      sender: currentUser._id,
+      type: 'UNFOLLOW',
+      message: `${currentUser.username} unfollowed you`,
+      createdAt: new Date()
+    });
+    // Emit notification for unfollow
+    if (eventEmitter && typeof eventEmitter.emit === 'function') {
+      eventEmitter.emit('notification', {
+        type: 'unfollow',
+        sender: { _id: currentUser._id, username: currentUser.username },
+        recipient: { _id: targetUser._id, username: targetUser.username },
+        message: `${currentUser.username} unfollowed you` 
+      });
+      // Emit SSE userEvent for real-time notification
+      eventEmitter.emit('userEvent', {
+        userId: targetUser._id.toString(),
+        event: 'notification',
+        data: {
+          subtype: 'UNFOLLOW',
+          sender: { _id: currentUser._id, username: currentUser.username },
+          message: `${currentUser.username} unfollowed you`,
+          createdAt: new Date()
+        }
+      });
+    }
+    
+    // Return current relationship state
+    const relationship = await getRelationshipState(currentUser, targetUser);
     res.json({
       success: true,
-      message: `No longer following ${username}`
+      message: `No longer following ${username}`,
+      ...relationship
     });
   } catch (error) {
     console.error('Error unfollowing user:', error);

@@ -17,6 +17,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import FriendService from '../services/friendService';
+import { clearApiCache } from '../services/api';
 
 // Create the Social context
 const SocialContext = createContext();
@@ -132,8 +133,8 @@ export function SocialProvider({ children }) {
         
         // Load settings
         const settingsRes = await FriendService.getSettings();
-        if (settingsRes.data?.settings ?? settingsRes.settings) {
-          setSettings(settingsRes.data?.settings ?? settingsRes.settings);
+        if (settingsRes.data) {
+          setSettings(settingsRes.data);
         }
       } catch (err) {
         console.error('Error loading social data:', err);
@@ -162,10 +163,10 @@ export function SocialProvider({ children }) {
   // Send a friend request - uses same pattern as followUser
   const sendFriendRequest = async (username, mcUsername) => {
     try {
-      // Match the followUser pattern exactly - username first, mcUsername second
-      console.log('SocialContext: Sending friend request to:', username, 'mcUsername:', mcUsername);
-      const res = await FriendService.sendFriendRequest(username, mcUsername);
-      console.log('Send friend request response:', res.data);
+      console.debug('[SocialContext] sendFriendRequest called', { username, mcUsername });
+      // Only pass username to FriendService
+      const res = await FriendService.sendFriendRequest(username);
+      console.debug('[SocialContext] sendFriendRequest response', res);
       
       // Always update local state if request was successful or already sent
       if (res.data?.success !== false) {
@@ -256,7 +257,7 @@ export function SocialProvider({ children }) {
         ? { success: true, message: 'Request already sent', alreadySent: true } 
         : res.data;
     } catch (err) {
-      console.error('Error sending friend request:', err);
+      console.error('[SocialContext] sendFriendRequest error', err, err?.response?.data);
       
       // Check for specific error: "Friend request already sent"
       if (err.response?.data?.error === 'Friend request already sent') {
@@ -337,6 +338,7 @@ export function SocialProvider({ children }) {
   // Accept a friend request
   const acceptFriendRequest = async (userId) => {
     try {
+      console.debug('[SocialContext] acceptFriendRequest called', { userId });
       const res = await FriendService.acceptFriendRequest(userId);
       
       // Refresh friends list and requests
@@ -350,7 +352,7 @@ export function SocialProvider({ children }) {
       
       return res.data;
     } catch (err) {
-      console.error('Error accepting friend request:', err);
+      console.error('[SocialContext] acceptFriendRequest error', err, err?.response?.data);
       throw err;
     }
   };
@@ -358,6 +360,7 @@ export function SocialProvider({ children }) {
   // Reject a friend request
   const rejectFriendRequest = async (userId) => {
     try {
+      console.debug('[SocialContext] rejectFriendRequest called', { userId });
       const res = await FriendService.rejectFriendRequest(userId);
       
       // Refresh requests
@@ -366,7 +369,7 @@ export function SocialProvider({ children }) {
       
       return res.data;
     } catch (err) {
-      console.error('Error rejecting friend request:', err);
+      console.error('[SocialContext] rejectFriendRequest error', err, err?.response?.data);
       throw err;
     }
   };
@@ -374,6 +377,7 @@ export function SocialProvider({ children }) {
   // Remove a friend
   const removeFriend = async (userId) => {
     try {
+      console.debug('[SocialContext] removeFriend called', { userId });
       const res = await FriendService.removeFriend(userId);
       
       // Refresh friends list
@@ -382,7 +386,7 @@ export function SocialProvider({ children }) {
       
       return res.data;
     } catch (err) {
-      console.error('Error removing friend:', err);
+      console.error('[SocialContext] removeFriend error', err, err?.response?.data);
       throw err;
     }
   };
@@ -390,37 +394,27 @@ export function SocialProvider({ children }) {
   // Follow a user - Updated to support both username types
   const followUser = async (username, mcUsername) => {
     try {
-      console.log('SocialContext: Following user:', username, 'mcUsername:', mcUsername);
-      const res = await FriendService.followUser(username, mcUsername);
-      
-      // Refresh following list
-      const followingRes = await FriendService.getFollowing();
-      
-      console.log('Updated following list after follow:', followingRes.data.following);
+      console.debug('[SocialContext] followUser called', { username, mcUsername });
+      // Optimistically update local state
+      setFollowing(prev => {
+        if (prev.some(u => u.username === username || u.mcUsername === mcUsername)) return prev;
+        return [...prev, { username, mcUsername: mcUsername || username }];
+      });
+      // Clear cache for sensitive endpoints
+      clearApiCache('/api/friends/relationship');
+      clearApiCache('/api/following');
+      // Call backend
+      const res = await FriendService.followUser(username);
+      // Refetch following and relationship state
+      const [followingRes, relationshipRes] = await Promise.all([
+        FriendService.getFollowing(),
+        FriendService.getRelationshipStatus(username, mcUsername)
+      ]);
       setFollowing(followingRes.data.following || []);
-      
-      // Update the local state immediately for better UX
-      if (res.data && res.data.success !== false) {
-        // Add the user to our local following list if not already there
-        const userExists = following.some(u => 
-          u.username === username || 
-          u.mcUsername === mcUsername
-        );
-        
-        if (!userExists) {
-          setFollowing(prev => [
-            ...prev, 
-            { 
-              username, 
-              mcUsername: mcUsername || username 
-            }
-          ]);
-        }
-      }
-      
+      // Optionally update relationship state in your context if tracked
       return res.data;
     } catch (err) {
-      console.error('Error following user:', err);
+      console.error('[SocialContext] followUser error', err, err?.response?.data);
       throw err;
     }
   };
@@ -428,30 +422,24 @@ export function SocialProvider({ children }) {
   // Unfollow a user - Updated to support both username types
   const unfollowUser = async (username, mcUsername) => {
     try {
-      console.log('SocialContext: Unfollowing user:', username, 'mcUsername:', mcUsername);
-      const res = await FriendService.unfollowUser(username, mcUsername);
-      
-      // Refresh following list
-      const followingRes = await FriendService.getFollowing();
-      
-      console.log('Updated following list after unfollow:', followingRes.data.following);
+      console.debug('[SocialContext] unfollowUser called', { username, mcUsername });
+      // Optimistically update local state
+      setFollowing(prev => prev.filter(user => !(user.username === username || user.mcUsername === mcUsername)));
+      // Clear cache for sensitive endpoints
+      clearApiCache('/api/friends/relationship');
+      clearApiCache('/api/following');
+      // Call backend
+      const res = await FriendService.unfollowUser(username);
+      // Refetch following and relationship state
+      const [followingRes, relationshipRes] = await Promise.all([
+        FriendService.getFollowing(),
+        FriendService.getRelationshipStatus(username, mcUsername)
+      ]);
       setFollowing(followingRes.data.following || []);
-      
-      // Update the local state immediately for better UX
-      if (res.data && res.data.success !== false) {
-        // Remove the user from our local following list
-        setFollowing(prev => 
-          prev.filter(user => 
-            !(user.username === username || user.mcUsername === mcUsername) &&
-            !(username === 'bizzy' && user.mcUsername === 'n0t_awake') &&
-            !(mcUsername === 'n0t_awake' && user.username === 'bizzy')
-          )
-        );
-      }
-      
+      // Optionally update relationship state in your context if tracked
       return res.data;
     } catch (err) {
-      console.error('Error unfollowing user:', err);
+      console.error('[SocialContext] unfollowUser error', err, err?.response?.data);
       throw err;
     }
   };
@@ -592,6 +580,7 @@ export function SocialProvider({ children }) {
   // Update user settings
   const updateSettings = async (newSettings) => {
     try {
+      console.debug('[SocialContext] updateSettings called', { newSettings });
       const res = await FriendService.updateSettings(newSettings);
       setSettings(res.data.settings);
       return res.data;
@@ -692,6 +681,39 @@ export function SocialProvider({ children }) {
     setNotifications(Array.isArray(value) ? value : []);
   };
   
+  // Fetch friends (for manual refresh or skip cache)
+  const fetchFriends = useCallback(async (forceRefresh = false) => {
+    try {
+      console.debug('[SocialContext] fetchFriends called', { forceRefresh });
+      const friendsRes = await FriendService.getFriends();
+      setFriends(friendsRes.data?.friends ?? friendsRes.friends ?? []);
+    } catch (err) {
+      console.error('Error fetching friends:', err);
+    }
+  }, []);
+
+  // Fetch following (for manual refresh or skip cache)
+  const fetchFollowing = useCallback(async (forceRefresh = false) => {
+    try {
+      console.debug('[SocialContext] fetchFollowing called', { forceRefresh });
+      const followingRes = await FriendService.getFollowing();
+      setFollowing(followingRes.data?.following ?? followingRes.following ?? []);
+    } catch (err) {
+      console.error('Error fetching following:', err);
+    }
+  }, []);
+  
+  // Fetch followers (for manual refresh or skip cache)
+  const fetchFollowers = useCallback(async (forceRefresh = false) => {
+    try {
+      console.debug('[SocialContext] fetchFollowers called', { forceRefresh });
+      const followersRes = await FriendService.getFollowers();
+      setFollowers(followersRes.data?.followers ?? followersRes.followers ?? []);
+    } catch (err) {
+      console.error('Error fetching followers:', err);
+    }
+  }, []);
+  
   // Context value
   const value = {
     // State
@@ -733,19 +755,39 @@ export function SocialProvider({ children }) {
     isFollowing,     // Check if following a user
     isFriend,        // Check if friends with a user
     hasSentRequestTo,     // Check if sent a request to a user
-    hasReceivedRequestFrom  // Check if received a request from a user
+    hasReceivedRequestFrom,  // Check if received a request from a user
+    hasSentFriendRequest: hasSentRequestTo,
+    hasReceivedFriendRequest: hasReceivedRequestFrom,
+
+    // Manual refreshers
+    fetchFriends,
+    fetchFollowing,
+    fetchFollowers
   };
   
   useEffect(() => {
     if (!window.addEventListener) return;
     const handler = (event) => {
       const data = event.detail;
-      console.log('[FRONTEND SSE] Received notification event:', data);
+      console.log('[FRONTEND SSE][SocialContext] Received notification event:', data);
+      if (data && data.type === 'notification') {
+        console.log('[FRONTEND SSE][SocialContext] Notification subtype:', data.subtype);
+      }
       addNotification(data);
+      // Real-time follow/unfollow: clear cache and refetch
+      if (data && (data.subtype === 'FOLLOW' || data.subtype === 'UNFOLLOW')) {
+        clearApiCache('/api/following');
+        clearApiCache('/api/followers');
+        clearApiCache('/api/friends/relationship');
+        fetchFollowing();
+        fetchFollowers();
+        // Optionally, trigger a relationship refetch if on a profile page
+        // (handled in Profile page if needed)
+      }
     };
     window.addEventListener('notification', handler);
     return () => window.removeEventListener('notification', handler);
-  }, [addNotification]);
+  }, [addNotification, fetchFollowing, fetchFollowers]);
   
   useEffect(() => {
     console.log('[SocialContext] notifications:', notifications, 'unreadCount:', unreadCount);

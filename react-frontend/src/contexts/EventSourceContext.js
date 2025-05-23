@@ -137,6 +137,9 @@ export const EventSourceProvider = ({ children }) => {
         try {
           const parsed = JSON.parse(event.data);
           console.log('[SSE] Parsed event data:', parsed);
+          if (parsed.type === 'wall_like') {
+            console.log('[SSE][EventSourceContext] Dispatching wall_like event:', parsed);
+          }
           // Dispatch a custom event for listeners
           if (parsed.type) {
             window.dispatchEvent(new CustomEvent(parsed.type, { detail: parsed }));

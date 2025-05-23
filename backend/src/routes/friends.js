@@ -18,6 +18,7 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const User = require('../models/User');
 const FriendRequest = require('../models/FriendRequest');
+const eventEmitter = require('../eventEmitter');
 
 // Get all friends for the current user
 router.get('/', protect, async (req, res) => {
@@ -55,24 +56,31 @@ router.post('/request', protect, async (req, res) => {
     }
     const existingRequest = await FriendRequest.findOne({
       $or: [
-        { sender: sender._id, recipient: recipient._id },
-        { sender: recipient._id, recipient: sender._id }
+        { from: sender._id, to: recipient._id },
+        { from: recipient._id, to: sender._id }
       ]
     });
     if (existingRequest) {
-      if (existingRequest.sender.toString() === sender._id.toString()) {
+      if (existingRequest.from.toString() === sender._id.toString()) {
         return res.status(400).json({ success: false, error: 'Friend request already sent' });
       } else {
         return res.status(400).json({ success: false, error: 'This user has already sent you a friend request' });
       }
     }
     const friendRequest = new FriendRequest({
-      sender: sender._id,
-      recipient: recipient._id,
+      from: sender._id,
+      to: recipient._id,
       status: 'pending',
       createdAt: new Date()
     });
     await friendRequest.save();
+    // Emit notification to both sender and recipient
+    eventEmitter.emit('notification', {
+      type: 'friend_request',
+      sender: { _id: sender._id, username: sender.username },
+      recipient: { _id: recipient._id, username: recipient.username },
+      message: `${sender.username} sent you a friend request` 
+    });
     res.json({ success: true, message: `Friend request sent to ${username}` });
   } catch (error) {
     console.error('Error sending friend request:', error);
@@ -91,7 +99,7 @@ router.post('/accept', protect, async (req, res) => {
     if (!friendRequest) {
       return res.status(404).json({ success: false, error: 'Friend request not found' });
     }
-    if (friendRequest.recipient.toString() !== req.user._id.toString()) {
+    if (friendRequest.to.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to accept this request' });
     }
     if (friendRequest.status !== 'pending') {
@@ -100,8 +108,8 @@ router.post('/accept', protect, async (req, res) => {
     friendRequest.status = 'accepted';
     friendRequest.updatedAt = new Date();
     await friendRequest.save();
-    const sender = await User.findById(friendRequest.sender);
-    const recipient = await User.findById(friendRequest.recipient);
+    const sender = await User.findById(friendRequest.from);
+    const recipient = await User.findById(friendRequest.to);
     if (!sender || !recipient) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -110,6 +118,13 @@ router.post('/accept', protect, async (req, res) => {
     if (!recipient.friends) recipient.friends = [];
     if (!recipient.friends.includes(sender._id)) recipient.friends.push(sender._id);
     await Promise.all([sender.save(), recipient.save()]);
+    // Emit notification to both sender and recipient
+    eventEmitter.emit('notification', {
+      type: 'friend_accept',
+      sender: { _id: recipient._id, username: recipient.username }, // recipient accepted
+      recipient: { _id: sender._id, username: sender.username },
+      message: `${recipient.username} accepted your friend request`
+    });
     res.json({ success: true, message: 'Friend request accepted' });
   } catch (error) {
     console.error('Error accepting friend request:', error);
@@ -128,7 +143,7 @@ router.post('/reject', protect, async (req, res) => {
     if (!friendRequest) {
       return res.status(404).json({ success: false, error: 'Friend request not found' });
     }
-    if (friendRequest.recipient.toString() !== req.user._id.toString()) {
+    if (friendRequest.to.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to reject this request' });
     }
     if (friendRequest.status !== 'pending') {
@@ -137,6 +152,13 @@ router.post('/reject', protect, async (req, res) => {
     friendRequest.status = 'rejected';
     friendRequest.updatedAt = new Date();
     await friendRequest.save();
+    // Emit notification to both sender and recipient
+    eventEmitter.emit('notification', {
+      type: 'friend_decline',
+      sender: { _id: req.user._id, username: req.user.username },
+      recipient: { _id: friendRequest.from, username: undefined }, // username can be filled if needed
+      message: `${req.user.username} declined your friend request`
+    });
     res.json({ success: true, message: 'Friend request rejected' });
   } catch (error) {
     console.error('Error rejecting friend request:', error);
@@ -148,9 +170,9 @@ router.post('/reject', protect, async (req, res) => {
 router.get('/requests', protect, async (req, res) => {
   try {
     const requests = await FriendRequest.find({
-      recipient: req.user._id,
+      to: req.user._id,
       status: 'pending'
-    }).populate('sender', 'username displayName avatar');
+    }).populate('from', 'username displayName avatar');
     res.json({ success: true, requests });
   } catch (error) {
     console.error('Error fetching friend requests:', error);
@@ -182,6 +204,40 @@ router.post('/remove', protect, async (req, res) => {
   } catch (error) {
     console.error('Error removing friend:', error);
     res.status(500).json({ success: false, error: 'Failed to remove friend' });
+  }
+});
+
+// Relationship status between current user and another user
+router.get('/relationship', protect, async (req, res) => {
+  try {
+    const { username, mcUsername } = req.query;
+    if (!username && !mcUsername) {
+      return res.status(400).json({ success: false, error: 'Username or MC Username is required' });
+    }
+    // Find the target user by username or minecraftUsername
+    const targetUser = await User.findOne({
+      $or: [
+        { username: username },
+        { minecraftUsername: mcUsername },
+        { mcUsername: mcUsername } // for compatibility
+      ]
+    });
+    if (!targetUser) {
+      return res.json({ status: 'not_friends', following: false, followsYou: false });
+    }
+    // Check if the current user is friends with or following the target user
+    const isFriend = req.user.friends && req.user.friends.some(id => id.toString() === targetUser._id.toString());
+    const isFollowing = req.user.following && req.user.following.some(id => id.toString() === targetUser._id.toString());
+    // Check if the target user follows the current user
+    const followsYou = targetUser.following && targetUser.following.some(id => id.toString() === req.user._id.toString());
+    return res.json({
+      status: isFriend ? 'friends' : 'not_friends',
+      following: isFollowing,
+      followsYou
+    });
+  } catch (error) {
+    console.error('Error checking relationship status:', error);
+    res.status(500).json({ success: false, error: 'Failed to check relationship status' });
   }
 });
 

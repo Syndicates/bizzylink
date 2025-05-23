@@ -58,6 +58,8 @@ const NotificationIcon = ({ type }) => {
           </svg>
         </div>
       );
+    case 'FOLLOW':
+    case 'follow':
     case 'new_follower':
       return (
         <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white">
@@ -197,11 +199,13 @@ const NotificationsPanel = ({ isOpen, onClose }) => {
                 <div className="ml-3 flex-1 min-w-0">
                   <div className="flex justify-between items-start">
                     <p className="text-white text-sm font-semibold">
-                      {notification.title 
-                        ? (notification.title.length > 13 
-                            ? `${notification.title.substring(0, 13)}...` 
-                            : notification.title)
-                        : "New Notification"}
+                      {(notification.type === 'FOLLOW' || notification.subtype === 'FOLLOW' || notification.type === 'new_follower')
+                        ? 'New Follower'
+                        : notification.title 
+                          ? (notification.title.length > 13 
+                              ? `${notification.title.substring(0, 13)}...` 
+                              : notification.title)
+                          : "New Notification"}
                     </p>
                     <span className="text-xs text-gray-400 flex-shrink-0 ml-1 whitespace-nowrap">
                       {formatTime(notification.createdAt)}
@@ -299,6 +303,15 @@ const handleNotificationClick = (notification, navigate, onClose) => {
         }
       } else {
         navigate('/community');
+      }
+      break;
+    case 'FOLLOW':
+    case 'follow':
+      // Navigate to the follower's profile if available
+      if (notification.sender && notification.sender.username) {
+        navigate(`/profile/${notification.sender.username}`);
+      } else {
+        navigate('/profile');
       }
       break;
     case 'new_follower':

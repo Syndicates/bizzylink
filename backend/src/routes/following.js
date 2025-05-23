@@ -17,6 +17,22 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
+const eventEmitter = require('../eventEmitter');
+
+// Helper to get the relationship state between two users
+const getRelationshipState = async (currentUser, targetUser) => {
+  // Defensive: fetch latest from DB
+  const freshCurrent = await User.findById(currentUser._id);
+  const freshTarget = await User.findById(targetUser._id);
+  const isFollowing = freshCurrent.following && freshCurrent.following.some(id => id.toString() === freshTarget._id.toString());
+  const isFollower = freshTarget.following && freshTarget.following.some(id => id.toString() === freshCurrent._id.toString());
+  return {
+    status: isFollowing ? 'following' : 'not_following',
+    following: isFollowing,
+    follower: isFollower
+  };
+};
 
 // Get following list for the authenticated user
 router.get('/', protect, async (req, res) => {
@@ -36,67 +52,193 @@ router.get('/', protect, async (req, res) => {
 
 // Follow a user
 router.post('/follow', protect, async (req, res) => {
+  console.log('[FOLLOW][DEBUG] /follow endpoint called by user:', req.user.id, 'body:', req.body);
   try {
     const { username } = req.body;
     if (!username) {
-      return res.status(400).json({ success: false, error: 'Username is required' });
+      console.log('[FOLLOW][DEBUG] No username provided');
+      return res.status(400).json({
+        success: false,
+        error: 'Username is required'
+      });
     }
+    // Find the target user
     const targetUser = await User.findOne({ username });
     if (!targetUser) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      console.log('[FOLLOW][DEBUG] Target user not found:', username);
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
-    const currentUser = await User.findById(req.user._id);
+    // Find the current user
+    const currentUser = await User.findById(req.user.id);
     if (!currentUser) {
-      return res.status(404).json({ success: false, error: 'Current user not found' });
+      console.log('[FOLLOW][DEBUG] Current user not found:', req.user.id);
+      return res.status(404).json({
+        success: false,
+        error: 'Current user not found'
+      });
     }
+    // Check if already following
     if (currentUser.following && currentUser.following.some(id => id.toString() === targetUser._id.toString())) {
-      return res.json({ success: true, message: 'Already following this user' });
+      console.log('[FOLLOW][DEBUG] Already following:', targetUser.username);
+      const relationship = await getRelationshipState(currentUser, targetUser);
+      return res.json({
+        success: true,
+        message: 'Already following this user',
+        ...relationship
+      });
     }
-    if (!currentUser.following) currentUser.following = [];
+    // Add targetUser to following list
+    if (!currentUser.following) {
+      currentUser.following = [];
+    }
     currentUser.following.push(targetUser._id);
-    if (!targetUser.followers) targetUser.followers = [];
+    // Add currentUser to followers list of targetUser
+    if (!targetUser.followers) {
+      targetUser.followers = [];
+    }
     targetUser.followers.push(currentUser._id);
+    // Save both users
     await Promise.all([
       currentUser.save(),
       targetUser.save()
     ]);
-    res.json({ success: true, message: `Now following ${username}` });
+    // Create persistent notification for follow
+    try {
+      const notification = await Notification.create({
+        recipient: targetUser._id,
+        sender: currentUser._id,
+        type: 'FOLLOW',
+        message: `${currentUser.username} started following you`,
+        createdAt: new Date()
+      });
+      console.log('[FOLLOW][DEBUG] Created notification:', notification);
+      // Emit notification for follow
+      if (eventEmitter && typeof eventEmitter.emit === 'function') {
+        eventEmitter.emit('notification', {
+          type: 'follow',
+          sender: { _id: currentUser._id, username: currentUser.username },
+          recipient: { _id: targetUser._id, username: targetUser.username },
+          message: `${currentUser.username} started following you` 
+        });
+        // Emit SSE userEvent for real-time notification
+        const ssePayload = {
+          userId: targetUser._id.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'FOLLOW',
+            sender: { _id: currentUser._id, username: currentUser.username },
+            message: `${currentUser.username} started following you`,
+            createdAt: new Date()
+          }
+        };
+        console.log('[SSE][FOLLOW][DEBUG] Emitting userEvent for follow:', ssePayload);
+        eventEmitter.emit('userEvent', ssePayload);
+      } else {
+        console.log('[FOLLOW][DEBUG] eventEmitter not available or not a function');
+      }
+    } catch (err) {
+      console.error('[FOLLOW][DEBUG] Error creating notification:', err);
+    }
+    // Return current relationship state
+    const relationship = await getRelationshipState(currentUser, targetUser);
+    res.json({
+      success: true,
+      message: `Now following ${username}`,
+      ...relationship
+    });
   } catch (error) {
-    console.error('Error following user:', error);
-    res.status(500).json({ success: false, error: 'Failed to follow user' });
+    console.error('[FOLLOW][DEBUG] Error following user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to follow user'
+    });
   }
 });
 
 // Unfollow a user
 router.post('/unfollow', protect, async (req, res) => {
+  console.log('[UNFOLLOW][DEBUG] /unfollow endpoint called by user:', req.user.id, 'body:', req.body);
   try {
     const { username } = req.body;
     if (!username) {
-      return res.status(400).json({ success: false, error: 'Username is required' });
+      console.log('[UNFOLLOW][DEBUG] No username provided');
+      return res.status(400).json({
+        success: false,
+        error: 'Username is required'
+      });
     }
+    // Find the target user
     const targetUser = await User.findOne({ username });
     if (!targetUser) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      console.log('[UNFOLLOW][DEBUG] Target user not found:', username);
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
-    const currentUser = await User.findById(req.user._id);
+    // Find the current user
+    const currentUser = await User.findById(req.user.id);
     if (!currentUser) {
-      return res.status(404).json({ success: false, error: 'Current user not found' });
+      console.log('[UNFOLLOW][DEBUG] Current user not found:', req.user.id);
+      return res.status(404).json({
+        success: false,
+        error: 'Current user not found'
+      });
     }
+    // Check if not following
     if (!currentUser.following || !currentUser.following.some(id => id.toString() === targetUser._id.toString())) {
-      return res.json({ success: true, message: 'Not following this user' });
+      console.log('[UNFOLLOW][DEBUG] Not following:', targetUser.username);
+      const relationship = await getRelationshipState(currentUser, targetUser);
+      return res.json({
+        success: true,
+        message: 'Not following this user',
+        ...relationship
+      });
     }
+    // Remove targetUser from following list
     currentUser.following = currentUser.following.filter(id => id.toString() !== targetUser._id.toString());
+    // Remove currentUser from followers list of targetUser
     if (targetUser.followers) {
       targetUser.followers = targetUser.followers.filter(id => id.toString() !== currentUser._id.toString());
     }
+    // Save both users
     await Promise.all([
       currentUser.save(),
       targetUser.save()
     ]);
-    res.json({ success: true, message: `No longer following ${username}` });
+    // --- DO NOT create or emit a notification for unfollow ---
+    // --- Retract the previous FOLLOW notification ---
+    try {
+      const deleted = await Notification.findOneAndDelete({
+        recipient: targetUser._id,
+        sender: currentUser._id,
+        type: 'FOLLOW'
+      }, { sort: { createdAt: -1 } });
+      if (deleted) {
+        console.log('[UNFOLLOW][DEBUG] Retracted FOLLOW notification:', deleted._id);
+      } else {
+        console.log('[UNFOLLOW][DEBUG] No FOLLOW notification found to retract.');
+      }
+    } catch (err) {
+      console.error('[UNFOLLOW][DEBUG] Error retracting FOLLOW notification:', err);
+    }
+    // Return current relationship state
+    const relationship = await getRelationshipState(currentUser, targetUser);
+    res.json({
+      success: true,
+      message: `No longer following ${username}`,
+      ...relationship
+    });
   } catch (error) {
-    console.error('Error unfollowing user:', error);
-    res.status(500).json({ success: false, error: 'Failed to unfollow user' });
+    console.error('[UNFOLLOW][DEBUG] Error unfollowing user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to unfollow user'
+    });
   }
 });
 

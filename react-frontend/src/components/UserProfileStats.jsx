@@ -17,6 +17,8 @@ import React, { useState, useEffect } from 'react';
 import ForumAPI from '../services/ForumAPI';
 import { useNavigate } from 'react-router-dom';
 import DonationModal from './DonationModal';
+import FriendButton from './social/FriendButton';
+import FollowButton from './social/FollowButton';
 
 const UserProfileStats = ({ userId, currentUser }) => {
   const [loading, setLoading] = useState(true);
@@ -157,24 +159,20 @@ const UserProfileStats = ({ userId, currentUser }) => {
             
             <button 
               onClick={() => navigate(`/messages/new?recipient=${user.username}`)}
-              className="bg-blue-700 hover:bg-blue-600 text-blue-100 px-3 py-1 rounded text-sm flex items-center"
+              className="message-btn flex items-center px-4 py-2 rounded-lg border border-blue-500 bg-transparent text-blue-300 font-semibold shadow-sm hover:bg-blue-600 hover:text-white hover:shadow-lg focus:ring-2 focus:ring-blue-400 transition-all duration-150 scale-100 hover:scale-105 active:scale-95"
+              aria-label="Send Message"
+              tabIndex={0}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.77 9.77 0 01-4-.8l-4 1 1-3.5A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               Message
             </button>
             
+            <FollowButton username={user.username} />
+            
             {!currentUser.friends?.includes(userId) && (
-              <button 
-                className="bg-purple-700 hover:bg-purple-600 text-purple-100 px-3 py-1 rounded text-sm flex items-center"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
-                </svg>
-                Add Friend
-              </button>
+              <FriendButton username={user.username} />
             )}
           </div>
         )}

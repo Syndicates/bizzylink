@@ -166,8 +166,12 @@ class FriendService {
 
   // Settings
   static async getSettings() {
-    const data = await this.#makeRequest('GET', '/api/settings');
-    return { data };
+    // Fetch both privacy and notification settings in parallel
+    const [privacy, notifications] = await Promise.all([
+      this.#makeRequest('GET', '/api/user/settings/privacy'),
+      this.#makeRequest('GET', '/api/user/settings/notifications')
+    ]);
+    return { data: { privacy: privacy.settings?.privacy || privacy.privacy || {}, notifications: notifications.settings?.notifications || notifications.notifications || {} } };
   }
 
   // Relationship Status
