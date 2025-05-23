@@ -18,6 +18,15 @@
     "react"
   ],
   "rules": {
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    "react/prop-types": "warn",
+    "no-unused-vars": "warn",
+    "no-case-declarations": "warn",
+    "no-extra-boolean-cast": "warn",
+    "react/no-unescaped-entities": "warn",
+    "react/no-unknown-property": "warn",
+    "react/display-name": "warn",
+    "no-useless-escape": "warn",
+    "no-empty": "warn"
   }
 } 

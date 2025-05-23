@@ -463,6 +463,8 @@ router.get('/player/:identifier', async (req, res, next) => {
     // --- Return real stats from user.minecraft.stats, with sensible defaults ---
     const stats = (user.minecraft && user.minecraft.stats) || {};
     debugLog('[PLAYER GET] Returning stats:', stats);
+    debugLog('[PLAYER GET] Advancements in stats:', stats.advancements?.length || 0, 'items');
+    
     const response = {
       username: user.username,
       mcUsername: user.minecraftUsername || user.mcUsername || (user.minecraft && user.minecraft.mcUsername),
@@ -479,9 +481,14 @@ router.get('/player/:identifier', async (req, res, next) => {
       mobs_killed: stats.mobs_killed || 0,
       deaths: stats.deaths || 0,
       rank: stats.rank || user.webRank || 'Member',
+      // Explicitly handle advancements array
+      advancements: stats.advancements || user.advancements || [],
+      achievements: stats.achievements || 0,
       // Spread all other stats fields
       ...stats
     };
+    
+    debugLog('[PLAYER GET] Final response advancements:', response.advancements?.length || 0, 'items');
     res.status(200).json({
       success: true,
       data: response

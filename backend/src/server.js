@@ -203,6 +203,112 @@ app.get('/api/player/:uuid', async (req, res) => {
   }
 });
 
+// Enhanced player stats endpoint that returns full stats including advancements
+app.get('/api/minecraft/player/:identifier', async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    logger.info(`Fetching player stats for identifier: ${identifier}`);
+    
+    let user = null;
+    const isUUID = identifier.includes('-') || identifier.length === 32 || identifier.length === 36;
+    
+    if (isUUID) {
+      // Try all possible UUID fields
+      user = await User.findOne({
+        $or: [
+          { minecraftUUID: identifier },
+          { mcUUID: identifier },
+          { 'minecraft.mcUUID': identifier }
+        ]
+      });
+    } else {
+      // Try all possible username fields
+      user = await User.findOne({
+        $or: [
+          { minecraftUsername: identifier },
+          { mcUsername: identifier },
+          { 'minecraft.mcUsername': identifier }
+        ]
+      });
+      
+      if (!user) {
+        // Fallback: try case-insensitive username
+        user = await User.findOne({
+          $or: [
+            { minecraftUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } },
+            { mcUsername: { $regex: new RegExp(`^${identifier}$`, 'i') } },
+            { 'minecraft.mcUsername': { $regex: new RegExp(`^${identifier}$`, 'i') } }
+          ]
+        });
+      }
+      
+      if (!user) {
+        // Fallback: try website username
+        const websiteUser = await User.findOne({ username: identifier });
+        if (websiteUser && (websiteUser.minecraftUsername || websiteUser.mcUsername || (websiteUser.minecraft && websiteUser.minecraft.mcUsername))) {
+          user = websiteUser;
+        }
+      }
+    }
+    
+    if (!user || !(user.minecraftUUID || user.mcUUID || (user.minecraft && user.minecraft.mcUUID))) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Player not found or not linked' 
+      });
+    }
+    
+    // Get stats from user.minecraft.stats, with sensible defaults
+    const stats = (user.minecraft && user.minecraft.stats) || {};
+    logger.info(`[PLAYER STATS] Found stats for ${identifier}:`, {
+      statsKeys: Object.keys(stats),
+      advancementsCount: stats.advancements?.length || 0,
+      achievementsCount: stats.achievements || 0
+    });
+    
+    const response = {
+      success: true,
+      data: {
+        username: user.username,
+        mcUsername: user.minecraftUsername || user.mcUsername || (user.minecraft && user.minecraft.mcUsername),
+        minecraftUUID: user.minecraftUUID || user.mcUUID || (user.minecraft && user.minecraft.mcUUID),
+        linked: true,
+        lastUpdated: user.minecraft && user.minecraft.lastUpdated,
+        // Default values for stats
+        lastSeen: stats.lastSeen || 'Never',
+        balance: stats.balance || 0,
+        playtime: stats.playtime || '0h',
+        level: stats.level || 1,
+        experience: stats.experience || 0,
+        blocks_mined: stats.blocks_mined || 0,
+        mobs_killed: stats.mobs_killed || 0,
+        deaths: stats.deaths || 0,
+        rank: stats.rank || user.webRank || 'Member',
+        // CRITICAL: Ensure advancements is properly included as an array
+        advancements: stats.advancements || [],
+        achievements: stats.achievements || (stats.advancements ? stats.advancements.length : 0),
+        // Include all other stats fields
+        ...stats,
+        // Ensure we don't override the cleaned advancements
+        advancements: stats.advancements || []
+      }
+    };
+    
+    logger.info(`[PLAYER STATS] Returning response with ${response.data.advancements?.length || 0} advancements`);
+    if (response.data.advancements?.length > 0) {
+      logger.info(`[PLAYER STATS] First few advancements:`, response.data.advancements.slice(0, 5));
+    }
+    
+    res.json(response);
+  } catch (error) {
+    logger.error('[PLAYER STATS] Unexpected error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: `Server error: ${error.message}` 
+    });
+  }
+});
+
 // --- Legacy Minecraft Notification and Player Stats Endpoints ---
 
 // /api/minecraft/notify

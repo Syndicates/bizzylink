@@ -458,10 +458,41 @@ public class ApiService {
                     MessageUtils.log(Level.INFO, "  - balance: " + playerDataMap.get("balance"));
                 if (playerDataMap.containsKey("inventory"))
                     MessageUtils.log(Level.INFO, "  - inventory: present");
+                
+                // Debug advancement data specifically
+                if (playerDataMap.containsKey("advancements")) {
+                    Object advancementsObj = playerDataMap.get("advancements");
+                    MessageUtils.log(Level.INFO, "🏆 [API DEBUG] advancements field type: " + advancementsObj.getClass().getName());
+                    MessageUtils.log(Level.INFO, "🏆 [API DEBUG] advancements field value: " + advancementsObj);
+                    if (advancementsObj instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) advancementsObj;
+                        MessageUtils.log(Level.INFO, "🏆 [API DEBUG] advancements list size: " + list.size());
+                        if (!list.isEmpty()) {
+                            MessageUtils.log(Level.INFO, "🏆 [API DEBUG] first 3 advancements: " + list.subList(0, Math.min(3, list.size())));
+                        }
+                    }
+                }
+                if (playerDataMap.containsKey("achievements")) {
+                    MessageUtils.log(Level.INFO, "🏆 [API DEBUG] achievements count: " + playerDataMap.get("achievements"));
+                }
+                
                 // Truncate payload log to avoid console spam
                 String payloadStr = payload.toJSONString();
                 String shortPayload = payloadStr.length() > 300 ? payloadStr.substring(0, 300) + "..." : payloadStr;
                 MessageUtils.log(Level.INFO, "\uD83D\uDCE1 Payload (truncated): " + shortPayload);
+                
+                // Check if advancements are present in the JSON payload
+                if (payloadStr.contains("\"advancements\"")) {
+                    MessageUtils.log(Level.INFO, "🏆 [API DEBUG] ✅ 'advancements' field found in JSON payload");
+                    // Find the advancements part of the JSON
+                    int advIndex = payloadStr.indexOf("\"advancements\"");
+                    if (advIndex > 0) {
+                        String advSection = payloadStr.substring(Math.max(0, advIndex - 50), Math.min(payloadStr.length(), advIndex + 200));
+                        MessageUtils.log(Level.INFO, "🏆 [API DEBUG] advancements section in JSON: " + advSection);
+                    }
+                } else {
+                    MessageUtils.log(Level.WARNING, "🏆 [API DEBUG] ❌ 'advancements' field NOT found in JSON payload!");
+                }
             }
             String apiUrl = plugin.getApiUrl() + plugin.getPlayerUpdateEndpoint();
             URL url = new URL(apiUrl);

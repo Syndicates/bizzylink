@@ -69,4 +69,40 @@ router.get('/friends/:username', async (req, res) => {
   }
 });
 
+/**
+ * Get followers for a user by username
+ * GET /api/social/followers/:username
+ */
+router.get('/followers/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const user = await User.findOne({ username }).populate('followers', 'username displayName avatar bio');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    res.json({ success: true, followers: user.followers || [] });
+  } catch (error) {
+    console.error('Error fetching followers:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch followers' });
+  }
+});
+
+/**
+ * Get following for a user by username
+ * GET /api/social/following/:username
+ */
+router.get('/following/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const user = await User.findOne({ username }).populate('following', 'username displayName avatar bio');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    res.json({ success: true, following: user.following || [] });
+  } catch (error) {
+    console.error('Error fetching following:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch following' });
+  }
+});
+
 module.exports = router; 

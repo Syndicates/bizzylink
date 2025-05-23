@@ -275,9 +275,15 @@ app.get('/api/player/:identifier', async (req, res) => {
       mobs_killed: 0,
       deaths: 0,
       rank: 'Member',
-      // Include stats if available
-      ...(user.minecraft && user.minecraft.stats ? user.minecraft.stats : {})
+      // Include stats if available, but handle advancements specially
+      ...(user.minecraft && user.minecraft.stats ? user.minecraft.stats : {}),
+      // Ensure advancements is properly included as an array from the database
+      advancements: user.advancements || (user.minecraft && user.minecraft.stats && user.minecraft.stats.advancements) || []
     };
+    
+    // Debug log to see what we're returning
+    console.log(`Player ${identifier} advancements:`, response.advancements?.length || 0, 'total');
+    console.log(`First few advancements:`, response.advancements?.slice(0, 3));
     
     // Cache the response for future requests
     playerCache.set(identifier, response);

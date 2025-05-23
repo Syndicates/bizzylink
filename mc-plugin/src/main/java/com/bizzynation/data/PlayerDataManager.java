@@ -437,12 +437,42 @@ public class PlayerDataManager {
         try {
             if (plugin.getConfig().getBoolean("data.track_advancements", true)) {
                 Map<String, Object> advancements = collectAdvancementData(player);
+                
+                if (plugin.getConfig().getBoolean("data.debug_sync", false)) {
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] Adding advancement data to player data:");
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - Advancement data map size: " + advancements.size());
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - Contains 'list'? " + advancements.containsKey("list"));
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - Contains 'count'? " + advancements.containsKey("count"));
+                    if (advancements.containsKey("list")) {
+                        Object listObj = advancements.get("list");
+                        plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - List object type: " + listObj.getClass().getName());
+                        plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - List object value: " + listObj);
+                        if (listObj instanceof java.util.List) {
+                            java.util.List<?> list = (java.util.List<?>) listObj;
+                            plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - List size: " + list.size());
+                        }
+                    }
+                    if (advancements.containsKey("count")) {
+                        plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - Count value: " + advancements.get("count"));
+                    }
+                }
+                
                 data.put("advancements", advancements.get("list"));
                 data.put("achievements", advancements.get("count")); // Total count for progress bar
                 data.put("achievement_percentage", advancements.get("percentage"));
+                
+                if (plugin.getConfig().getBoolean("data.debug_sync", false)) {
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] After adding to main data:");
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - data.advancements type: " + data.get("advancements").getClass().getName());
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - data.advancements value: " + data.get("advancements"));
+                    plugin.getLogger().info("🏆 [PLAYER DATA DEBUG] - data.achievements: " + data.get("achievements"));
+                }
             }
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to collect advancement data: " + e.getMessage());
+            if (plugin.getConfig().getBoolean("data.debug_sync", false)) {
+                e.printStackTrace();
+            }
         }
         
         return data;
@@ -874,7 +904,13 @@ public class PlayerDataManager {
         int count = 0;
         int total = 0;
         
+        boolean debugMode = plugin.getConfig().getBoolean("data.debug_sync", false);
+        
         try {
+            if (debugMode) {
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] Starting advancement collection for " + player.getName());
+            }
+            
             // Get advancement iterator and convert to proper iterable format
             Iterator<org.bukkit.advancement.Advancement> advIterator = Bukkit.getServer().advancementIterator();
             while (advIterator.hasNext()) {
@@ -887,6 +923,10 @@ public class PlayerDataManager {
                 if (progress.isDone()) {
                     completedAdvancements.add(key);
                     count++;
+                    
+                    if (debugMode && count <= 5) {  // Log first 5 for debugging
+                        plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] Found completed: " + key);
+                    }
                 }
             }
             
@@ -898,8 +938,24 @@ public class PlayerDataManager {
             advancementData.put("total", total);
             advancementData.put("percentage", (int)percentage);
             
+            if (debugMode) {
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] Collection complete for " + player.getName() + ":");
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - Total advancements: " + total);
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - Completed: " + count);
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - Percentage: " + (int)percentage + "%");
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - List size: " + completedAdvancements.size());
+                plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - List type: " + completedAdvancements.getClass().getName());
+                if (!completedAdvancements.isEmpty()) {
+                    plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - First advancement: " + completedAdvancements.get(0));
+                    plugin.getLogger().info("🏆 [ADVANCEMENT DEBUG] - Sample of 3: " + completedAdvancements.subList(0, Math.min(3, completedAdvancements.size())));
+                }
+            }
+            
         } catch (Exception e) {
             plugin.getLogger().warning("Error collecting advancement data: " + e.getMessage());
+            if (debugMode) {
+                e.printStackTrace();
+            }
         }
         
         return advancementData;
