@@ -1283,21 +1283,18 @@ export const SocialService = {
     return response.data;
   },
 
-  getFriends: async () => {
+  getFriends: async (username) => {
     try {
-      const response = await api.get(`/api/friends`);
-      return response.data;
+      const response = await api.get(`/api/social/friends/${username}`);
+      return {
+        data: response.data // Wrap the response to match expected structure
+      };
     } catch (error) {
-      console.warn(`Failed to get friends:`, error.message);
+      console.warn(`Failed to get friends for ${username}:`, error.message);
       // Return fallback data when API fails
       return {
         data: {
-          friends: [
-            { _id: 'f1', username: 'DiamondDigger', status: 'Mining diamonds', online: true },
-            { _id: 'f2', username: 'CreeperSlayer', status: 'Fighting mobs', online: true },
-            { _id: 'f3', username: 'RedstoneWizard', status: 'Building circuits', online: false },
-            { _id: 'f4', username: 'MinerSteve', status: 'Last seen 2 hours ago', online: false }
-          ]
+          friends: []
         }
       };
     }
@@ -1306,7 +1303,9 @@ export const SocialService = {
   getFollowers: async (username) => {
     try {
       const response = await api.get(`/api/social/followers/${username}`);
-      return response.data;
+      return {
+        data: response.data // Wrap the response to match expected structure
+      };
     } catch (error) {
       console.warn(`Failed to get followers for ${username}:`, error.message);
       // Return fallback data when API fails
@@ -1321,7 +1320,9 @@ export const SocialService = {
   getFollowing: async (username) => {
     try {
       const response = await api.get(`/api/social/following/${username}`);
-      return response.data;
+      return {
+        data: response.data // Wrap the response to match expected structure
+      };
     } catch (error) {
       console.warn(`Failed to get following for ${username}:`, error.message);
       // Return fallback data when API fails
@@ -1345,6 +1346,54 @@ export const SocialService = {
           posts: []
         }
       };
+    }
+  },
+
+  // Repost functionality
+  repostWallPost: async (postId, message = '') => {
+    try {
+      const response = await api.post(`/api/wall/post/${postId}/repost`, { message });
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to repost ${postId}:`, error.message);
+      throw error;
+    }
+  },
+
+  unrepostWallPost: async (postId) => {
+    try {
+      const response = await api.delete(`/api/wall/post/${postId}/repost`);
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to unrepost ${postId}:`, error.message);
+      throw error;
+    }
+  },
+
+  getRepostStatus: async (postId) => {
+    try {
+      const response = await api.get(`/api/wall/post/${postId}/repost-status`);
+      return response.data;
+    } catch (error) {
+      console.warn(`Failed to get repost status for ${postId}:`, error.message);
+      return {
+        success: false,
+        hasReposted: false,
+        repostCount: 0,
+        reposts: []
+      };
+    }
+  },
+
+  // View tracking
+  trackWallPostView: async (postId, userId = null) => {
+    try {
+      const response = await api.post(`/api/wall/post/${postId}/view`, { userId });
+      return response.data;
+    } catch (error) {
+      console.warn(`Failed to track view for ${postId}:`, error.message);
+      // Don't throw error for view tracking failures
+      return { success: false };
     }
   }
 };

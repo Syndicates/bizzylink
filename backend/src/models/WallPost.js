@@ -28,7 +28,10 @@ const WallPostSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true,
+    required: function() {
+      // Content is not required for reposts
+      return !this.isRepost;
+    },
     maxlength: 500
   },
   createdAt: {
@@ -43,6 +46,39 @@ const WallPostSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Repost functionality (Twitter-style)
+  reposts: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  repostCount: {
+    type: Number,
+    default: 0
+  },
+  // View tracking
+  views: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    viewedAt: { type: Date, default: Date.now },
+    ipAddress: String // Track anonymous views too
+  }],
+  viewCount: {
+    type: Number,
+    default: 0
+  },
+  // For reposted content - reference to original post
+  originalPost: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WallPost'
+  },
+  isRepost: {
+    type: Boolean,
+    default: false
+  },
+  // Repost message (optional message when reposting)
+  repostMessage: {
+    type: String,
+    maxlength: 200
+  },
   // Optional image attachment
   image: {
     type: String
@@ -68,8 +104,21 @@ const WallPostSchema = new mongoose.Schema({
   ]
 });
 
+// Pre-save hook to handle repost content
+WallPostSchema.pre('save', function(next) {
+  // For reposts, ensure content is at least an empty string if not provided
+  if (this.isRepost && (this.content === undefined || this.content === null)) {
+    this.content = '';
+  }
+  next();
+});
+
 // Index for faster queries
 WallPostSchema.index({ author: 1, recipient: 1, createdAt: -1 });
 WallPostSchema.index({ recipient: 1, createdAt: -1 });
+WallPostSchema.index({ originalPost: 1 }); // For finding reposts of a post
+WallPostSchema.index({ isRepost: 1, createdAt: -1 }); // For filtering reposts
+WallPostSchema.index({ viewCount: -1 }); // For trending posts
+WallPostSchema.index({ repostCount: -1 }); // For popular posts
 
 module.exports = mongoose.model('WallPost', WallPostSchema); 

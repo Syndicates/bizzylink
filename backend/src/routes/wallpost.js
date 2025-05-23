@@ -57,7 +57,14 @@ router.get('/:username', async (req, res) => {
       .sort({ _id: -1 }) // Newest first by ObjectID
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('author', 'username displayName avatar mcUsername');
+      .populate('author', 'username displayName avatar mcUsername')
+      .populate({
+        path: 'originalPost',
+        populate: {
+          path: 'author',
+          select: 'username displayName avatar mcUsername'
+        }
+      });
     
     // Heavy debug: log IDs and createdAt of all posts being returned
     console.log('[WALLPOST][DEBUG] Returning', posts.length, 'posts for', username);
@@ -780,6 +787,247 @@ router.delete('/:username/bulk-delete', protect, async (req, res) => {
   } catch (error) {
     console.error('Bulk delete error:', error);
     res.status(500).json({ success: false, error: 'Bulk delete failed.' });
+  }
+});
+
+/**
+ * Repost a wall post to your own profile
+ * POST /api/wall/post/:postId/repost
+ */
+router.post('/post/:postId/repost', protect, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { message } = req.body; // Optional repost message
+    
+    // Find the original post
+    const originalPost = await WallPost.findById(postId)
+      .populate('author', 'username displayName avatar mcUsername');
+    
+    if (!originalPost) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    
+    // Can't repost your own posts to your own profile
+    if (originalPost.author._id.toString() === req.user._id.toString() && 
+        originalPost.recipient.toString() === req.user._id.toString()) {
+      return res.status(400).json({ success: false, error: 'Cannot repost your own post to your own profile' });
+    }
+    
+    // Check if already reposted
+    const existingRepost = await WallPost.findOne({
+      author: req.user._id,
+      recipient: req.user._id,
+      originalPost: postId,
+      isRepost: true
+    });
+    
+    if (existingRepost) {
+      return res.status(400).json({ success: false, error: 'Already reposted this post' });
+    }
+    
+    // Create repost
+    const repost = new WallPost({
+      author: req.user._id,
+      recipient: req.user._id, // Repost to own profile
+      content: message || '', // Optional repost message
+      originalPost: postId,
+      isRepost: true,
+      repostMessage: message,
+      type: 'user',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    await repost.save();
+    
+    // Update original post repost count and add to reposts array
+    await WallPost.findByIdAndUpdate(postId, {
+      $addToSet: { reposts: req.user._id },
+      $inc: { repostCount: 1 }
+    });
+    
+    // Populate the repost for response
+    const populatedRepost = await WallPost.findById(repost._id)
+      .populate('author', 'username displayName avatar mcUsername')
+      .populate({
+        path: 'originalPost',
+        populate: {
+          path: 'author',
+          select: 'username displayName avatar mcUsername'
+        }
+      });
+    
+    res.json({ success: true, repost: populatedRepost });
+    
+    // Notify original post author
+    if (originalPost.author._id.toString() !== req.user._id.toString()) {
+      try {
+        await Notification.create({
+          recipient: originalPost.author._id,
+          sender: req.user._id,
+          message: `${req.user.username} reposted your wall post!`,
+          type: 'WALL_REPOST',
+          data: { postId: originalPost._id, repostId: repost._id },
+        });
+        
+        // Emit SSE event
+        const ssePayload = {
+          userId: originalPost.author._id.toString(),
+          event: 'notification',
+          data: {
+            type: 'notification',
+            subtype: 'WALL_REPOST',
+            sender: { _id: req.user._id, username: req.user.username },
+            message: `${req.user.username} reposted your wall post!`,
+            postId: originalPost._id,
+            repostId: repost._id,
+            createdAt: new Date()
+          }
+        };
+        eventEmitter.emit('userEvent', ssePayload);
+      } catch (e) {
+        console.error('Failed to create repost notification:', e);
+      }
+    }
+    
+    // Emit wall post event for real-time updates
+    try {
+      eventEmitter.emit('wall_post', {
+        type: 'repost',
+        postId: repost._id.toString(),
+        originalPostId: postId,
+        wallOwnerUsername: req.user.username,
+        authorUsername: req.user.username
+      });
+    } catch (e) {
+      console.error('Failed to emit repost event:', e);
+    }
+    
+  } catch (error) {
+    console.error('Error reposting:', error);
+    res.status(500).json({ success: false, error: 'Failed to repost' });
+  }
+});
+
+/**
+ * Remove a repost (unrepost)
+ * DELETE /api/wall/post/:postId/repost
+ */
+router.delete('/post/:postId/repost', protect, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    // Find and delete the repost
+    const repost = await WallPost.findOneAndDelete({
+      author: req.user._id,
+      recipient: req.user._id,
+      originalPost: postId,
+      isRepost: true
+    });
+    
+    if (!repost) {
+      return res.status(404).json({ success: false, error: 'Repost not found' });
+    }
+    
+    // Update original post repost count and remove from reposts array
+    await WallPost.findByIdAndUpdate(postId, {
+      $pull: { reposts: req.user._id },
+      $inc: { repostCount: -1 }
+    });
+    
+    res.json({ success: true, message: 'Repost removed' });
+    
+    // Emit wall post event for real-time updates
+    try {
+      eventEmitter.emit('wall_post', {
+        type: 'unrepost',
+        postId: repost._id.toString(),
+        originalPostId: postId,
+        wallOwnerUsername: req.user.username,
+        authorUsername: req.user.username
+      });
+    } catch (e) {
+      console.error('Failed to emit unrepost event:', e);
+    }
+    
+  } catch (error) {
+    console.error('Error removing repost:', error);
+    res.status(500).json({ success: false, error: 'Failed to remove repost' });
+  }
+});
+
+/**
+ * Track a view on a wall post
+ * POST /api/wall/post/:postId/view
+ */
+router.post('/post/:postId/view', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId } = req.body; // Optional - for logged in users
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    
+    const post = await WallPost.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    
+    // Check if this user/IP already viewed this post recently (within 1 hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const existingView = post.views.find(view => {
+      if (userId && view.user) {
+        return view.user.toString() === userId && view.viewedAt > oneHourAgo;
+      }
+      return view.ipAddress === ipAddress && view.viewedAt > oneHourAgo;
+    });
+    
+    if (!existingView) {
+      // Add new view
+      post.views.push({
+        user: userId || null,
+        viewedAt: new Date(),
+        ipAddress: ipAddress
+      });
+      post.viewCount = post.views.length;
+      await post.save();
+    }
+    
+    res.json({ success: true, viewCount: post.viewCount });
+    
+  } catch (error) {
+    console.error('Error tracking view:', error);
+    res.status(500).json({ success: false, error: 'Failed to track view' });
+  }
+});
+
+/**
+ * Get repost status for a post
+ * GET /api/wall/post/:postId/repost-status
+ */
+router.get('/post/:postId/repost-status', protect, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    // Check if user has reposted this post
+    const repost = await WallPost.findOne({
+      author: req.user._id,
+      recipient: req.user._id,
+      originalPost: postId,
+      isRepost: true
+    });
+    
+    // Get original post repost count
+    const originalPost = await WallPost.findById(postId).select('repostCount reposts');
+    
+    res.json({ 
+      success: true, 
+      hasReposted: !!repost,
+      repostCount: originalPost?.repostCount || 0,
+      reposts: originalPost?.reposts || []
+    });
+    
+  } catch (error) {
+    console.error('Error getting repost status:', error);
+    res.status(500).json({ success: false, error: 'Failed to get repost status' });
   }
 });
 

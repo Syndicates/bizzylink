@@ -688,6 +688,20 @@ const Profile = () => {
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState('');
   
+  // Social modals state
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [showFollowingModal, setShowFollowingModal] = useState(false);
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [followersData, setFollowersData] = useState([]);
+  const [followingData, setFollowingData] = useState([]);
+  const [friendsData, setFriendsData] = useState([]);
+  const [socialModalLoading, setSocialModalLoading] = useState(false);
+  
+  // Repost and view tracking state
+  const [repostStatuses, setRepostStatuses] = useState({}); // { [postId]: { hasReposted, repostCount, reposts } }
+  const [repostLoading, setRepostLoading] = useState({}); // { [postId]: boolean }
+  const [viewCounts, setViewCounts] = useState({}); // { [postId]: number }
+  
   const profileUserRef = useRef();
   const userRef = useRef();
   
@@ -1300,10 +1314,31 @@ const Profile = () => {
   
   // Fetch wall posts for the profile user
   useEffect(() => {
-    if (isConnected && user && username) {
+    if (!isConnected || !user || !username) return;
     fetchWallPosts();
-    }
   }, [isConnected, user, username, fetchWallPosts]);
+
+  // Fetch repost statuses and track views when wall posts change
+  useEffect(() => {
+    if (wallPosts.length > 0) {
+      // Fetch repost statuses for all posts
+      fetchRepostStatuses(wallPosts);
+      
+      // Track views for all posts (with a small delay to avoid overwhelming the server)
+      wallPosts.forEach((post, index) => {
+        if (post._id) {
+          setTimeout(() => {
+            // Track view for the post itself
+            trackPostView(post._id);
+            // If it's a repost, also track view for the original post
+            if (post.isRepost && post.originalPost?._id) {
+              trackPostView(post.originalPost._id);
+            }
+          }, index * 100); // Stagger the requests
+        }
+      });
+    }
+  }, [wallPosts, user]);
   
   // Friend request handlers
   const handleSendFriendRequest = async (username) => {
@@ -1488,90 +1523,128 @@ const Profile = () => {
           }
         }));
       } catch (e) {
-        // Invalid cache, continue to fetch
-        console.warn("Error parsing cached wall posts:", e);
+        console.warn('Error parsing cached wall posts:', e);
       }
     }
     
     try {
       // Try to get real wall posts first
       const response = await SocialService.getWallPosts(username);
-      if (response && response.data && Array.isArray(response.data.posts)) {
-        // Store simplified version without React elements for caching
-        const cachablePosts = response.data.posts.map(post => ({
-          ...post,
-          // Convert icon to string representation for storage
-          icon: 'UserIcon'
-        }));
-        
-        // Cache the simplified posts
+      if (response && response.posts && Array.isArray(response.posts)) {
+        // Cache the response
         try {
-          sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
+          sessionStorage.setItem(cacheKey, JSON.stringify(response.posts));
         } catch (e) {
-          // Failed to cache, but we can still use the data
-          console.warn("Failed to cache wall posts:", e);
+          console.warn('Failed to cache wall posts:', e);
         }
-        
-        return response.data.posts;
+        return response.posts;
+      }
+      
+      // If the response doesn't have the expected structure, throw an error
+      throw new Error('Invalid wall posts data structure');
+    } catch (error) {
+      console.warn('Error fetching wall posts, using fallback:', error.message);
+      
+      // Fallback with reasonable wall post data if API fails
+      const fallbackPosts = [
+        {
+          _id: 'post1',
+          content: `Welcome to ${username}'s profile! This is a sample wall post. 🎮`,
+          author: { username: 'System', mcUsername: 'Server' },
+          createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+          likes: [],
+          comments: []
+        },
+        {
+          _id: 'post2',
+          content: 'Great to see you in the server! Keep up the good work!',
+          author: { username: 'ModerationTeam', mcUsername: 'Staff' },
+          createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+          likes: [],
+          comments: []
+        }
+      ];
+      
+      // Cache fallback data to prevent repeated API calls
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify(fallbackPosts));
+      } catch (e) {
+        console.warn('Failed to cache fallback wall posts:', e);
+      }
+      
+      return fallbackPosts;
+    }
+  };
+  
+  // View tracking function - track post views
+  async function trackPostView(postId) {
+    if (!postId) return;
+    
+    try {
+      const response = await SocialService.trackWallPostView(postId, user?._id);
+      if (response.success && response.viewCount) {
+        setViewCounts(prev => ({
+          ...prev,
+          [postId]: response.viewCount
+        }));
       }
     } catch (error) {
-      console.warn('Error fetching wall posts, using fallbacks:', error);
+      // Silently fail for view tracking
+      console.warn('Failed to track view:', error);
     }
+  }
+
+  // Fetch repost status for posts
+  async function fetchRepostStatuses(posts) {
+    if (!user || !posts.length) return;
     
-    // Create reasonable fallback posts based on user data
-    const defaultIcon = <UserIcon className="h-5 w-5 text-white" />;
-    
-    const posts = [
-      {
-        _id: `fallback-${Date.now()}`,
-        type: 'default',
-        title: `${username}'s Profile`,
-        description: 'Welcome to my Minecraft profile!',
-        content: `Welcome to ${username}'s Minecraft profile! Thanks for visiting.`,
-        time: 'Just now',
-        createdAt: new Date(),
-        author: {
-          username: username,
-          mcUsername: username,
-          _id: `user-${Math.random().toString(36).substr(2, 9)}`
-        },
-        likes: [],
-        comments: [],
-        icon: defaultIcon
+    // Get all unique post IDs, including original posts from reposts
+    const postIdsToCheck = new Set();
+    posts.forEach(post => {
+      if (post.isRepost && post.originalPost?._id) {
+        postIdsToCheck.add(post.originalPost._id);
+      } else if (post._id) {
+        postIdsToCheck.add(post._id);
       }
-    ];
+    });
     
-    // Cache simplified version for storage
-    const cachablePosts = [
-      {
-        _id: `fallback-${Date.now()}`,
-        type: 'default',
-        title: `${username}'s Profile`,
-        description: 'Welcome to my Minecraft profile!',
-        content: `Welcome to ${username}'s Minecraft profile! Thanks for visiting.`,
-        time: 'Just now',
-        createdAt: new Date(),
-        author: {
-          username: username,
-          mcUsername: username,
-          _id: `user-${Math.random().toString(36).substr(2, 9)}`
-        },
-        likes: [],
-        comments: [],
-        icon: 'UserIcon'
+    const statusPromises = Array.from(postIdsToCheck).map(async (postId) => {
+      try {
+        const response = await SocialService.getRepostStatus(postId);
+        return {
+          postId: postId,
+          status: {
+            hasReposted: response.hasReposted || false,
+            repostCount: response.repostCount || 0,
+            reposts: response.reposts || []
+          }
+        };
+      } catch (error) {
+        console.warn(`Failed to fetch repost status for post ${postId}:`, error);
+        // Find the post to get fallback data
+        const post = posts.find(p => p._id === postId || (p.isRepost && p.originalPost?._id === postId));
+        return {
+          postId: postId,
+          status: {
+            hasReposted: false,
+            repostCount: post?.repostCount || (post?.isRepost ? post.originalPost?.repostCount : 0) || 0,
+            reposts: post?.reposts || (post?.isRepost ? post.originalPost?.reposts : []) || []
+          }
+        };
       }
-    ];
+    });
     
-    // Cache the fallback data to prevent repeated API calls
-    try {
-      sessionStorage.setItem(cacheKey, JSON.stringify(cachablePosts));
-    } catch (e) {
-      // Failed to cache, but we can still use the data
-      console.warn("Failed to cache default wall posts:", e);
-    }
+    const results = await Promise.all(statusPromises);
+    const statusMap = {};
     
-    return posts;
-  };
+    results.forEach(result => {
+      if (result) {
+        statusMap[result.postId] = result.status;
+      }
+    });
+    
+    setRepostStatuses(statusMap);
+  }
   
   // Optimistic update for adding a comment
   const handleAddComment = async (postId) => {
@@ -1782,8 +1855,8 @@ const Profile = () => {
   };
 
   const cancelDeleteWallPost = () => {
-    setPostToDelete(null);
     setShowDeleteModal(false);
+    setPostToDelete(null);
   };
   
   // Toggle comment section expansion
@@ -1865,10 +1938,26 @@ const Profile = () => {
               layout
               className="bg-white/10 rounded-md p-4 mb-2"
             >
+              {/* Repost Indicator */}
+              {post.isRepost && (
+                <div className="flex items-center text-sm text-gray-400 mb-3 pb-2 border-b border-white/10">
+                  <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <Link to={`/profile/${post.author.username}`} className="hover:text-white">
+                    {post.author.username}
+                  </Link>
+                  <span className="ml-1">reposted</span>
+                  {post.repostMessage && (
+                    <span className="ml-2 text-gray-300">"{post.repostMessage}"</span>
+                  )}
+                </div>
+              )}
+              
         <div className="flex items-start">
-          <Link to={`/profile/${post.author.username}`} className="flex-shrink-0">
+          <Link to={`/profile/${post.isRepost ? post.originalPost?.author?.username : post.author.username}`} className="flex-shrink-0">
             <MinecraftAvatar 
-              username={avatarUsername}
+              username={post.isRepost ? (post.originalPost?.author?.mcUsername || post.originalPost?.author?.username) : avatarUsername}
               size={40}
               type="head"
               className="rounded-md"
@@ -1878,20 +1967,28 @@ const Profile = () => {
             <div className="flex justify-between items-start">
               <div>
                 <Link 
-                  to={`/profile/${post.author.username}`}
+                  to={`/profile/${post.isRepost ? post.originalPost?.author?.username : post.author.username}`}
                   className="font-medium hover:text-minecraft-habbo-blue"
                 >
-                  {post.author.username}
+                  {post.isRepost ? post.originalPost?.author?.username : post.author.username}
                 </Link>
                 <span className="text-gray-400 text-sm ml-2">
-                  {timeAgo(post.createdAt || Date.now())}
+                  {timeAgo(post.isRepost ? post.originalPost?.createdAt : post.createdAt || Date.now())}
                 </span>
               </div>
-              {(isOwnProfile || (user && post.author.username === user.username)) && (
+              {(isOwnProfile || (user && (post.author.username === user.username || (post.isRepost && post.originalPost?.author?.username === user.username)))) && (
                 <button 
-                  onClick={() => handleDeleteWallPostWithConfirm(post._id)}
+                  onClick={() => {
+                    if (post.isRepost && post.author.username === user.username) {
+                      // This is the user's own repost, call unrepost instead of delete
+                      handleUnrepost(post.originalPost._id);
+                    } else {
+                      // This is a regular post or original post, use delete
+                      handleDeleteWallPostWithConfirm(post._id);
+                    }
+                  }}
                   className="text-gray-400 hover:text-red-400"
-                  title="Delete post"
+                  title={post.isRepost && post.author.username === user.username ? "Remove repost" : "Delete post"}
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1899,11 +1996,13 @@ const Profile = () => {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-gray-200 whitespace-pre-wrap break-all overflow-x-auto">{post.content || ''}</p>
-            {post.image && (
+            <p className="mt-2 text-gray-200 whitespace-pre-wrap break-all overflow-x-auto">
+              {post.isRepost ? post.originalPost?.content : post.content || ''}
+            </p>
+            {(post.isRepost ? post.originalPost?.image : post.image) && (
               <div className="mt-3">
                 <img 
-                  src={post.image} 
+                  src={post.isRepost ? post.originalPost.image : post.image} 
                   alt=""
                   className="rounded-md max-h-96 w-auto"
                 />
@@ -1926,6 +2025,43 @@ const Profile = () => {
                 <HandThumbUpIcon className="h-4 w-4 mr-1" />
                 {post.likes?.length || 0} {post.likes?.length === 1 ? 'Like' : 'Likes'}
               </button>
+              
+              {/* Repost Button */}
+              {user && post._id && (
+                <button 
+                  className={`flex items-center hover:text-white mr-4 ${
+                    repostStatuses[post.isRepost ? post.originalPost._id : post._id]?.hasReposted ? 'text-green-400' : ''
+                  } ${repostLoading[post.isRepost ? post.originalPost._id : post._id] ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  onClick={() => {
+                    const targetPostId = post.isRepost ? post.originalPost._id : post._id;
+                    if (repostLoading[targetPostId]) return;
+                    if (repostStatuses[targetPostId]?.hasReposted) {
+                      handleUnrepost(targetPostId);
+                    } else {
+                      handleRepost(targetPostId);
+                    }
+                  }}
+                  disabled={repostLoading[post.isRepost ? post.originalPost._id : post._id]}
+                  title={repostStatuses[post.isRepost ? post.originalPost._id : post._id]?.hasReposted ? 'Remove repost' : 'Repost to your profile'}
+                >
+                  <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {repostStatuses[post.isRepost ? post.originalPost._id : post._id]?.repostCount || (post.isRepost ? post.originalPost?.repostCount : post.repostCount) || 0}
+                </button>
+              )}
+              
+              {/* View Count */}
+              {(viewCounts[post._id] || post.viewCount) && (
+                <div className="flex items-center mr-4">
+                  <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  {viewCounts[post._id] || post.viewCount || 0} views
+                </div>
+              )}
+              
               {post.comments && post.comments.length > 0 && (
                 <div className="relative h-2 w-2 mr-2">
                   <span className="absolute inset-0 inline-flex h-2 w-2 rounded-full bg-minecraft-habbo-blue opacity-75 animate-ping"></span>
@@ -2301,7 +2437,144 @@ const Profile = () => {
       setBulkDeleteLoading(false);
     }
   };
+
+  // Social modal handlers
+  const fetchFollowersData = async () => {
+    setSocialModalLoading(true);
+    try {
+      const response = await SocialService.getFollowers(profileUser?.username);
+      setFollowersData(response?.data?.followers || []);
+    } catch (err) {
+      console.error('Failed to fetch followers:', err);
+      setFollowersData([]);
+    } finally {
+      setSocialModalLoading(false);
+    }
+  };
+
+  const fetchFollowingData = async () => {
+    setSocialModalLoading(true);
+    try {
+      const response = await SocialService.getFollowing(profileUser?.username);
+      setFollowingData(response?.data?.following || []);
+    } catch (err) {
+      console.error('Failed to fetch following:', err);
+      setFollowingData([]);
+    } finally {
+      setSocialModalLoading(false);
+    }
+  };
+
+  const fetchFriendsData = async () => {
+    setSocialModalLoading(true);
+    try {
+      const response = await SocialService.getFriends(profileUser?.username);
+      setFriendsData(response?.data?.friends || []);
+    } catch (err) {
+      console.error('Failed to fetch friends:', err);
+      setFriendsData([]);
+    } finally {
+      setSocialModalLoading(false);
+    }
+  };
+
+  const handleOpenFollowersModal = () => {
+    setShowFollowersModal(true);
+    fetchFollowersData();
+  };
+
+  const handleOpenFollowingModal = () => {
+    setShowFollowingModal(true);
+    fetchFollowingData();
+  };
+
+  const handleOpenFriendsModal = () => {
+    setShowFriendsModal(true);
+    fetchFriendsData();
+  };
+
+  const closeSocialModals = () => {
+    setShowFollowersModal(false);
+    setShowFollowingModal(false);
+    setShowFriendsModal(false);
+    setFollowersData([]);
+    setFollowingData([]);
+    setFriendsData([]);
+  };
   
+  // Repost handlers
+  async function handleRepost(postId, message = '') {
+    if (!user || !postId) return;
+    
+    console.log('[DEBUG] handleRepost called with postId:', postId);
+    
+    try {
+      setRepostLoading(prev => ({ ...prev, [postId]: true }));
+      
+      const response = await SocialService.repostWallPost(postId, message);
+      console.log('[DEBUG] Repost response:', response);
+      
+      if (response.success) {
+        // Update repost status
+        setRepostStatuses(prev => ({
+          ...prev,
+          [postId]: {
+            hasReposted: true,
+            repostCount: (prev[postId]?.repostCount || 0) + 1,
+            reposts: [...(prev[postId]?.reposts || []), user._id]
+          }
+        }));
+        
+        // Refresh wall posts to show the new repost
+        await refreshWallPosts();
+        
+        setNotification({ show: true, type: 'success', message: 'Post reposted!' });
+      }
+    } catch (error) {
+      console.error('Failed to repost:', error);
+      setWallError(error.message || 'Failed to repost');
+      setNotification({ show: true, type: 'error', message: 'Failed to repost' });
+    } finally {
+      setRepostLoading(prev => ({ ...prev, [postId]: false }));
+    }
+  }
+
+  async function handleUnrepost(postId) {
+    if (!user || !postId) return;
+    
+    console.log('[DEBUG] handleUnrepost called with postId:', postId);
+    
+    try {
+      setRepostLoading(prev => ({ ...prev, [postId]: true }));
+      
+      const response = await SocialService.unrepostWallPost(postId);
+      console.log('[DEBUG] Unrepost response:', response);
+      
+      if (response.success) {
+        // Update repost status
+        setRepostStatuses(prev => ({
+          ...prev,
+          [postId]: {
+            hasReposted: false,
+            repostCount: Math.max((prev[postId]?.repostCount || 1) - 1, 0),
+            reposts: (prev[postId]?.reposts || []).filter(id => id !== user._id)
+          }
+        }));
+        
+        // Refresh wall posts to remove the repost
+        await refreshWallPosts();
+        
+        setNotification({ show: true, type: 'success', message: 'Repost removed!' });
+      }
+    } catch (error) {
+      console.error('Failed to unrepost:', error);
+      setWallError(error.message || 'Failed to unrepost');
+      setNotification({ show: true, type: 'error', message: 'Failed to unrepost' });
+    } finally {
+      setRepostLoading(prev => ({ ...prev, [postId]: false }));
+    }
+  }
+
   return (
     <div className="relative min-h-screen ...">
       {/* Celebration overlay */}
@@ -2404,55 +2677,55 @@ const Profile = () => {
               )}
               
               {/* Instagram/TikTok Style Social Stats Overlay */}
-              <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+              <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                 {socialStats.loading ? (
-                  <div className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center shadow-lg">
+                  <div className="bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-md px-4 py-3 min-w-[90px] text-center shadow-card">
                     <LoadingSpinner size="small" />
                   </div>
                 ) : socialStats.error ? (
-                  <div className="bg-red-500/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center">
-                    <div className="text-white text-xs">Error</div>
+                  <div className="bg-red-900/60 backdrop-blur-md border-2 border-red-500/40 rounded-md px-4 py-3 min-w-[90px] text-center shadow-card">
+                    <div className="text-red-300 text-xs font-medium">Error</div>
                   </div>
                 ) : (
                   <>
                     {/* Followers */}
-                    <Link 
-                      to="/friends" 
-                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    <button 
+                      onClick={handleOpenFollowersModal} 
+                      className="bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-md px-4 py-3 min-w-[90px] text-center hover:bg-white/15 hover:border-minecraft-habbo-blue/50 transition-all duration-300 cursor-pointer group hover:scale-105 hover:-translate-y-1 transform shadow-card hover:shadow-card-hover"
                     >
-                      <div className="text-white font-bold text-lg leading-none">
+                      <div className="text-white font-bold text-xl leading-none">
                         {socialStats.followersCount || 0}
                       </div>
-                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                      <div className="text-gray-300 text-xs font-medium uppercase tracking-wider mt-1 group-hover:text-minecraft-habbo-blue transition-colors">
                         Followers
                       </div>
-                    </Link>
+                    </button>
                     
                     {/* Following */}
-                    <Link 
-                      to="/friends" 
-                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    <button 
+                      onClick={handleOpenFollowingModal} 
+                      className="bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-md px-4 py-3 min-w-[90px] text-center hover:bg-white/15 hover:border-minecraft-habbo-green/50 transition-all duration-300 cursor-pointer group hover:scale-105 hover:-translate-y-1 transform shadow-card hover:shadow-card-hover"
                     >
-                      <div className="text-white font-bold text-lg leading-none">
+                      <div className="text-white font-bold text-xl leading-none">
                         {socialStats.followingCount || 0}
                       </div>
-                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                      <div className="text-gray-300 text-xs font-medium uppercase tracking-wider mt-1 group-hover:text-minecraft-habbo-green transition-colors">
                         Following
                       </div>
-                    </Link>
+                    </button>
                     
                     {/* Friends */}
-                    <Link 
-                      to="/friends" 
-                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    <button 
+                      onClick={handleOpenFriendsModal} 
+                      className="bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-md px-4 py-3 min-w-[90px] text-center hover:bg-white/15 hover:border-minecraft-habbo-blue/50 transition-all duration-300 cursor-pointer group hover:scale-105 hover:-translate-y-1 transform shadow-card hover:shadow-card-hover"
                     >
-                      <div className="text-white font-bold text-lg leading-none">
+                      <div className="text-white font-bold text-xl leading-none">
                         {socialStats.friendsCount || 0}
                       </div>
-                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                      <div className="text-gray-300 text-xs font-medium uppercase tracking-wider mt-1 group-hover:text-minecraft-habbo-blue transition-colors">
                         Friends
                       </div>
-                    </Link>
+                    </button>
                   </>
                 )}
               </div>
@@ -3524,6 +3797,175 @@ const Profile = () => {
               >
                 {bulkDeleteLoading ? 'Deleting...' : 'Delete All Posts'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Social Modals */}
+      {/* Followers Modal */}
+      {showFollowersModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-minecraft-navy-dark rounded-md p-6 max-w-md w-full mx-4 border-2 border-minecraft-habbo-blue shadow-card-hover max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-minecraft text-minecraft-habbo-blue">
+                Followers ({socialStats.followersCount || 0})
+              </h3>
+              <button
+                onClick={closeSocialModals}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {socialModalLoading ? (
+                <div className="text-center py-8">
+                  <LoadingSpinner />
+                </div>
+              ) : followersData.length === 0 ? (
+                <div className="text-center py-8">
+                  <UsersIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400">No followers yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {followersData.map((follower) => (
+                    <div key={follower._id} className="flex items-center p-3 bg-white/5 rounded-md hover:bg-white/10 transition-colors">
+                      <Link to={`/profile/${follower.username}`} className="flex items-center flex-1" onClick={closeSocialModals}>
+                        <MinecraftAvatar 
+                          username={follower.mcUsername || follower.username}
+                          size={40}
+                          type="head"
+                          className="rounded-md mr-3"
+                        />
+                        <div>
+                          <p className="font-medium text-white">{follower.username}</p>
+                          <p className="text-xs text-gray-400">
+                            {follower.mcUsername && follower.mcUsername !== follower.username ? 
+                              `MC: ${follower.mcUsername}` : 'Player'}
+                          </p>
+                        </div>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Following Modal */}
+      {showFollowingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-minecraft-navy-dark rounded-md p-6 max-w-md w-full mx-4 border-2 border-minecraft-habbo-green shadow-card-hover max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-minecraft text-minecraft-habbo-green">
+                Following ({socialStats.followingCount || 0})
+              </h3>
+              <button
+                onClick={closeSocialModals}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {socialModalLoading ? (
+                <div className="text-center py-8">
+                  <LoadingSpinner />
+                </div>
+              ) : followingData.length === 0 ? (
+                <div className="text-center py-8">
+                  <UsersIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400">Not following anyone yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {followingData.map((following) => (
+                    <div key={following._id} className="flex items-center p-3 bg-white/5 rounded-md hover:bg-white/10 transition-colors">
+                      <Link to={`/profile/${following.username}`} className="flex items-center flex-1" onClick={closeSocialModals}>
+                        <MinecraftAvatar 
+                          username={following.mcUsername || following.username}
+                          size={40}
+                          type="head"
+                          className="rounded-md mr-3"
+                        />
+                        <div>
+                          <p className="font-medium text-white">{following.username}</p>
+                          <p className="text-xs text-gray-400">
+                            {following.mcUsername && following.mcUsername !== following.username ? 
+                              `MC: ${following.mcUsername}` : 'Player'}
+                          </p>
+                        </div>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Friends Modal */}
+      {showFriendsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-minecraft-navy-dark rounded-md p-6 max-w-md w-full mx-4 border-2 border-minecraft-habbo-blue shadow-card-hover max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-minecraft text-minecraft-habbo-blue">
+                Friends ({socialStats.friendsCount || 0})
+              </h3>
+              <button
+                onClick={closeSocialModals}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {socialModalLoading ? (
+                <div className="text-center py-8">
+                  <LoadingSpinner />
+                </div>
+              ) : friendsData.length === 0 ? (
+                <div className="text-center py-8">
+                  <UsersIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                  <p className="text-gray-400">No friends yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {friendsData.map((friend) => (
+                    <div key={friend._id} className="flex items-center p-3 bg-white/5 rounded-md hover:bg-white/10 transition-colors">
+                      <Link to={`/profile/${friend.username}`} className="flex items-center flex-1" onClick={closeSocialModals}>
+                        <MinecraftAvatar 
+                          username={friend.mcUsername || friend.username}
+                          size={40}
+                          type="head"
+                          className="rounded-md mr-3"
+                        />
+                        <div className="flex-1">
+                          <p className="font-medium text-white">{friend.username}</p>
+                          <p className="text-xs text-gray-400">
+                            {friend.mcUsername && friend.mcUsername !== friend.username ? 
+                              `MC: ${friend.mcUsername}` : 'Player'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className={`w-3 h-3 rounded-full ${friend.online ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {friend.online ? 'Online' : 'Offline'}
+                          </p>
+                        </div>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
