@@ -2403,9 +2403,63 @@ const Profile = () => {
                 </div>
               )}
               
+              {/* Instagram/TikTok Style Social Stats Overlay */}
+              <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                {socialStats.loading ? (
+                  <div className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center shadow-lg">
+                    <LoadingSpinner size="small" />
+                  </div>
+                ) : socialStats.error ? (
+                  <div className="bg-red-500/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center">
+                    <div className="text-white text-xs">Error</div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Followers */}
+                    <Link 
+                      to="/friends" 
+                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    >
+                      <div className="text-white font-bold text-lg leading-none">
+                        {socialStats.followersCount || 0}
+                      </div>
+                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                        Followers
+                      </div>
+                    </Link>
+                    
+                    {/* Following */}
+                    <Link 
+                      to="/friends" 
+                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    >
+                      <div className="text-white font-bold text-lg leading-none">
+                        {socialStats.followingCount || 0}
+                      </div>
+                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                        Following
+                      </div>
+                    </Link>
+                    
+                    {/* Friends */}
+                    <Link 
+                      to="/friends" 
+                      className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 min-w-[80px] text-center hover:bg-black/80 transition-all duration-200 cursor-pointer group hover:scale-105 transform shadow-lg"
+                    >
+                      <div className="text-white font-bold text-lg leading-none">
+                        {socialStats.friendsCount || 0}
+                      </div>
+                      <div className="text-gray-300 text-xs uppercase tracking-wide mt-1 group-hover:text-white transition-colors">
+                        Friends
+                      </div>
+                    </Link>
+                  </>
+                )}
+              </div>
+              
               {/* Cover Image Change Button */}
-            {isOwnProfile && (
-                        <button 
+              {isOwnProfile && (
+                <button 
                   onClick={() => setShowWallpaperModal(true)}
                   className="absolute bottom-4 right-4 bg-black/50 hover:bg-black/70 text-white px-3 py-1 rounded-md flex items-center text-sm"
                 >
@@ -2621,52 +2675,7 @@ const Profile = () => {
                 </div>
               </div>
               
-              {/* Social Stats Box */}
-              <div className="habbo-card p-5 rounded-md">
-                <h2 className="text-lg font-minecraft text-minecraft-habbo-blue mb-4 border-b border-white/10 pb-2">
-                  Social
-                </h2>
-                
-                <div className="space-y-3 text-sm">
-                  <div className="flex">
-                    <UserIcon className="h-5 w-5 text-blue-400 mr-3 flex-shrink-0" />
-                    <div>
-                      <p className="text-gray-400">Friends:</p>
-                      <p>{socialStats.friendsCount || 0}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex">
-                    <UsersIcon className="h-5 w-5 text-purple-400 mr-3 flex-shrink-0" />
-                    <div>
-                      <p className="text-gray-400">Followers:</p>
-                      <p>{socialStats.followersCount || 0}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex">
-                    <HeartIcon className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" />
-                    <div>
-                      <p className="text-gray-400">Following:</p>
-                      <p>{socialStats.followingCount || 0}</p>
-                    </div>
-                  </div>
-                  
-                  {socialStats.loading ? (
-                    <div className="text-center py-2">
-                      <LoadingSpinner size="small" />
-                    </div>
-                  ) : socialStats.error ? (
-                    <div className="text-center text-red-400 text-xs py-2">
-                      {socialStats.error}
-                    </div>
-                  ) : (
-                  <Link to="/friends" className="block text-center text-minecraft-habbo-blue hover:text-minecraft-habbo-green mt-3 text-xs">
-                    View all social connections
-                  </Link>
-                  )}
-                </div>
-              </div>
+              {/* Social Stats Box - Now moved to cover image overlay */}
               
               {/* Level Display Box */}
               <div className="habbo-card p-5 rounded-md">
