@@ -497,12 +497,11 @@ const Profile = () => {
 
   // Privacy or other error state
   if (profileError) {
-    console.log('profileError:', profileError, 'profileUser:', profileUser);
     return (
       <div className="min-h-screen bg-gradient-to-br from-minecraft-navy-dark via-minecraft-navy to-minecraft-navy-dark">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ProfileHeader
-            profileUser={profileUser || { username }}
+            profileUser={profileUser}
             playerStats={playerStats}
             coverImage={coverImage}
             isOwnProfile={isOwnProfile}
@@ -551,7 +550,7 @@ const Profile = () => {
         {/* Profile Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ProfileHeader
-            profileUser={profileUser || { username }}
+            profileUser={profileUser}
             playerStats={playerStats}
             coverImage={coverImage}
             isOwnProfile={isOwnProfile}

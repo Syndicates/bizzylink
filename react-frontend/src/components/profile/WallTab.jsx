@@ -64,8 +64,6 @@ const WallTab = ({
   className = '',
   profileUser
 }) => {
-  if (!profileUser) return null;
-
   // Local notification state
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
 

@@ -65,10 +65,10 @@ const ProfileHeader = ({
     setImageError(false);
   }, [coverImage]);
 
-  if (!profileUser || !profileUser.username) return null;
+  if (!profileUser) return null;
 
-  const displayName = profileUser.displayName || profileUser.username || 'Unknown User';
-  const mcUsername = profileUser.mcUsername || profileUser.username || 'Unknown User';
+  const displayName = profileUser.displayName || profileUser.username;
+  const mcUsername = profileUser.mcUsername || profileUser.username;
   const role = profileUser.title || profileUser.role || playerStats?.rank || 'Adventurer';
 
 
@@ -322,7 +322,7 @@ const ProfileHeader = ({
               <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>
                   <h1 className="text-2xl font-minecraft flex items-center">
-                    {profileUser?.username || 'Unknown User'}
+                    {profileUser?.username}
                     {profileUser?.verified && (
                       <span
                         className="ml-2 text-minecraft-habbo-blue"
