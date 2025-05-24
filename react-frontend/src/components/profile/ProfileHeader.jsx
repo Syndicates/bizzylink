@@ -20,13 +20,15 @@ import {
   PhotoIcon, 
   ChatBubbleLeftIcon,
   CheckIcon,
-  XMarkIcon 
+  XMarkIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline';
 import MinecraftAvatar from '../MinecraftAvatar';
 import MinecraftPlayerModel3D from '../MinecraftPlayerModel3D';
 import FriendButton from '../social/FriendButton';
 import FollowButton from '../social/FollowButton';
 import LoadingSpinner from '../LoadingSpinner';
+import ProfileSettingsModal from '../ProfileSettingsModal';
 
 const ProfileHeader = ({
   profileUser,
@@ -55,6 +57,7 @@ const ProfileHeader = ({
 
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
 
   // Reset image loading state when cover image changes
   React.useEffect(() => {
@@ -62,10 +65,10 @@ const ProfileHeader = ({
     setImageError(false);
   }, [coverImage]);
 
-  if (!profileUser) return null;
+  if (!profileUser || !profileUser.username) return null;
 
-  const displayName = profileUser.displayName || profileUser.username;
-  const mcUsername = profileUser.mcUsername || profileUser.username;
+  const displayName = profileUser.displayName || profileUser.username || 'Unknown User';
+  const mcUsername = profileUser.mcUsername || profileUser.username || 'Unknown User';
   const role = profileUser.title || profileUser.role || playerStats?.rank || 'Adventurer';
 
 
@@ -263,6 +266,24 @@ const ProfileHeader = ({
             </button>
           )}
 
+          {/* Gear icon for Manage Profile (only for own profile) */}
+          {isOwnProfile && (
+            <div className="absolute top-3 left-3 z-40 group">
+              <button
+                type="button"
+                className="p-2 rounded-full bg-minecraft-navy-light hover:bg-minecraft-habbo-blue transition-colors relative group"
+                title="Manage Profile"
+                aria-label="Manage Profile"
+                onClick={() => setShowProfileSettings(true)}
+              >
+                <Cog6ToothIcon className="h-6 w-6 text-gray-300 group-hover:text-white" />
+                <span className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                  Manage Profile
+                </span>
+              </button>
+            </div>
+          )}
+
         </div>
 
         {/* Profile Info */}
@@ -301,7 +322,7 @@ const ProfileHeader = ({
               <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>
                   <h1 className="text-2xl font-minecraft flex items-center">
-                    {profileUser?.username}
+                    {profileUser?.username || 'Unknown User'}
                     {profileUser?.verified && (
                       <span
                         className="ml-2 text-minecraft-habbo-blue"
@@ -378,111 +399,117 @@ const ProfileHeader = ({
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Account Verification Alert - Only show for own profile if not verified */}
-      {isOwnProfile &&
-        profileUser &&
-        !profileUser.verified &&
-        !profileUser.isVerified &&
-        !verificationAlertDismissed && (
-          <div className="mt-6 animate-in slide-in-from-top duration-300 verification-alert">
-            <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-lg p-4 shadow-lg backdrop-blur-sm">
-              <div className="flex items-start space-x-3">
-                {/* Warning Icon */}
-                <div className="flex-shrink-0">
-                  <svg
-                    className="h-6 w-6 text-yellow-500"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.515-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
-
-                {/* Alert Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-medium text-yellow-300 mb-1">
-                        🔐 Account Verification Required
-                      </h3>
-                      <p className="text-sm text-gray-300">
-                        Your account is not verified yet. Verify your
-                        account to access all features, build trust with
-                        other users, and unlock exclusive benefits.
-                      </p>
-
-                      {/* Benefits List */}
-                      <div className="mt-3">
-                        <p className="text-xs text-gray-400 mb-2">
-                          Benefits of verification:
+        {/* Account Verification Alert - Only show for own profile if not verified */}
+        {isOwnProfile &&
+          profileUser &&
+          !profileUser.verified &&
+          !profileUser.isVerified &&
+          !verificationAlertDismissed && (
+            <div className="mt-6 animate-in slide-in-from-top duration-300 verification-alert">
+              <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-lg p-4 shadow-lg backdrop-blur-sm">
+                <div className="flex items-start space-x-3">
+                  {/* Warning Icon */}
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-6 w-6 text-yellow-500"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.515-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  {/* Alert Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-medium text-yellow-300 mb-1">
+                          🔐 Account Verification Required
+                        </h3>
+                        <p className="text-sm text-gray-300">
+                          Your account is not verified yet. Verify your
+                          account to access all features, build trust with
+                          other users, and unlock exclusive benefits.
                         </p>
-                        <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex items-center px-2 py-1 text-xs bg-green-500/20 text-green-300 rounded-full border border-green-500/30">
-                            ✓ Blue checkmark badge
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-full border border-blue-500/30">
-                            🔒 Enhanced security
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 text-xs bg-purple-500/20 text-purple-300 rounded-full border border-purple-500/30">
-                            🎮 Full Minecraft integration
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-500/20 text-yellow-300 rounded-full border border-yellow-500/30">
-                            🏆 Access to leaderboards
-                          </span>
+                        {/* Benefits List */}
+                        <div className="mt-3">
+                          <p className="text-xs text-gray-400 mb-2">
+                            Benefits of verification:
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center px-2 py-1 text-xs bg-green-500/20 text-green-300 rounded-full border border-green-500/30">
+                              ✓ Blue checkmark badge
+                            </span>
+                            <span className="inline-flex items-center px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-full border border-blue-500/30">
+                              🔒 Enhanced security
+                            </span>
+                            <span className="inline-flex items-center px-2 py-1 text-xs bg-purple-500/20 text-purple-300 rounded-full border border-purple-500/30">
+                              🎮 Full Minecraft integration
+                            </span>
+                            <span className="inline-flex items-center px-2 py-1 text-xs bg-yellow-500/20 text-yellow-300 rounded-full border border-yellow-500/30">
+                              🏆 Access to leaderboards
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-2 ml-4">
-                      <Link
-                        to="/verify-account"
-                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-black bg-yellow-500 hover:bg-yellow-400 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-                      >
-                        Verify Now
-                        <svg
-                          className="ml-1 h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                      {/* Action Buttons */}
+                      <div className="flex flex-col sm:flex-row gap-2 ml-4">
+                        <Link
+                          to="/verify-account"
+                          className="inline-flex items-center px-4 py-2 text-sm font-medium text-black bg-yellow-500 hover:bg-yellow-400 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-gray-900"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
-                      </Link>
-                      <button
-                        onClick={() => {
-                          // Store dismissal in localStorage with expiry (show again after 24 hours)
-                          const dismissalTime = Date.now() + 24 * 60 * 60 * 1000;
-                          localStorage.setItem(
-                            "verification_alert_dismissed",
-                            dismissalTime.toString(),
-                          );
-                          // Update state to hide the alert
-                          setVerificationAlertDismissed(true);
-                        }}
-                        className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
-                        title="Remind me later (24 hours)"
-                      >
-                        Later
-                      </button>
+                          Verify Now
+                          <svg
+                            className="ml-1 h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </Link>
+                        <button
+                          onClick={() => {
+                            // Store dismissal in localStorage with expiry (show again after 24 hours)
+                            const dismissalTime = Date.now() + 24 * 60 * 60 * 1000;
+                            localStorage.setItem(
+                              "verification_alert_dismissed",
+                              dismissalTime.toString(),
+                            );
+                            // Update state to hide the alert
+                            setVerificationAlertDismissed(true);
+                          }}
+                          className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-gray-300 transition-colors focus:outline-none"
+                          title="Remind me later (24 hours)"
+                        >
+                          Later
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+      </div>
+      {/* Profile Settings Modal (rendered at root of header) */}
+      {showProfileSettings && (
+        <ProfileSettingsModal
+          isOpen={showProfileSettings}
+          onClose={() => setShowProfileSettings(false)}
+          currentUser={profileUser}
+          onUpdate={() => {}}
+        />
+      )}
     </div>
   );
 };

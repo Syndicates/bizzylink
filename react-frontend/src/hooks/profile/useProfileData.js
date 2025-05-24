@@ -178,14 +178,8 @@ export default function useProfileData(username, { onWallpaperChangeSuccess } = 
         userProfileData = websiteUser;
         setProfileUser(websiteUser);
       } else {
-        userProfileData = {
-          username: mcUsernameToUse,
-          mcUsername: mcUsernameToUse,
-          createdAt: completeStats.joinDate,
-          role: completeStats.rank || "Member",
-          _id: completeStats.userId || "user-" + Math.random().toString(36).substr(2, 9),
-        };
-        setProfileUser(userProfileData);
+        // Do not set a fallback user if the API failed (especially for privacy)
+        setProfileUser(null);
       }
 
       // Fetch relationship data for other users
@@ -210,7 +204,13 @@ export default function useProfileData(username, { onWallpaperChangeSuccess } = 
       setLoading(false);
     } catch (error) {
       console.error("Error in profile data fetch:", error);
-      setNotFound(true);
+      if (error?.response?.status === 403) {
+        setProfileUser(null);
+        setError("This profile is private.");
+      } else {
+        setNotFound(true);
+        setError("Profile not found or unavailable.");
+      }
       setLoading(false);
     }
   }, [user, username, shouldDisplayProfile, getRelationship]);

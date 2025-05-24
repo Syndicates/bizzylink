@@ -289,7 +289,16 @@ router.post('/login', [
       ip: clientIP,
       userAgent: req.headers['user-agent']
     });
-    
+
+    // Set JWT as HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: false, // Set to true if using HTTPS
+      sameSite: 'lax', // 'lax' for local dev, 'none' for cross-site with HTTPS
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 1 week
+      path: '/',
+    });
+
     // Return token and user info
     res.status(200).json({
       success: true,

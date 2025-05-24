@@ -23,6 +23,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MinecraftAvatar from '../components/MinecraftAvatar';
 import API from '../services/api';
+import { LockClosedIcon } from '@heroicons/react/24/outline';
 
 // Modular components
 import ProfileHeader from '../components/profile/ProfileHeader';
@@ -494,14 +495,32 @@ const Profile = () => {
     );
   }
 
-  // Error state
+  // Privacy or other error state
   if (profileError) {
+    console.log('profileError:', profileError, 'profileUser:', profileUser);
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-8xl mb-4">⚠️</div>
-          <h1 className="text-3xl font-minecraft text-white mb-2">Error Loading Profile</h1>
-          <p className="text-red-400">{profileError}</p>
+      <div className="min-h-screen bg-gradient-to-br from-minecraft-navy-dark via-minecraft-navy to-minecraft-navy-dark">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ProfileHeader
+            profileUser={profileUser || { username }}
+            playerStats={playerStats}
+            coverImage={coverImage}
+            isOwnProfile={isOwnProfile}
+            relationship={relationship}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onWallpaperSelect={() => setShowWallpaperModal(true)}
+            onSocialAction={handleSocialAction}
+            savingWallpaper={savingWallpaper}
+            socialStats={socialStats}
+          />
+          <div className="mt-8 flex flex-col items-center justify-center py-12 bg-minecraft-navy/50 rounded-lg border-2 border-minecraft-habbo-blue/30">
+            <LockClosedIcon className="h-16 w-16 text-red-500 mb-4" />
+            <h2 className="text-2xl font-minecraft text-red-400 mb-2">Private Profile</h2>
+            <p className="text-gray-400 text-center max-w-md">
+              This profile is private. Only the owner can view their profile content.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -532,7 +551,7 @@ const Profile = () => {
         {/* Profile Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ProfileHeader
-            profileUser={profileUser}
+            profileUser={profileUser || { username }}
             playerStats={playerStats}
             coverImage={coverImage}
             isOwnProfile={isOwnProfile}
@@ -545,40 +564,53 @@ const Profile = () => {
             socialStats={socialStats}
           />
 
-          <ProfileTabNavigation
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            isOwnProfile={isOwnProfile}
-            className="mt-6"
-          />
-
-          <div className="mt-6 flex gap-6">
-            {/* Left Sidebar */}
-            <div className="hidden lg:block w-64 flex-shrink-0">
-              <LeftSidebar
-                profileUser={profileUser}
-                playerStats={playerStats}
-                isOwnProfile={isOwnProfile}
-                socialStats={socialStats}
-                onOpenFriendsModal={() => handleSocialAction('openFriendsModal')}
-              />
+          {/* Show privacy message if profile is private and not own profile */}
+          {profileUser?.isPrivate && !isOwnProfile ? (
+            <div className="mt-8 flex flex-col items-center justify-center py-12 bg-minecraft-navy/50 rounded-lg border-2 border-minecraft-habbo-blue/30">
+              <LockClosedIcon className="h-16 w-16 text-red-500 mb-4" />
+              <h2 className="text-2xl font-minecraft text-red-400 mb-2">Private Profile</h2>
+              <p className="text-gray-400 text-center max-w-md">
+                This profile is private. Only the owner can view their profile content.
+              </p>
             </div>
+          ) : (
+            <>
+            <ProfileTabNavigation
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              isOwnProfile={isOwnProfile}
+              className="mt-6"
+            />
 
-            {/* Main Content */}
-            <div className="flex-1 min-w-0">
-              {renderTabContent()}
-            </div>
+            <div className="mt-6 flex gap-6">
+              {/* Left Sidebar */}
+              <div className="hidden lg:block w-64 flex-shrink-0">
+                <LeftSidebar
+                  profileUser={profileUser}
+                  playerStats={playerStats}
+                  isOwnProfile={isOwnProfile}
+                  socialStats={socialStats}
+                  onOpenFriendsModal={() => handleSocialAction('openFriendsModal')}
+                />
+              </div>
 
-            {/* Right Sidebar */}
-            <div className="hidden xl:block w-80 flex-shrink-0">
-              <RightSidebar
-                profileUser={profileUser}
-                playerStats={playerStats}
-                achievements={achievements}
-                isOwnProfile={isOwnProfile}
-              />
+              {/* Main Content */}
+              <div className="flex-1 min-w-0">
+                {renderTabContent()}
+              </div>
+
+              {/* Right Sidebar */}
+              <div className="hidden xl:block w-80 flex-shrink-0">
+                <RightSidebar
+                  profileUser={profileUser}
+                  playerStats={playerStats}
+                  achievements={achievements}
+                  isOwnProfile={isOwnProfile}
+                />
+              </div>
             </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Wallpaper Modal */}

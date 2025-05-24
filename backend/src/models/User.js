@@ -159,6 +159,9 @@ const UserSchema = new mongoose.Schema({
     showOnlineStatus: { type: Boolean, default: true }
   },
 
+  // Profile privacy
+  isPrivate: { type: Boolean, default: false },
+
   // Minecraft integration (nested)
   minecraft: {
     type: mongoose.Schema.Types.Mixed, // Allow any fields (mcUsername, mcUUID, stats, etc.)

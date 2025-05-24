@@ -33,12 +33,14 @@ const User = require('./models/User');
 const { protect } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const socialRoutes = require('./routes/social');
+const cookieParser = require('cookie-parser');
 
 // Load environment variables
 dotenv.config();
 
 // Initialize Express app
 const app = express();
+app.use(cookieParser());
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
@@ -56,8 +58,9 @@ mongoose.connect(process.env.MONGO_URI, {
 // Global middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// CORS: Allow frontend origin and credentials for authentication/cookies
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
 }));
 app.use(helmet());

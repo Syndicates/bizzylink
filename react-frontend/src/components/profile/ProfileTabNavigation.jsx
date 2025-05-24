@@ -24,12 +24,16 @@ import {
   PhotoIcon
 } from '@heroicons/react/24/outline';
 
-const ProfileTabNavigation = ({ 
-  activeTab, 
-  onTabChange, 
-  isOwnProfile, 
-  className = '' 
-}) => {
+const ProfileTabNavigation = ({ profileUser, ...props }) => {
+  if (!profileUser) return null;
+
+  const { 
+    activeTab, 
+    onTabChange, 
+    isOwnProfile, 
+    className = '' 
+  } = props;
+
   const tabs = [
     { 
       id: 'wall', 

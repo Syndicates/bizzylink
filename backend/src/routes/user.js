@@ -265,7 +265,11 @@ router.get('/profile/:username', async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    
+    // Privacy check: if profile is private and not the owner, block access
+    const isOwner = req.user && (req.user.id === user._id.toString() || req.user.username === user.username);
+    if (user.isPrivate && !isOwner) {
+      return res.status(403).json({ message: 'This profile is private.' });
+    }
     res.json(user);
   } catch (err) {
     console.error('Error finding user profile by username:', err);
@@ -336,6 +340,28 @@ router.get('/settings/notifications', protect, async (req, res) => {
     res.json({ notifications: user.settings?.notifications || {} });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update profile privacy (isPrivate)
+router.put('/profile/privacy', protect, async (req, res) => {
+  try {
+    const { isPrivate } = req.body;
+    if (typeof isPrivate !== 'boolean') {
+      return res.status(400).json({ message: 'isPrivate must be a boolean.' });
+    }
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: { isPrivate } },
+      { new: true, runValidators: true }
+    ).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({ message: 'Profile privacy updated', isPrivate: user.isPrivate });
+  } catch (err) {
+    console.error('Error updating profile privacy:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
