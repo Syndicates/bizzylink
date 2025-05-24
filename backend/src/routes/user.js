@@ -258,6 +258,21 @@ router.get('/by-username/:username', async (req, res) => {
   }
 });
 
+// Get user profile by username (for profile pages)
+router.get('/profile/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json(user);
+  } catch (err) {
+    console.error('Error finding user profile by username:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Search users for @mentions
 router.get('/search', async (req, res) => {
   try {

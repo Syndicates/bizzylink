@@ -74,7 +74,7 @@ import AnimatedPlayerStats from "../components/AnimatedPlayerStats";
 import WallService from "../services/wallService";
 import { SocialService } from "../services/api";
 // Import timeUtils explicitly
-import { timeAgo, formatDate } from "../utils/timeUtils";
+import { formatRelativeTime as timeAgo, formatDate } from "../utils/timeUtils";
 // Import the useSocialStats hook after all service imports
 import useSocialStats from "../hooks/useSocialStats";
 import { useEventSource } from "../contexts/EventSourceContext";

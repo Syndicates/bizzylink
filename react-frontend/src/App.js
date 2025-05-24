@@ -46,6 +46,7 @@ import ProfilePage from './pages/ProfilePage';
 import LinkPage from './pages/LinkPage';
 import { motion } from 'framer-motion';
 import { GuidedTourProvider } from './hooks/useGuidedTour';
+import DynamicProfile from './components/DynamicProfile';
 
 // Modified ProtectedRoute component with protections against infinite loops
 const ProtectedRoute = ({ children }) => {
@@ -104,7 +105,7 @@ const AppRoutes = () => {
       <Route path="/vote" element={<DynamicImport importFunc={() => import('./pages/Vote')} />} />
       <Route path="/leaderboard" element={<DynamicImport importFunc={() => import('./pages/Leaderboard')} />} />
       <Route path="/profile" element={<ProfilePage />} />
-      <Route path="/profile/:username" element={<DynamicImport importFunc={() => import('./pages/Profile')} />} />
+      <Route path="/profile/:username" element={<DynamicProfile />} />
       <Route path="/link" element={<LinkPage />} />
       <Route 
         path="/link-success" 

@@ -38,6 +38,7 @@ import {
   ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
+import ProfileToggle from './ProfileToggle';
 
 const Navigation = () => {
   const auth = useAuth();
@@ -217,6 +218,9 @@ const Navigation = () => {
           <div className="hidden md:flex items-center space-x-2">
             {isAuthenticated ? (
               <>
+                {/* Profile Toggle - Development Feature */}
+                <ProfileToggle size="sm" />
+                
                 {/* Notification Bell - simplified */}
                 <div className="notification-dropdown-container" ref={notificationButtonRef}>
                   <button
@@ -359,6 +363,11 @@ const Navigation = () => {
                       </span>
                     )}
                   </MobileNavLink>
+                  
+                  {/* Mobile Profile Toggle */}
+                  <div className="px-3 py-2">
+                    <ProfileToggle size="md" showLabel={true} />
+                  </div>
                   
                   {user?.role === 'admin' && (
                     <MobileNavLink to="/admin" icon={<ShieldCheckIcon className="h-5 w-5" />}>Admin</MobileNavLink>

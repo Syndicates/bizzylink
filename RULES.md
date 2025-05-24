@@ -418,39 +418,44 @@
 
 ## Server Architecture & Deployment
 
-### 1. Server Components Overview
-- **✅ DO:** Understand all server components and their interactions
-- **✅ DO:** Ensure all required servers are running before testing features
-- **❌ DON'T:** Start only partial server components when testing integrated features
-- **WHY:** The application relies on multiple interconnected services that must work together
+### 1. Unified Server Architecture
+- **✅ DO:** Use the single unified backend server at `backend/src/server.js`
+- **✅ DO:** Understand that all API endpoints and real-time features are handled by one server
+- **❌ DON'T:** Try to start multiple servers - they are legacy and deprecated
+- **WHY:** The application uses a unified server architecture for simplicity and reliability
 
-### 2. Server Components & Their Functions
+### 2. Server Components & Functions
 
-| Server | File | Port | Purpose |
-|--------|------|------|---------|
-| Main Server | `server.js` | 8080 | Primary backend server handling core application functionality, user authentication (legacy), and data services |
-| Enhanced Server | `enhanced-server.js` | 8082 | Handles WebSocket connections for real-time features and provides enhanced notification services |
-| Direct Auth Server | `direct-auth-server.js` | 8084 | Specialized authentication server with faster response times and dedicated user authentication flow |
-| Player Stats Server | `player-stats-server.js` | 8081 | Handles Minecraft player statistics, caching, and serves player data to the frontend |
-| Leaderboard Server | `simple-leaderboard-server.js` | 8083 | Processes and serves game leaderboard data including playtime, achievements, and other metrics |
+| Component | File | Port | Purpose |
+|-----------|------|------|---------|
+| **Unified Backend** | `backend/src/server.js` | 8080 | Complete backend server handling all functionality: authentication, user profiles, social features, wall posts, SSE real-time notifications, Minecraft integration, forum, achievements, and all API endpoints |
+| **React Frontend** | `react-frontend/` | 3000 | Frontend React application served in development mode |
 
-### 3. Starting All Servers
-- **✅ DO:** Use the provided batch scripts to ensure proper startup sequence
-- **✅ DO:** Check all servers are running when debugging connection issues
-- **✅ DO:** Use `start-all-servers.bat` to launch the complete application stack
-- **❌ DON'T:** Manually start servers in incorrect order
-- **WHY:** Server components have dependencies and must be started in the correct sequence
+### 3. Starting the Application
+- **✅ DO:** Start only the unified backend server: `node backend/src/server.js`
+- **✅ DO:** Start the React frontend: `cd react-frontend && npm start`
+- **✅ DO:** Ensure MongoDB is running on port 27017
+- **❌ DON'T:** Start any other server files (they are legacy/deprecated)
+- **WHY:** The unified server handles all functionality including real-time features via SSE
 
-### 4. Monitoring Server Health
-- **✅ DO:** Check each server's `/api/test` endpoint to verify operational status
+### 4. Server Health Monitoring
+- **✅ DO:** Check the server root endpoint `http://localhost:8080/` to verify status
 - **✅ DO:** Monitor server logs for error patterns and connection issues
-- **✅ DO:** Verify MongoDB connectivity across all server components
-- **❌ DON'T:** Assume server is functioning based solely on process being active
-- **WHY:** Servers may be running but encountering runtime errors or database connection issues
+- **✅ DO:** Verify MongoDB connectivity (server will exit if connection fails)
+- **❌ DON'T:** Look for multiple server health endpoints
+- **WHY:** Single server means single point of monitoring and troubleshooting
 
 ### 5. Deployment Requirements
 - **✅ DO:** Ensure MongoDB is properly installed and running on port 27017
-- **✅ DO:** Configure environment variables properly across all server components
-- **✅ DO:** Set appropriate memory limits for Node.js based on server capacity
-- **❌ DON'T:** Deploy without testing all server components and their interactions
-- **WHY:** Incomplete server deployment will result in partial functionality and confusing errors 
+- **✅ DO:** Configure environment variables in `.env` file for the backend
+- **✅ DO:** Set appropriate memory limits for the unified Node.js server
+- **✅ DO:** Build the React frontend for production: `cd react-frontend && npm run build`
+- **❌ DON'T:** Deploy multiple server components
+- **WHY:** Simplified deployment with single backend server reduces complexity and failure points
+
+### 6. Real-time Features (SSE)
+- **✅ DO:** Use the `/api/events` endpoint on the unified server for real-time updates
+- **✅ DO:** Ensure SSE connections are properly authenticated via JWT tokens
+- **✅ DO:** Test real-time features like wall posts, comments, likes, and notifications
+- **❌ DON'T:** Look for separate WebSocket or SSE servers
+- **WHY:** All real-time functionality is built into the unified server using Server-Sent Events 

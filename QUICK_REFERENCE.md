@@ -25,27 +25,23 @@
 - `react-frontend/src/pages/Profile.js` - Main profile component
 - `backend/src/routes/minecraft.js` - Achievement/recipe data
 - `backend/src/routes/social.js` - Social features
-- `player-stats-server.js` - Player statistics integration
 
 ## 🏗️ Server Architecture
 | Server | Port | Purpose |
 |--------|------|---------|
 | Main Server | 8080 | Core backend & authentication |
 | Player Stats | 8081 | Minecraft player data |
-| Enhanced Server | 8082 | WebSocket & notifications |
-| Leaderboard | 8083 | Game leaderboards |
-| Direct Auth | 8084 | Fast authentication |
 
 ## 🚀 Deployment Commands
 ```bash
-# Start all servers
-./start-all-servers.bat
 
 # Build frontend
 cd react-frontend && npm run build
 
 # Development mode
 cd react-frontend && npm start
+
+cd backend && npm start OR cd backend/src/server.js 
 ```
 
 ## 📊 System Metrics

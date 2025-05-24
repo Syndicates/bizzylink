@@ -1385,6 +1385,19 @@ export const SocialService = {
     }
   },
 
+  getRepostStatuses: async (postIds) => {
+    try {
+      const response = await api.post('/api/wall/posts/repost-statuses', { postIds });
+      return response.data;
+    } catch (error) {
+      console.warn(`Failed to get repost statuses for ${postIds.length} posts:`, error.message);
+      return {
+        success: false,
+        data: {}
+      };
+    }
+  },
+
   // View tracking
   trackWallPostView: async (postId, userId = null) => {
     try {
