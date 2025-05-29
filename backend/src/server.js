@@ -39,6 +39,7 @@ const Notification = require('./models/Notification');
 const adminRoutes = require('./routes/admin');
 const newsRouter = require('./routes/news');
 const uploadRouter = require('./routes/upload');
+const inviteRoutes = require('./routes/invite');
 
 // Load environment variables
 dotenv.config();
@@ -135,6 +136,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/news', newsRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/invite', inviteRoutes);
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Trending Topics: Extract hashtags from recent WallPosts
