@@ -35,10 +35,13 @@ import {
   BellIcon,
   UserGroupIcon,
   BellAlertIcon,
-  ChatBubbleLeftRightIcon
+  ChatBubbleLeftRightIcon,
+  NewspaperIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
 import ProfileToggle from './ProfileToggle';
+import useServerStatus from '../hooks/useServerStatus';
+import NewsService from '../services/NewsService';
 
 const Navigation = () => {
   const auth = useAuth();
@@ -53,6 +56,13 @@ const Navigation = () => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const location = useLocation();
   const notificationButtonRef = useRef(null);
+
+  // Add server status hook
+  const { serverStatus } = useServerStatus('play.bizzynation.co.uk');
+
+  const [latestNews, setLatestNews] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [newsError, setNewsError] = useState(false);
 
   // Debug auth state in Navigation
   useEffect(() => {
@@ -130,206 +140,229 @@ const Navigation = () => {
     setIsOpen(!isOpen);
   };
 
+  useEffect(() => {
+    NewsService.getNews({ limit: 1 })
+      .then(data => {
+        if (data.news && data.news.length > 0) {
+          setLatestNews(data.news[0]);
+        } else {
+          setLatestNews(null);
+        }
+        setNewsLoading(false);
+        setNewsError(false);
+      })
+      .catch(() => {
+        setLatestNews(null);
+        setNewsLoading(false);
+        setNewsError(true);
+      });
+  }, []);
+
   return (
     <nav 
       className={`fixed w-full transition-all duration-300 ${
         scrolled ? 'bg-minecraft-navy/90 backdrop-blur-md shadow-lg py-1' : 'bg-minecraft-navy py-1'
-      } border-b border-black`}
+      } border-b-2 border-minecraft-green/60`}
       style={{ zIndex: 50 }}
     >
       {/* Decorative top border */}
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-minecraft-green/70"></div>
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between h-14">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center">
-              <div className="flex items-center">
-                <div className="w-6 h-6 mr-2">
-                  <img 
-                    src="/minecraft-assets/grass_block.svg"
-                    alt="Grass Block" 
-                    className="w-full h-full"
-                  />
-                </div>
-                <div className="text-lg font-minecraft tracking-wide minecraft-text-shadow">
-                  <span className="text-emerald-400">BIZZY</span>
-                  <span className="text-white">NATION</span>
-                </div>
+      <div className="w-full flex items-center justify-between px-4 py-2 bg-nav-dark z-40">
+        {/* Left: Logo */}
+        <div className="flex items-center space-x-2">
+          <Link to="/" className="flex items-center">
+            <div className="flex items-center">
+              <div className="w-6 h-6 mr-2">
+                <img 
+                  src="/minecraft-assets/grass_block.svg"
+                  alt="Grass Block" 
+                  className="w-full h-full"
+                />
               </div>
-            </Link>
-            
-            <div className="hidden md:block">
-              <div className="ml-8 flex items-baseline space-x-1">
-                <NavLink to="/" icon={<HomeIcon className="h-3.5 w-3.5" />}>Home</NavLink>
-                <NavLink to="/leaderboard" icon={<TrophyIcon className="h-3.5 w-3.5" />}>Ranks</NavLink>
-                <NavLink 
-                  to="/vote" 
-                  icon={<StarIcon className="h-3.5 w-3.5 text-yellow-300" />}
-                  isPremium={true}
-                >
-                  <span className="text-yellow-300">Vote</span>
-                </NavLink>
-                
-                {isAuthenticated ? (
-                  <>
-                    <NavLink to="/dashboard" icon={<CogwheelIcon className="h-3.5 w-3.5" />}>Dashboard</NavLink>
-                    <NavLink to={user?.username ? `/profile/${user.username}` : "/profile"} icon={<UserCircleIcon className="h-3.5 w-3.5" />}>Profile</NavLink>
-                    <NavLink to="/friends" icon={<UserGroupIcon className="h-3.5 w-3.5" />}>Friends</NavLink>
-                    <NavLink to="/community" icon={<ChatBubbleLeftRightIcon className="h-3.5 w-3.5" />}>Community</NavLink>
-                    
-                    {/* More dropdown menu for additional links */}
-                    <div className="dropdown-menu-container relative" id="more-dropdown-container">
-                      <button className="text-white hover:bg-minecraft-green/20 px-4 py-1.5 rounded-md mx-1 text-sm font-minecraft tracking-wider transition-colors duration-200 flex items-center space-x-1">
-                        <span>More</span>
-                        <svg className="w-4 h-4 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      
-                      {/* Dropdown content */}
-                      <div className="dropdown-menu z-10 w-48 mt-2 bg-minecraft-navy border border-minecraft-green/50 shadow-xl rounded-md overflow-hidden">
-                          <div className="py-1">
-                          <DropdownLink to="/map" icon={<MapIcon className="h-4 w-4" />}>
-                            Server Map
-                          </DropdownLink>
-                          
-                          <DropdownLink to="/shop" icon={<ShoppingCartIcon className="h-4 w-4" />}>
-                            Item Shop
-                          </DropdownLink>
-                          
-                          <DropdownLink to="/auction" icon={<CurrencyDollarIcon className="h-4 w-4" />}>
-                            Auction House
-                          </DropdownLink>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {user?.role === 'admin' && (
-                      <NavLink to="/admin" icon={<ShieldCheckIcon className="h-3.5 w-3.5" />}>Admin</NavLink>
-                    )}
-                  </>
-                ) : null}
+              <div className="text-lg font-minecraft tracking-wide minecraft-text-shadow">
+                <span className="text-emerald-400">BIZZY</span>
+                <span className="text-white">NATION</span>
+              </div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Center: Nav links */}
+        <div className="flex-1 flex justify-center">
+          <div className="flex items-baseline space-x-2">
+            {/* Desktop nav links with dividers and button style */}
+            {[
+              isAuthenticated ? (
+                <NavLink key="fyp" to="/fyp" icon={<HomeIcon className="h-3.5 w-3.5" />}>FYP</NavLink>
+              ) : (
+                <NavLink key="home" to="/" icon={<HomeIcon className="h-3.5 w-3.5" />}>Home</NavLink>
+              ),
+              <NavLink key="ranks" to="/leaderboard" icon={<TrophyIcon className="h-3.5 w-3.5" />}>Ranks</NavLink>,
+              newsLoading ? (
+                <NavLink key="news" to="/news" icon={<NewspaperIcon className="h-4 w-4 text-cyan-300" />}>News</NavLink>
+              ) : latestNews ? (
+                <NavLink key="news-latest" to={`/news/${latestNews._id}`} icon={<NewspaperIcon className="h-4 w-4 text-cyan-300" />}>News</NavLink>
+              ) : (
+                <NavLink key="news-fallback" to="/news" icon={<NewspaperIcon className="h-4 w-4 text-cyan-300" />}>News</NavLink>
+              ),
+              <NavLink key="vote" to="/vote" icon={<StarIcon className="h-3.5 w-3.5 text-yellow-300" />} isPremium={true}><span className="text-yellow-300">Vote</span></NavLink>,
+              isAuthenticated && <NavLink key="dashboard" to="/dashboard" icon={<CogwheelIcon className="h-3.5 w-3.5" />}>Dashboard</NavLink>,
+              isAuthenticated && <NavLink key="profile" to={user?.username ? `/profile/${user.username}` : "/profile"} icon={<UserCircleIcon className="h-3.5 w-3.5" />}>Profile</NavLink>,
+              isAuthenticated && <NavLink key="friends" to="/friends" icon={<UserGroupIcon className="h-3.5 w-3.5" />}>Friends</NavLink>,
+              isAuthenticated && <NavLink key="community" to="/community" icon={<ChatBubbleLeftRightIcon className="h-3.5 w-3.5" />}>Community</NavLink>,
+              isAuthenticated && user?.role === 'admin' && <NavLink key="admin" to="/admin" icon={<ShieldCheckIcon className="h-3.5 w-3.5" />}>Admin</NavLink>
+            ].filter(Boolean).map((link, idx, arr) => (
+              <React.Fragment key={link.key || idx}>
+                {idx > 0 && <div className="h-6 w-px bg-minecraft-green/40 mx-2" />}
+                {React.cloneElement(link, {
+                  className: `relative text-gray-300 font-minecraft px-3 py-1.5 text-sm flex items-center rounded-md border border-transparent bg-white/5 transition hover:bg-minecraft-green/10 hover:border-minecraft-green/40 hover:text-white shadow-md mx-1 ${link.props.isPremium ? 'text-yellow-300 hover:text-yellow-200 font-medium' : ''} ${location.pathname === link.props.to ? 'bg-minecraft-green/20 border-minecraft-green text-white shadow' : ''}`
+                })}
+              </React.Fragment>
+            ))}
+            {/* Divider before More button */}
+            <div className="h-6 w-px bg-minecraft-green/40 mx-2" />
+            {/* More button and dropdown */}
+            <div className="dropdown-menu-container relative">
+              <button className="relative text-gray-300 font-minecraft px-3 py-1.5 text-sm flex items-center rounded-md border border-transparent bg-white/5 transition hover:bg-minecraft-green/10 hover:border-minecraft-green/40 hover:text-white shadow-md mx-1">
+                <span>More</span>
+                <svg className="w-4 h-4 ml-1 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {/* Dropdown content */}
+              <div className="dropdown-menu z-10 w-48 mt-2 bg-minecraft-navy border border-minecraft-green/50 shadow-xl rounded-md overflow-hidden">
+                <div className="py-1">
+                  <DropdownLink to="/map" icon={<MapIcon className="h-4 w-4" />}>Server Map</DropdownLink>
+                  <DropdownLink to="/shop" icon={<ShoppingCartIcon className="h-4 w-4" />}>Item Shop</DropdownLink>
+                  <DropdownLink to="/auction" icon={<CurrencyDollarIcon className="h-4 w-4" />}>Auction House</DropdownLink>
+                </div>
               </div>
             </div>
           </div>
-          
-          {/* User profile or login/register buttons */}
-          <div className="hidden md:flex items-center space-x-2">
-            {isAuthenticated ? (
-              <>
-                {/* Profile Toggle - Development Feature */}
-                <ProfileToggle size="sm" />
-                
-                {/* Notification Bell - simplified */}
-                <div className="notification-dropdown-container" ref={notificationButtonRef}>
-                  <button
-                    onClick={toggleNotifications}
-                    className="relative p-2 rounded-md text-white hover:bg-minecraft-navy-light transition-colors"
-                  >
-                    {unreadCount > 0 ? (
-                      <BellAlertIcon className="h-5 w-5 text-yellow-400" />
-                    ) : (
-                      <BellIcon className="h-5 w-5" />
-                    )}
-                    
-                    {/* Notification badge */}
-                    {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full min-w-[1rem] min-h-[1rem]">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                  </button>
+        </div>
+        
+        {/* Right: User/Profile/Actions */}
+        <div className="flex items-center space-x-2">
+          {!isAuthenticated && (
+            <>
+              <OnlinePlayersBar playerCount={serverStatus.playerCount} maxPlayers={serverStatus.maxPlayers} />
+              <div className="h-6 w-px bg-gray-700 mx-2" />
+            </>
+          )}
+          {isAuthenticated ? (
+            <>
+              {/* Profile Toggle - Development Feature */}
+              <ProfileToggle size="sm" />
+              
+              {/* Notification Bell - simplified */}
+              <div className="notification-dropdown-container" ref={notificationButtonRef}>
+                <button
+                  onClick={toggleNotifications}
+                  className="relative p-2 rounded-md text-white hover:bg-minecraft-navy-light transition-colors"
+                >
+                  {unreadCount > 0 ? (
+                    <BellAlertIcon className="h-5 w-5 text-yellow-400" />
+                  ) : (
+                    <BellIcon className="h-5 w-5" />
+                  )}
                   
-                  {/* Notifications Panel */}
-                  <NotificationsPanel
-                    isOpen={notificationsOpen}
-                    onClose={() => setNotificationsOpen(false)}
-                  />
-                </div>
+                  {/* Notification badge */}
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full min-w-[1rem] min-h-[1rem]">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </button>
                 
-                {/* User profile - simplified */}
-                <div className="dropdown-menu-container relative">
-                    <button 
-                      className="flex items-center space-x-2 hover:bg-minecraft-navy-light transition-colors py-1.5 px-3 rounded-md"
-                    >
-                      <span className="text-sm font-minecraft text-white">{user?.username}</span>
-                      <div className="w-6 h-6">
-                        {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
-                        {user?.mcUsername ? (
-                          <img
-                            src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
-                            alt="Minecraft Skin"
-                            className="w-6 h-6 rounded-md"
-                            onError={(e) => {
+                {/* Notifications Panel */}
+                <NotificationsPanel
+                  isOpen={notificationsOpen}
+                  onClose={() => setNotificationsOpen(false)}
+                />
+              </div>
+              
+              {/* User profile - simplified */}
+              <div className="dropdown-menu-container relative">
+                  <button 
+                    className="flex items-center space-x-2 hover:bg-minecraft-navy-light transition-colors py-1.5 px-3 rounded-md"
+                  >
+                    <span className="text-sm font-minecraft text-white">{user?.username}</span>
+                    <div className="w-6 h-6">
+                      {/* Use the same fallback logic as the dashboard for the Minecraft skin */}
+                      {user?.mcUsername ? (
+                        <img
+                          src={`https://visage.surgeplay.com/face/32/${user.mcUsername}`}
+                          alt="Minecraft Skin"
+                          className="w-6 h-6 rounded-md"
+                          onError={(e) => {
+                            e.target.onerror = () => {
                               e.target.onerror = () => {
                                 e.target.onerror = () => {
-                                  e.target.onerror = () => {
-                                    e.target.onerror = null;
-                                    e.target.src = 'https://via.placeholder.com/32?text=Skin';
-                                  };
-                                  e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
+                                  e.target.onerror = null;
+                                  e.target.src = 'https://via.placeholder.com/32?text=Skin';
                                 };
-                                e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
+                                e.target.src = `https://minotar.net/avatar/${user.mcUsername}/32.png`;
                               };
-                              e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
-                            }}
-                        />
-                        ) : (
-                          <UserCircleIcon className="w-6 h-6 text-gray-400" />
-                        )}
-                      </div>
-                    </button>
-                    
-                    {/* Dropdown menu with absolute positioning and high z-index */}
-                  <div className="dropdown-menu w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden border border-gray-800 z-[100]" style={{ right: '0' }}>
-                      <div className="py-1">
-                        <Link 
-                          to="/edit-profile" 
-                          className="flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
-                        >
-                          <Cog6ToothIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
-                          Edit Profile
-                        </Link>
-                        <button
-                          onClick={logout}
-                          className="w-full text-left flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
-                        >
-                          <ArrowRightOnRectangleIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
-                          Logout
-                        </button>
+                              e.target.src = `https://mc-heads.net/avatar/${user.mcUsername}/32`;
+                            };
+                            e.target.src = `https://playerdb.co/api/player/minecraft/${user.mcUsername}/avatar`;
+                          }}
+                      />
+                      ) : (
+                        <UserCircleIcon className="w-6 h-6 text-gray-400" />
+                      )}
                     </div>
+                  </button>
+                  
+                  {/* Dropdown menu with absolute positioning and high z-index */}
+                <div className="dropdown-menu w-40 bg-minecraft-navy-dark shadow-lg rounded overflow-hidden border border-gray-800 z-[100]" style={{ right: '0' }}>
+                    <div className="py-1">
+                      <Link 
+                        to="/edit-profile" 
+                        className="flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
+                      >
+                        <Cog6ToothIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
+                        Edit Profile
+                      </Link>
+                      <button
+                        onClick={logout}
+                        className="w-full text-left flex items-center px-4 py-1.5 text-sm text-gray-300 hover:bg-black/30 hover:text-white"
+                      >
+                        <ArrowRightOnRectangleIcon className="h-3.5 w-3.5 mr-2 text-minecraft-green" />
+                        Logout
+                      </button>
                   </div>
                 </div>
-              </>
+              </div>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="px-3 py-1.5 text-sm font-medium text-white hover:text-gray-300 transition">
+                Login
+              </Link>
+              <Link to="/register" className="minecraft-btn px-3 py-1.5 rounded text-sm font-medium">
+                Register
+              </Link>
+            </>
+          )}
+        </div>
+        
+        {/* Mobile menu button */}
+        <div className="mr-2 flex md:hidden">
+          <motion.button
+            onClick={toggleMobileMenu}
+            className="minecraft-btn inline-flex items-center justify-center p-2 rounded-sm focus:outline-none"
+            whileTap={{ scale: 0.95 }}
+            aria-expanded="false"
+          >
+            <span className="sr-only">Open main menu</span>
+            {isOpen ? (
+              <XMarkIcon className="block h-6 w-6" aria-hidden="true" />
             ) : (
-              <>
-                <Link to="/login" className="px-3 py-1.5 text-sm font-medium text-white hover:text-gray-300 transition">
-                  Login
-                </Link>
-                <Link to="/register" className="minecraft-btn px-3 py-1.5 rounded text-sm font-medium">
-                  Register
-                </Link>
-              </>
+              <Bars3Icon className="block h-6 w-6" aria-hidden="true" />
             )}
-          </div>
-          
-          {/* Mobile menu button */}
-          <div className="mr-2 flex md:hidden">
-            <motion.button
-              onClick={toggleMobileMenu}
-              className="minecraft-btn inline-flex items-center justify-center p-2 rounded-sm focus:outline-none"
-              whileTap={{ scale: 0.95 }}
-              aria-expanded="false"
-            >
-              <span className="sr-only">Open main menu</span>
-              {isOpen ? (
-                <XMarkIcon className="block h-6 w-6" aria-hidden="true" />
-              ) : (
-                <Bars3Icon className="block h-6 w-6" aria-hidden="true" />
-              )}
-            </motion.button>
-          </div>
+          </motion.button>
         </div>
       </div>
 
@@ -345,8 +378,20 @@ const Navigation = () => {
           >
             <div className="bg-minecraft-navy-dark/95 backdrop-blur-sm px-2 pt-2 pb-3 space-y-0.5 border-b border-gray-800">
               {/* Core navigation links */}
-              <MobileNavLink to="/" icon={<HomeIcon className="h-5 w-5" />}>Home</MobileNavLink>
+              {isAuthenticated ? (
+                <MobileNavLink to="/fyp" icon={<HomeIcon className="h-5 w-5" />}>FYP</MobileNavLink>
+              ) : (
+                <MobileNavLink to="/" icon={<HomeIcon className="h-5 w-5" />}>Home</MobileNavLink>
+              )}
               <MobileNavLink to="/leaderboard" icon={<TrophyIcon className="h-5 w-5" />}>Leaderboard</MobileNavLink>
+              {/* News link before Vote */}
+              {newsLoading ? (
+                <MobileNavLink to="/news" icon={<NewspaperIcon className="h-5 w-5 text-cyan-300" />}>News</MobileNavLink>
+              ) : latestNews ? (
+                <MobileNavLink to={`/news/${latestNews._id}`} icon={<NewspaperIcon className="h-5 w-5 text-cyan-300" />}>News</MobileNavLink>
+              ) : (
+                <MobileNavLink to="/news" icon={<NewspaperIcon className="h-5 w-5 text-cyan-300" />}>News</MobileNavLink>
+              )}
               <MobileNavLink to="/vote" icon={<StarIcon className="h-5 w-5 text-yellow-300" />} isPremium={true}>Vote</MobileNavLink>
               
               {isAuthenticated ? (

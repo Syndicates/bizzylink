@@ -100,11 +100,15 @@ const StatsTab = ({ profileUser, playerStats }) => {
             <div className="text-sm text-gray-400">Current Balance</div>
           </div>
           <div className="text-center p-4 bg-minecraft-navy-light rounded flex flex-col items-center justify-center min-h-[90px]">
-            <div className="font-minecraft mb-2 text-blue-400 text-base md:text-lg font-bold whitespace-nowrap" style={{ letterSpacing: '0.03em' }}>${earnedToday.toLocaleString()}</div>
+            <div className="font-minecraft mb-2 text-blue-400 text-base md:text-lg font-bold whitespace-nowrap" style={{ letterSpacing: '0.03em' }}>
+              +${earnedToday.toLocaleString()}
+            </div>
             <div className="text-sm text-gray-400">Earned Today</div>
           </div>
           <div className="text-center p-4 bg-minecraft-navy-light rounded flex flex-col items-center justify-center min-h-[90px]">
-            <div className="font-minecraft mb-2 text-red-400 text-base md:text-lg font-bold whitespace-nowrap" style={{ letterSpacing: '0.03em' }}>${spentToday.toLocaleString()}</div>
+            <div className="font-minecraft mb-2 text-red-400 text-base md:text-lg font-bold whitespace-nowrap" style={{ letterSpacing: '0.03em' }}>
+              -${spentToday.toLocaleString()}
+            </div>
             <div className="text-sm text-gray-400">Spent Today</div>
           </div>
         </div>

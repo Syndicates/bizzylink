@@ -111,8 +111,8 @@ export default function useProfileData(username, { onWallpaperChangeSuccess } = 
           websiteUser = userRes.data || null;
         } else {
           // For other users, use the username endpoint
-          const userRes = await API.get(`/api/user/profile/${targetUsername}`);
-          websiteUser = userRes.data || null;
+        const userRes = await API.get(`/api/user/profile/${targetUsername}`);
+        websiteUser = userRes.data || null;
         }
       } catch (e) {
         websiteUser = null;
@@ -208,7 +208,7 @@ export default function useProfileData(username, { onWallpaperChangeSuccess } = 
         setProfileUser(null);
         setError("This profile is private.");
       } else {
-        setNotFound(true);
+      setNotFound(true);
         setError("Profile not found or unavailable.");
       }
       setLoading(false);
@@ -323,8 +323,8 @@ export default function useProfileData(username, { onWallpaperChangeSuccess } = 
     } finally {
       // Add a small delay before hiding loading to ensure smooth transition
       setTimeout(() => {
-        setSavingWallpaper(false);
-        setPendingWallpaperId(null);
+      setSavingWallpaper(false);
+      setPendingWallpaperId(null);
       }, 300);
     }
   }, [pendingWallpaperId, profileUser, onWallpaperChangeSuccess]);

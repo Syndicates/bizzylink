@@ -21,113 +21,436 @@ const WallPost = require('../models/WallPost');
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const eventEmitter = require('../eventEmitter');
+const rateLimit = require('express-rate-limit');
+const { sanitizeInput } = require('../utils/sanitizer');
+// const { redis, get: redisGet, set: redisSet } = require('../utils/redis');
+const cron = require('node-cron');
+
+/**
+ * Rate limiting middleware
+ */
+const postLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: { success: false, error: 'Too many posts created, please try again later' }
+});
+
+const commentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { success: false, error: 'Too many comments, please try again later' }
+});
+
+const likeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: { success: false, error: 'Too many likes, please try again later' }
+});
+
+const fypLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // max 30 requests per minute per IP
+  message: { success: false, error: 'Too many requests, please try again later.' }
+});
+
+const SLOW_QUERY_THRESHOLD_MS = 1000;
+
+/**
+ * Error handling middleware
+ */
+const handleError = (res, error, message = 'An error occurred') => {
+  console.error(`[ERROR] ${message}:`, error);
+  // Stub: send to error tracking service here
+  // errorTracking.captureException?.(error);
+  res.status(500).json({ 
+    success: false, 
+    error: process.env.NODE_ENV === 'production' ? message : error.message 
+  });
+};
+
+/**
+ * Get For You Page (FYP) feed
+ * GET /api/wall/fyp
+ */
+router.get('/fyp', fypLimiter, async (req, res) => {
+  console.log('[FYP][DEBUG] /api/wall/fyp route hit');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+
+  try {
+    const { page = 1, limit = 10, sort } = req.query;
+    const safeLimit = Math.min(parseInt(limit), 20); // max 20 posts per request
+    const startTime = Date.now();
+    const skip = (parseInt(page) - 1) * safeLimit;
+
+    // Determine sort order
+    let sortOption = { _id: -1 };
+    if (sort === 'likes') {
+      sortOption = { likes: -1, _id: -1 };
+    }
+
+    // Fetch posts from user profiles, similar to the existing wall post endpoint
+    const posts = await WallPost.find()
+      .sort(sortOption)
+      .skip(skip)
+      .limit(safeLimit)
+      .select('author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes isRepost originalPost')
+      .populate('author', 'username displayName avatar mcUsername verified')
+      .populate({
+        path: 'originalPost',
+        select: 'author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes',
+        populate: {
+          path: 'author',
+          select: 'username displayName avatar mcUsername verified'
+        }
+      })
+      .lean();
+
+    // Batch fetch all comment authors
+    const commentAuthorIds = [...new Set(posts.flatMap(post => 
+      post.comments?.map(comment => comment.author?.toString()).filter(Boolean) || []
+    ))];
+
+    const commentAuthors = await User.find({ _id: { $in: commentAuthorIds } })
+      .select('username mcUsername minecraftUsername avatar displayName verified')
+      .lean();
+
+    const authorMap = Object.fromEntries(
+      commentAuthors.map(author => [
+        author._id.toString(),
+        {
+          _id: author._id,
+          username: author.username,
+          mcUsername: author.mcUsername || author.minecraftUsername || author.username,
+          minecraftUsername: author.minecraftUsername,
+          avatar: author.avatar,
+          displayName: author.displayName,
+          verified: author.verified
+        }
+      ])
+    );
+
+    // Map authors to comments
+    const populatedPosts = await Promise.all(posts.map(async post => {
+      let comments = post.comments?.map(comment => ({
+        ...comment,
+        author: authorMap[comment.author.toString()] || {
+          username: 'Unknown User',
+          mcUsername: 'Steve'
+        }
+      })) || [];
+      let originalComments = null;
+      if (post.isRepost && post.originalPost && post.originalPost._id) {
+        const original = await WallPost.findById(post.originalPost._id)
+          .populate('comments.author', 'username displayName avatar mcUsername verified')
+          .lean();
+        if (original && original.comments) {
+          originalComments = original.comments.map(comment => ({
+            ...comment,
+            author: comment.author || { username: 'Unknown User', mcUsername: 'Steve' }
+          }));
+        }
+      }
+      return {
+        ...post,
+        comments,
+        originalComments
+      };
+    }));
+
+    res.json({
+      success: true,
+      posts: populatedPosts,
+      pagination: {
+        total: await WallPost.countDocuments(),
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(await WallPost.countDocuments() / parseInt(limit))
+      }
+    });
+
+    const duration = Date.now() - startTime;
+    if (duration > SLOW_QUERY_THRESHOLD_MS) {
+      console.warn(`[PERF] FYP feed fetch slow: ${duration}ms for page ${page}`);
+    }
+  } catch (error) {
+    console.error('[FYP][DEBUG] Error in /api/wall/fyp:', error);
+    handleError(res, error, 'Failed to fetch FYP feed');
+  }
+});
+
+/**
+ * Server-Sent Events (SSE) for FYP feed
+ * GET /api/wall/fyp/stream
+ */
+router.get('/fyp/stream', protect, async (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.flushHeaders();
+
+  // Send a comment to keep the connection alive
+  const keepAlive = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 25000);
+
+  // Handler for new wall posts
+  const onNewPost = async (event) => {
+    if (event.type === 'new_post' && event.post) {
+      // Only send posts that would appear in the FYP (for now, all new posts)
+      res.write(`data: ${JSON.stringify(event.post)}\n\n`);
+    }
+  };
+
+  eventEmitter.on('wall_post', onNewPost);
+
+  // Clean up on client disconnect
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    eventEmitter.off('wall_post', onNewPost);
+    res.end();
+  });
+});
+
+/**
+ * Get Following feed (posts from users the current user follows)
+ * GET /api/wall/following
+ */
+router.get('/following', protect, async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Get following user IDs
+    const user = await User.findById(req.user._id).select('following');
+    console.log('[DEBUG] Looked up user in /api/wall/following:', user);
+    const followingIds = user.following || [];
+    // Fetch posts from followed users, exclude reposts
+    const posts = await WallPost.find({ author: { $in: followingIds }, isRepost: { $ne: true } })
+      .sort({ _id: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes isRepost originalPost')
+      .populate('author', 'username displayName avatar mcUsername verified')
+      .lean();
+    // Batch fetch all comment authors
+    const commentAuthorIds = [...new Set(posts.flatMap(post => post.comments?.map(comment => comment.author?.toString()).filter(Boolean) || []))];
+    const commentAuthors = await User.find({ _id: { $in: commentAuthorIds } })
+      .select('username mcUsername minecraftUsername avatar displayName verified')
+      .lean();
+    const authorMap = Object.fromEntries(
+      commentAuthors.map(author => [
+        author._id.toString(),
+        {
+          _id: author._id,
+          username: author.username,
+          mcUsername: author.mcUsername || author.minecraftUsername || author.username,
+          minecraftUsername: author.minecraftUsername,
+          avatar: author.avatar,
+          displayName: author.displayName,
+          verified: author.verified
+        }
+      ])
+    );
+    // Map authors to comments
+    const populatedPosts = posts.map(post => ({
+      ...post,
+      comments: post.comments?.map(comment => ({
+        ...comment,
+        author: authorMap[comment.author.toString()] || { username: 'Unknown User', mcUsername: 'Steve' }
+      })) || []
+    }));
+    res.json({
+      success: true,
+      posts: populatedPosts,
+      pagination: {
+        total: await WallPost.countDocuments({ author: { $in: followingIds }, isRepost: { $ne: true } }),
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(await WallPost.countDocuments({ author: { $in: followingIds }, isRepost: { $ne: true } }) / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    handleError(res, error, 'Failed to fetch following feed');
+  }
+});
+
+/**
+ * Get Newest feed (latest posts from all users, excluding reposts)
+ * GET /api/wall/newest
+ */
+router.get('/newest', protect, async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Fetch latest posts, exclude reposts
+    const posts = await WallPost.find({ isRepost: { $ne: true } })
+      .sort({ _id: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes isRepost originalPost')
+      .populate('author', 'username displayName avatar mcUsername verified')
+      .lean();
+    // Batch fetch all comment authors
+    const commentAuthorIds = [...new Set(posts.flatMap(post => post.comments?.map(comment => comment.author?.toString()).filter(Boolean) || []))];
+    const commentAuthors = await User.find({ _id: { $in: commentAuthorIds } })
+      .select('username mcUsername minecraftUsername avatar displayName verified')
+      .lean();
+    const authorMap = Object.fromEntries(
+      commentAuthors.map(author => [
+        author._id.toString(),
+        {
+          _id: author._id,
+          username: author.username,
+          mcUsername: author.mcUsername || author.minecraftUsername || author.username,
+          minecraftUsername: author.minecraftUsername,
+          avatar: author.avatar,
+          displayName: author.displayName,
+          verified: author.verified
+        }
+      ])
+    );
+    // Map authors to comments
+    const populatedPosts = posts.map(post => ({
+      ...post,
+      comments: post.comments?.map(comment => ({
+        ...comment,
+        author: authorMap[comment.author.toString()] || { username: 'Unknown User', mcUsername: 'Steve' }
+      })) || []
+    }));
+    res.json({
+      success: true,
+      posts: populatedPosts,
+      pagination: {
+        total: await WallPost.countDocuments({ isRepost: { $ne: true } }),
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(await WallPost.countDocuments({ isRepost: { $ne: true } }) / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    handleError(res, error, 'Failed to fetch newest feed');
+  }
+});
 
 /**
  * Get wall posts for a user's profile
  * GET /api/wall/:username
  */
 router.get('/:username', async (req, res) => {
-  // Prevent caching for real-time wall post updates
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
   res.set('Surrogate-Control', 'no-store');
+  
   try {
     const { username } = req.params;
     const { page = 1, limit = 10 } = req.query;
-    
-    // Find the recipient user
+    // --- Redis caching is currently DISABLED for development ---
+    // To enable, uncomment the following lines and ensure Redis is running:
+    // const cacheKey = `wall:${username}:${page}:${limit}`;
+    // const cacheStart = Date.now();
+    // const cached = await redisGet(cacheKey);
+    // if (cached) {
+    //   const duration = Date.now() - cacheStart;
+    //   if (duration > SLOW_QUERY_THRESHOLD_MS) {
+    //     console.warn(`[PERF] Redis cache fetch slow: ${duration}ms for ${cacheKey}`);
+    //   }
+    //   return res.json(cached);
+    // }
+    const startTime = Date.now();
     const recipient = await User.findOne({ username }).select('_id');
-    
     if (!recipient) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'User not found' 
-      });
+      return res.status(404).json({ success: false, error: 'User not found' });
     }
     
-    // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    // Get total count
     const total = await WallPost.countDocuments({ recipient: recipient._id });
     
-    // Fetch wall posts for the user, sorted by newest first (createdAt and _id)
+    // Optimize query with proper indexing and population
     const posts = await WallPost.find({ recipient: recipient._id })
-      .sort({ _id: -1 }) // Newest first by ObjectID
+      .sort({ _id: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('author', 'username displayName avatar mcUsername')
+      .select('author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes isRepost originalPost')
+      .populate('author', 'username displayName avatar mcUsername verified')
       .populate({
         path: 'originalPost',
+        select: 'author username displayName avatar mcUsername verified repostCount reposts content createdAt comments likes',
         populate: {
           path: 'author',
-          select: 'username displayName avatar mcUsername'
+          select: 'username displayName avatar mcUsername verified'
         }
-      });
+      })
+      .lean(); // Use lean() for better performance
     
-    // Heavy debug: log IDs and createdAt of all posts being returned
-    console.log('[WALLPOST][DEBUG] Returning', posts.length, 'posts for', username);
-    posts.forEach((p, i) => {
-      console.log(`[WALLPOST][DEBUG] [${i}] _id: ${p._id}, createdAt: ${p.createdAt}`);
-    });
-    console.log('[WALLPOST][DEBUG] Pagination:', { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) });
+    // Batch fetch all comment authors
+    const commentAuthorIds = [...new Set(posts.flatMap(post => 
+      post.comments?.map(comment => comment.author?.toString()).filter(Boolean) || []
+    ))];
     
-    // Populate comment authors for each post
+    const commentAuthors = await User.find({ _id: { $in: commentAuthorIds } })
+      .select('username mcUsername minecraftUsername avatar displayName verified')
+      .lean();
+    
+    const authorMap = Object.fromEntries(
+      commentAuthors.map(author => [
+        author._id.toString(),
+        {
+          _id: author._id,
+          username: author.username,
+          mcUsername: author.mcUsername || author.minecraftUsername || author.username,
+          minecraftUsername: author.minecraftUsername,
+          avatar: author.avatar,
+          displayName: author.displayName,
+          verified: author.verified
+        }
+      ])
+    );
+    
+    // Map authors to comments
     const populatedPosts = await Promise.all(posts.map(async post => {
-      // Always work with a plain object
-      const postObj = post.toObject ? post.toObject() : post;
-      if (postObj.comments && postObj.comments.length > 0) {
-        // Get all unique author IDs from comments
-        const authorIds = [...new Set(postObj.comments.map(c => c.author?.toString()).filter(Boolean))];
-        // Fetch all authors in one go
-        const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
-        const authorMap = {};
-        authors.forEach(a => {
-          authorMap[a._id.toString()] = {
-            _id: a._id,
-            username: a.username,
-            mcUsername: a.mcUsername || a.minecraftUsername || a.username,
-            minecraftUsername: a.minecraftUsername,
-            avatar: a.avatar,
-            displayName: a.displayName
-          };
-        });
-        // Replace comment author IDs with full objects
-        postObj.comments = await Promise.all(postObj.comments.map(async comment => {
-          if (comment.author && authorMap[comment.author.toString()]) {
-            return { ...comment, author: authorMap[comment.author.toString()] };
-          }
-          // Try to fetch the user directly if not in authorMap
-          if (comment.author) {
-            try {
-              const user = await User.findById(comment.author).select('username mcUsername minecraftUsername avatar displayName');
-              if (user) {
-                return { ...comment, author: {
-                  _id: user._id,
-                  username: user.username,
-                  mcUsername: user.mcUsername || user.minecraftUsername || user.username,
-                  minecraftUsername: user.minecraftUsername,
-                  avatar: user.avatar,
-                  displayName: user.displayName
-                }};
-              }
-            } catch (e) {
-              console.warn('[WALLPOST][DEBUG] Failed to fetch author for comment:', comment.author, e);
-            }
-          }
-          // Fallback
-          console.warn('[WALLPOST][DEBUG] Comment author not found for comment:', comment._id, 'author:', comment.author);
-          return { ...comment, author: { username: 'Unknown User', mcUsername: 'Steve' } };
-        }));
+      // Visual debug: log repostCount and reposts for each post
+      console.log(`[DEBUG][WALL_FEED] Post ${post._id} repostCount:`, post.repostCount, 'reposts:', post.reposts);
+      let comments = post.comments?.map(comment => ({
+        ...comment,
+        author: authorMap[comment.author.toString()] || {
+          username: 'Unknown User',
+          mcUsername: 'Steve'
+        }
+      })) || [];
+      let originalComments = null;
+      if (post.isRepost && post.originalPost && post.originalPost._id) {
+        // Fetch original post's comments and populate authors
+        const original = await WallPost.findById(post.originalPost._id)
+          .populate('comments.author', 'username displayName avatar mcUsername verified')
+          .lean();
+        if (original && original.comments) {
+          originalComments = original.comments.map(comment => ({
+            ...comment,
+            author: comment.author || { username: 'Unknown User', mcUsername: 'Steve' }
+          }));
+        }
       }
-      return postObj;
+      return {
+        ...post,
+        comments,
+        originalComments // null unless repost
+      };
     }));
     
-    // Debug log the populated posts
-    console.log('[DEBUG][API] Populated posts:', JSON.stringify(populatedPosts, null, 2));
-    
-    // Return response
     res.json({
       success: true,
       posts: populatedPosts,
@@ -138,12 +461,24 @@ router.get('/:username', async (req, res) => {
         totalPages: Math.ceil(total / parseInt(limit))
       }
     });
+    // --- Redis caching is currently DISABLED for development ---
+    // To enable, uncomment the following lines:
+    // await redisSet(cacheKey, {
+    //   success: true,
+    //   posts: populatedPosts,
+    //   pagination: {
+    //     total,
+    //     page: parseInt(page),
+    //     limit: parseInt(limit),
+    //     totalPages: Math.ceil(total / parseInt(limit))
+    //   }
+    // }, 30);
+    // const duration = Date.now() - startTime;
+    // if (duration > SLOW_QUERY_THRESHOLD_MS) {
+    //   console.warn(`[PERF] Wall post fetch slow: ${duration}ms for ${username} page ${page}`);
+    // }
   } catch (error) {
-    console.error('Error fetching wall posts:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch wall posts' 
-    });
+    handleError(res, error, 'Failed to fetch wall posts');
   }
 });
 
@@ -151,29 +486,35 @@ router.get('/:username', async (req, res) => {
  * Create a new wall post
  * POST /api/wall/:username
  */
-router.post('/:username', protect, async (req, res) => {
+router.post('/:username', protect, postLimiter, async (req, res) => {
   try {
     const { username } = req.params;
     const { content, image } = req.body;
     
-    // Validate content
-    if (!content || content.trim() === '') {
+    const sanitizedContent = sanitizeInput(content);
+    if (!sanitizedContent || sanitizedContent.trim() === '') {
       return res.status(400).json({ 
         success: false, 
         error: 'Post content cannot be empty' 
       });
     }
     
-    if (content.length > 500) {
+    if (sanitizedContent.length > 500) {
       return res.status(400).json({ 
         success: false, 
         error: 'Post content cannot exceed 500 characters' 
       });
     }
     
-    // Find the recipient user
-    const recipient = await User.findOne({ username }).select('_id');
+    // Validate image URL if provided
+    if (image && !isValidImageUrl(image)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid image URL'
+      });
+    }
     
+    const recipient = await User.findOne({ username }).select('_id');
     if (!recipient) {
       return res.status(404).json({ 
         success: false, 
@@ -181,11 +522,10 @@ router.post('/:username', protect, async (req, res) => {
       });
     }
     
-    // Create the wall post
     const newPost = new WallPost({
       author: req.user._id,
       recipient: recipient._id,
-      content,
+      content: sanitizedContent,
       image,
       type: 'user',
       createdAt: new Date(),
@@ -196,11 +536,11 @@ router.post('/:username', protect, async (req, res) => {
     
     // Populate author data for response
     const rawPost = await WallPost.findById(newPost._id)
-      .populate('author', 'username displayName avatar mcUsername');
+      .populate('author', 'username displayName avatar mcUsername verified');
     let populatedPost = rawPost;
     if (rawPost.comments && rawPost.comments.length > 0) {
       const authorIds = [...new Set(rawPost.comments.map(c => c.author?.toString()).filter(Boolean))];
-      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
+      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName verified');
       const authorMap = {};
       authors.forEach(a => {
         authorMap[a._id.toString()] = {
@@ -209,13 +549,14 @@ router.post('/:username', protect, async (req, res) => {
           mcUsername: a.mcUsername || a.minecraftUsername || a.username,
           minecraftUsername: a.minecraftUsername,
           avatar: a.avatar,
-          displayName: a.displayName
+          displayName: a.displayName,
+          verified: a.verified
         };
       });
       populatedPost = rawPost.toObject ? rawPost.toObject() : rawPost;
       populatedPost.comments = rawPost.comments.map(comment => {
         if (comment.author && authorMap[comment.author.toString()]) {
-          return { ...comment.toObject(), author: authorMap[comment.author.toString()] };
+          return { ...comment, author: authorMap[comment.author.toString()] };
         }
         return comment.toObject ? comment.toObject() : comment;
       });
@@ -302,6 +643,40 @@ router.delete('/post/:postId', protect, async (req, res) => {
         success: false, 
         error: 'Not authorized to delete this post' 
       });
+    }
+    
+    // If this is not a repost, cascade delete all reposts of this post
+    if (!post.isRepost) {
+      try {
+        const reposts = await WallPost.find({ originalPost: postId, isRepost: true });
+        console.log(`[CASCADE DELETE] Found ${reposts.length} reposts to delete for original post ${postId}`);
+        
+        // Delete all reposts
+        await WallPost.deleteMany({ originalPost: postId, isRepost: true });
+        
+        // Emit delete events for each repost
+        for (const repost of reposts) {
+          try {
+            const repostWallOwnerUser = await User.findById(repost.recipient).select('username');
+            const repostWallOwnerUsername = repostWallOwnerUser ? repostWallOwnerUser.username : undefined;
+            const repostAuthorUser = await User.findById(repost.author).select('username');
+            const repostAuthorUsername = repostAuthorUser ? repostAuthorUser.username : undefined;
+            
+            eventEmitter.emit('wall_post', {
+              type: 'delete_post',
+              postId: repost._id.toString(),
+              wallOwnerUsername: repostWallOwnerUsername,
+              authorUsername: repostAuthorUsername,
+              cascadeDelete: true,
+              originalPostId: postId
+            });
+          } catch (e) {
+            console.error(`[CASCADE DELETE] Failed to emit delete event for repost ${repost._id}:`, e);
+          }
+        }
+      } catch (e) {
+        console.error('[CASCADE DELETE] Error deleting reposts:', e);
+      }
     }
     
     // Delete the post
@@ -517,11 +892,11 @@ router.post('/system', protect, async (req, res) => {
     
     // Populate author data for response
     const rawPost = await WallPost.findById(systemPost._id)
-      .populate('author', 'username displayName avatar mcUsername');
+      .populate('author', 'username displayName avatar mcUsername verified');
     let populatedPost = rawPost;
     if (rawPost.comments && rawPost.comments.length > 0) {
       const authorIds = [...new Set(rawPost.comments.map(c => c.author?.toString()).filter(Boolean))];
-      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName');
+      const authors = await User.find({ _id: { $in: authorIds } }).select('username mcUsername minecraftUsername avatar displayName verified');
       const authorMap = {};
       authors.forEach(a => {
         authorMap[a._id.toString()] = {
@@ -530,7 +905,8 @@ router.post('/system', protect, async (req, res) => {
           mcUsername: a.mcUsername || a.minecraftUsername || a.username,
           minecraftUsername: a.minecraftUsername,
           avatar: a.avatar,
-          displayName: a.displayName
+          displayName: a.displayName,
+          verified: a.verified
         };
       });
       populatedPost = rawPost.toObject ? rawPost.toObject() : rawPost;
@@ -594,7 +970,7 @@ router.post('/post/:postId/comment', protect, async (req, res) => {
     await post.save();
     // Always refetch and populate comments.author for the response
     const refetchedPost = await WallPost.findById(post._id)
-      .populate('comments.author', 'username displayName avatar mcUsername');
+      .populate('comments.author', 'username displayName avatar mcUsername verified');
     res.json({ success: true, comments: refetchedPost.comments });
 
     // Notify the original poster if not self-comment
@@ -669,7 +1045,7 @@ router.post('/post/:postId/comment', protect, async (req, res) => {
     // After saving a comment, refetch the post and emit wall_comment event
     try {
       const refetchedPost = await WallPost.findById(post._id)
-        .populate('comments.author', 'username displayName avatar mcUsername');
+        .populate('comments.author', 'username displayName avatar mcUsername verified');
       const wallOwnerUsername = (await User.findById(post.recipient)).username;
       console.log('[WALL_COMMENT][DEBUG] Emitting wall_comment event after response (refetched):', post._id.toString());
       eventEmitter.emit('wall_comment', {
@@ -711,13 +1087,13 @@ router.delete('/post/:postId/comment/:commentId', protect, async (req, res) => {
     post.comments.pull({ _id: commentId });
     await post.save();
     // Now populate for the response
-    await post.populate('comments.author', 'username displayName avatar mcUsername');
+    await post.populate('comments.author', 'username displayName avatar mcUsername verified');
     res.json({ success: true, comments: post.comments });
 
     // After deleting a comment, refetch the post and emit wall_comment event
     try {
       const refetchedPost = await WallPost.findById(post._id)
-        .populate('comments.author', 'username displayName avatar mcUsername');
+        .populate('comments.author', 'username displayName avatar mcUsername verified');
       const wallOwnerUsername = (await User.findById(post.recipient)).username;
       console.log('[WALL_COMMENT][DEBUG] Emitting wall_comment event (delete) after response (refetched):', post._id.toString());
       eventEmitter.emit('wall_comment', {
@@ -801,7 +1177,7 @@ router.post('/post/:postId/repost', protect, async (req, res) => {
     
     // Find the original post
     const originalPost = await WallPost.findById(postId)
-      .populate('author', 'username displayName avatar mcUsername');
+      .populate('author', 'username displayName avatar mcUsername verified');
     
     if (!originalPost) {
       return res.status(404).json({ success: false, error: 'Post not found' });
@@ -848,15 +1224,30 @@ router.post('/post/:postId/repost', protect, async (req, res) => {
     
     // Populate the repost for response
     const populatedRepost = await WallPost.findById(repost._id)
-      .populate('author', 'username displayName avatar mcUsername')
+      .populate('author', 'username displayName avatar mcUsername verified')
       .populate({
         path: 'originalPost',
         populate: {
           path: 'author',
-          select: 'username displayName avatar mcUsername'
+          select: 'username displayName avatar mcUsername verified'
         }
       });
-    
+
+    // Fetch original post's comments and populate authors
+    let originalComments = null;
+    if (populatedRepost.isRepost && populatedRepost.originalPost && populatedRepost.originalPost._id) {
+      const original = await WallPost.findById(populatedRepost.originalPost._id)
+        .populate('comments.author', 'username displayName avatar mcUsername verified')
+        .lean();
+      if (original && original.comments) {
+        originalComments = original.comments.map(comment => ({
+          ...comment,
+          author: comment.author || { username: 'Unknown User', mcUsername: 'Steve' }
+        }));
+      }
+    }
+    populatedRepost.originalComments = originalComments;
+
     res.json({ success: true, repost: populatedRepost });
     
     // Notify original post author
@@ -897,7 +1288,8 @@ router.post('/post/:postId/repost', protect, async (req, res) => {
         postId: repost._id.toString(),
         originalPostId: postId,
         wallOwnerUsername: req.user.username,
-        authorUsername: req.user.username
+        authorUsername: req.user.username,
+        repost: populatedRepost // Include the fully populated repost with originalComments
       });
     } catch (e) {
       console.error('Failed to emit repost event:', e);

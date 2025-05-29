@@ -142,8 +142,14 @@ const LeftSidebar = ({
           className={`w-full flex flex-col items-center space-y-2 transition-all duration-300 ${showBalanceDetails ? 'opacity-100 translate-y-0 max-h-40' : 'opacity-0 -translate-y-2 max-h-0 pointer-events-none'}`}
           style={{ willChange: 'opacity, transform, max-height' }}
         >
-          <div className="font-minecraft text-blue-400 text-base">+${earnedToday.toLocaleString()} <span className="text-xs text-gray-400 ml-1">Earned Today</span></div>
-          <div className="font-minecraft text-red-400 text-base">-${spentToday.toLocaleString()} <span className="text-xs text-gray-400 ml-1">Spent Today</span></div>
+          <div className="flex flex-col items-center w-full">
+            <div className="font-minecraft text-blue-400 text-base font-bold">+${earnedToday.toLocaleString()}</div>
+            <div className="text-xs text-gray-400 font-minecraft">Earned Today</div>
+          </div>
+          <div className="flex flex-col items-center w-full">
+            <div className="font-minecraft text-red-400 text-base font-bold">-${spentToday.toLocaleString()}</div>
+            <div className="text-xs text-gray-400 font-minecraft">Spent Today</div>
+          </div>
         </div>
       </div>
 

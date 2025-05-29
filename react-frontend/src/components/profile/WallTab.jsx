@@ -18,6 +18,8 @@ import { PaperAirplaneIcon, TrashIcon, FaceSmileIcon } from '@heroicons/react/24
 import WallPost from './WallPost';
 import RepostModal from './RepostModal';
 import LoadingSpinner from '../LoadingSpinner';
+import { useWallPosts } from '../../hooks/profile/useWallPosts';
+import wallService from '../../services/wallService';
 
 const WallTab = ({
   isOwnProfile,
@@ -34,9 +36,6 @@ const WallTab = ({
   onUnlikePost,
   onAddComment,
   onDeleteComment,
-  commentInputs,
-  commentLoading,
-  onCommentInputChange,
   expandedComments,
   onToggleComments,
   showBulkDeleteModal,
@@ -62,7 +61,10 @@ const WallTab = ({
   onLoadMorePosts,
   
   className = '',
-  profileUser
+  profileUser,
+  setWallPosts,
+  likeAnimStates = {},
+  viewedRef
 }) => {
   // Local notification state
   const [notification, setNotification] = useState({ show: false, type: '', message: '' });
@@ -125,6 +127,61 @@ const WallTab = ({
     setTimeout(() => {
       setNotification({ show: false, type: '', message: '' });
     }, 3000);
+  };
+
+  const handleFadeInEnd = (postId) => {
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId ? { ...post, fadeIn: false } : post
+    ));
+  };
+
+  // Callback to clear fadeIn for a comment after animation
+  const handleCommentFadeInEnd = (postId, commentId) => {
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId
+        ? {
+            ...post,
+            comments: (post.comments || []).map(comment =>
+              comment && comment._id === commentId
+                ? { ...comment, fadeIn: false }
+                : comment
+            )
+          }
+        : post
+    ));
+  };
+
+  const handleAddComment = async (postId, commentText) => {
+    // Optimistic comment
+    const optimisticComment = {
+      _id: `temp-${Date.now()}`,
+      content: commentText,
+      author: { ...profileUser },
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId
+        ? { ...post, comments: [...(post.comments || []), optimisticComment] }
+        : post
+    ));
+    try {
+      const response = await wallService.addComment(postId, commentText);
+      if (response && response.comments) {
+        setWallPosts(prev => prev.map(post =>
+          post._id === postId
+            ? { ...post, comments: response.comments }
+            : post
+        ));
+      }
+    } catch (err) {
+      setWallPosts(prev => prev.map(post =>
+        post._id === postId
+          ? { ...post, comments: (post.comments || []).filter(c => !c.isOptimistic) }
+          : post
+      ));
+      // Optionally show error
+    }
   };
 
   return (
@@ -216,55 +273,47 @@ const WallTab = ({
 
       {/* Wall Posts */}
       <div className="space-y-4">
-        {wallLoading && wallPosts.length === 0 ? (
-          <div className="habbo-card p-8 text-center">
-            <LoadingSpinner size="lg" />
-            <p className="text-gray-400 mt-4">Loading wall posts...</p>
+        {wallLoading && !wallPosts.length ? (
+          <div className="flex justify-center">
+            <LoadingSpinner />
           </div>
         ) : wallError ? (
-          <div className="habbo-card p-8 text-center">
-            <p className="text-red-400">{wallError}</p>
-          </div>
+          <div className="text-red-500 text-center">{wallError}</div>
         ) : wallPosts.length === 0 ? (
-          <div className="habbo-card p-8 text-center">
-            <div className="text-6xl mb-4">📝</div>
-            <h3 className="text-xl font-minecraft text-white mb-2">No posts yet</h3>
-            <p className="text-gray-400">
-              {isOwnProfile 
-                ? "Share your first thought with the world!" 
-                : "This user hasn't posted anything yet."
-              }
-            </p>
-          </div>
+          <div className="text-center text-gray-500">No posts yet</div>
         ) : (
-          wallPosts.map((post) => (
-            <WallPost
-              key={post._id}
-              post={post}
-              isOwnProfile={isOwnProfile}
-              onDelete={onDeletePost}
-              onLike={onLikePost}
-              onUnlike={onUnlikePost}
-              onAddComment={onAddComment}
-              onDeleteComment={onDeleteComment}
-              commentInput={commentInputs[post._id] || ''}
-              commentLoading={commentLoading[post._id] || false}
-              onCommentInputChange={(value) => onCommentInputChange(post._id, value)}
-              isExpanded={expandedComments.has(post._id)}
-              onToggleComments={() => onToggleComments(post._id)}
-              
-              // Repost functionality
-              onRepost={onRepost}
-              onUnrepost={handleUnrepostWithNotification}
-              onOpenRepostModal={onOpenRepostModal}
-              repostStatus={repostStatuses[post._id]}
-              repostLoading={repostLoading[post._id] || false}
-              
-              // View tracking
-              onTrackView={onTrackView}
-              viewCount={viewCounts[post._id] || 0}
-            />
-          ))
+          wallPosts.map((post) => {
+            // For reposts, use the original post's ID for comment state
+            const isRepostWithOriginal = post.isRepost && post.originalPost && post.originalPost._id;
+            const commentKey = isRepostWithOriginal ? post.originalPost._id : post._id;
+            return (
+              <WallPost
+                key={post._id}
+                post={post}
+                isOwnProfile={isOwnProfile}
+                onDelete={onDeletePost}
+                onLike={onLikePost}
+                onUnlike={onUnlikePost}
+                onAddComment={handleAddComment}
+                onDeleteComment={onDeleteComment}
+                isExpanded={expandedComments.has(post._id)}
+                onToggleComments={() => onToggleComments(post._id)}
+                // Repost functionality
+                onRepost={onRepost}
+                onUnrepost={handleUnrepostWithNotification}
+                onOpenRepostModal={onOpenRepostModal}
+                repostStatus={repostStatuses[post._id]}
+                repostLoading={repostLoading[post._id] || false}
+                // View tracking
+                onTrackView={onTrackView}
+                viewCount={viewCounts[post._id] || 0}
+                onFadeInEnd={handleFadeInEnd}
+                onCommentFadeInEnd={handleCommentFadeInEnd}
+                viewedRef={viewedRef}
+                likeAnimating={likeAnimStates[post._id]}
+              />
+            );
+          })
         )}
       </div>
 

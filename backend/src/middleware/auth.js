@@ -27,48 +27,32 @@ if (!process.env.JWT_SECRET) {
 exports.protect = async (req, res, next) => {
   try {
     let token;
-    
-    // Check for token in Authorization header
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      // Extract token from Bearer
       token = req.headers.authorization.split(' ')[1];
-    } 
-    // Check for token in cookies
-    else if (req.cookies && req.cookies.token) {
+    } else if (req.cookies && req.cookies.token) {
       token = req.cookies.token;
     }
-    
-    // Check if token exists
     if (!token) {
-      console.error('[AUTH] No token provided');
-      return res.status(401).json({ error: 'No token, authorization denied' });
+      return res.status(401).json({ success: false, error: 'Not authorized, no token' });
     }
     
-    console.log('[AUTH] Incoming token:', token.substring(0, 20) + '...');
-    
     try {
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('[AUTH] Decoded token:', decoded);
       
-      // Get user from database (excluding password)
       const user = await User.findById(decoded.id);
       
       if (!user) {
         return next(new ErrorResponse('User not found', 404));
       }
       
-      // Check if account is locked
       if (user.lockUntil && user.lockUntil > Date.now()) {
         return next(new ErrorResponse('Your account is temporarily locked. Please try again later.', 403));
       }
       
-      // Add user to request
       req.user = user;
       next();
     } catch (error) {
-      console.error('[AUTH] Token verification error:', error.message);
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ success: false, error: 'Not authorized, token failed' });
     }
   } catch (error) {
     next(error);
@@ -83,7 +67,6 @@ exports.authorize = (...roles) => {
     }
     
     if (!roles.includes(req.user.webRank)) {
-      // Log unauthorized access attempt
       SecurityLog.create({
         user: req.user._id,
         action: 'UNAUTHORIZED_ACCESS',
@@ -106,14 +89,11 @@ exports.authorize = (...roles) => {
 // Admin authorization middleware
 exports.adminMiddleware = async (req, res, next) => {
   try {
-    // First use the standard protection middleware
     if (!req.user) {
       return next(new ErrorResponse('Not authorized to access this route', 401));
     }
     
-    // Check if user has admin role
     if (!['admin', 'owner'].includes(req.user.webRank)) {
-      // Log unauthorized admin access attempt
       await SecurityLog.create({
         user: req.user._id,
         action: 'UNAUTHORIZED_ADMIN_ACCESS',
@@ -128,18 +108,15 @@ exports.adminMiddleware = async (req, res, next) => {
       return next(new ErrorResponse('Admin privileges required to access this route', 403));
     }
     
-    // Enhanced security: IP validation for admins
     const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     const knownIP = req.user.knownIPs.find(ip => ip.ip === clientIP && ip.trusted);
     
-    // If IP is unknown or untrusted, require additional verification for extra security
     if (!knownIP && req.user.twoFactorEnabled) {
       return next(new ErrorResponse('Admin access from new IP requires 2FA verification', 403, {
         requiresTwoFactor: true
       }));
     }
     
-    // Proceed to route handler
     next();
   } catch (error) {
     next(error);

@@ -192,56 +192,37 @@ api.interceptors.request.use(
       }
     }
     
-    // Add authorization token - with safe access through our helper
-    const token = getToken();
-    
-    if (token) {
-      // Make sure we're adding the token to all requests
-      config.headers['Authorization'] = `Bearer ${token}`;
-      
-      // For profile requests, always include credentials
-      if (config.url.includes('/api/profile')) {
-        // For profile requests, always include credentials
-        config.withCredentials = true;
-        
-        // Set specific content type for profile requests
-        config.headers['Content-Type'] = 'application/json';
-        config.headers['Accept'] = 'application/json';
-      }
+    // Only add Authorization header if NOT a leaderboard endpoint or public wall endpoint
+    let urlPath;
+    try {
+      urlPath = new URL(config.url, config.baseURL).pathname;
+    } catch {
+      urlPath = (config.url || '').split('?')[0];
+    }
+    if (
+      (config.url && config.url.includes('/api/leaderboard')) ||
+      (urlPath && urlPath.startsWith('/api/wall/fyp')) ||
+      (urlPath && urlPath.startsWith('/api/news'))
+    ) {
+      // Do not add token or credentials for leaderboard, trending posts, or news endpoints
+      config.withCredentials = false;
+      delete config.headers['Authorization'];
     } else {
-      // Only redirect for non-public endpoints
-      if (config.url.includes('/api/') && 
-          !config.url.includes('/api/auth/login') && 
-          !config.url.includes('/api/register') &&
-          !config.url.includes('/api/profile') &&  // Don't redirect for profile checks
-          !config.url.includes('/api/verify-token')) {  // Don't redirect for token verification
-        console.warn('Protected endpoint accessed without token - redirecting to login');
-        if (typeof window !== 'undefined' && 
-            !window.location.pathname.includes('/login') && 
-            !window.location.pathname.includes('/register')) {
-          // Use a more gentle approach - don't force redirect immediately
-          // This allows components to handle the error gracefully
-          setTimeout(() => {
-            // Use our safe token getter
-            const hasToken = !!getToken();
-            
-            if (!hasToken) {
-              window.location.href = '/login';
-            }
-          }, 100);
-        }
+      // Add auth token for protected endpoints
+      const token = getToken();
+      if (token) {
+        config.headers['Authorization'] = `Bearer ${token}`;
+      } else if (!config.url?.includes('/api/auth/')) {
+        // Only redirect to login if not an auth endpoint
+        console.log('Protected endpoint accessed without token - redirecting to login');
+                window.location.href = '/login';
+        return Promise.reject(new Error('No auth token'));
       }
     }
-    
-    // Add request retry capability
-    config.retryCount = config.retryCount || 0;
-    config.retryDelay = config.retryDelay || 1000;
-    config.maxRetries = config.maxRetries || 2; // Reduce default from 3 to 2
     
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -300,12 +281,13 @@ api.interceptors.response.use(
     
     // Handle authentication errors - BUT DON'T REDIRECT on profile validation requests
     if (error.response?.status === 401) {
-      console.error('Authentication error - clearing token');
-      
-      // Don't redirect for profile validation requests - let the AuthContext handle it
-      if (error.config?.url.includes('/api/profile') || error.config?.url.includes('/api/verify-token')) {
-        console.log('Token validation failed - returning error without redirect');
-        // Use our safe token remover
+      // Don't redirect for leaderboard or profile validation requests
+      if (
+        error.config?.url.includes('/api/leaderboard') ||
+        error.config?.url.includes('/api/profile') ||
+        error.config?.url.includes('/api/verify-token')
+      ) {
+        console.log('Token validation failed or public endpoint - returning error without redirect');
         removeAuthToken();
         return Promise.reject(error);
       }
@@ -975,17 +957,14 @@ export const MinecraftService = {
    */
   getLeaderboard: (category, timeFrame = 'all', limit = 10, skipCache = false) => {
     console.log(`API: Getting leaderboard for ${category}, timeFrame=${timeFrame}, limit=${limit}`);
-    // Use the main API instance and unified backend
     return api.get(`/api/leaderboard/${category}?timeFrame=${timeFrame}&limit=${limit}`, {
-      // Use long cache for leaderboards (5 minutes)
       maxRetries: 5,
       retryDelay: 1000,
-      cacheTTL: 5 * 60 * 1000, // 5 minutes cache
-      skipCache: skipCache, // Add skipCache parameter
-      withCredentials: true // Use credentials for unified backend
+      cacheTTL: 5 * 60 * 1000,
+      skipCache: skipCache
     })
     .then(response => {
-      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`, 
+      console.log(`API: Leaderboard data received for ${category}, success=${response.data?.success}`,
         response.data?.data?.players?.length || 0, 'players');
       return response;
     })
@@ -1225,8 +1204,18 @@ export const MinecraftService = {
 
 // Admin services
 export const AdminService = {
-  getUsers: (page = 1, limit = 10) => api.get(`/api/admin/users?page=${page}&limit=${limit}`),
+  getUsers: (params) => api.get('/api/admin/users', { params }).then(res => res.data),
   deleteUser: (userId) => api.delete(`/api/admin/users/${userId}`),
+  updateUser: (userId, updates) => api.put(`/api/admin/users/${userId}`, updates),
+  updateUserPermissions: (userId, permissions) => api.put(`/api/admin/users/${userId}/permissions`, permissions),
+  getMinecraftPermissions: (userId) => api.get(`/api/admin/minecraft/user-permissions/${userId}`),
+  updateMinecraftPermissions: (userId, luckperms_group) => api.put(`/api/admin/minecraft/user-permissions/${userId}`, { luckperms_group }),
+  getForumStats: () => api.get('/api/admin/forum/stats'),
+  moderateThread: (threadId, updates) => api.put(`/api/admin/forum/threads/${threadId}/moderate`, updates),
+  deleteThread: (threadId) => api.delete(`/api/admin/forum/threads/${threadId}`),
+  updatePost: (postId, content) => api.put(`/api/admin/forum/posts/${postId}`, { content }),
+  deletePost: (postId) => api.delete(`/api/admin/forum/posts/${postId}`),
+  getThreads: (params) => api.get('/api/admin/threads', { params }).then(res => res.data),
 };
 
 // Social system services

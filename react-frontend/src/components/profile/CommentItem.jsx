@@ -16,7 +16,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, CheckIcon } from '@heroicons/react/24/outline';
 import MinecraftAvatar from '../MinecraftAvatar';
 import { timeAgo } from '../../utils/timeUtils';
 
@@ -73,9 +73,16 @@ const CommentItem = ({ comment, postId, onDelete, currentUser }) => {
           <div>
             <Link
               to={`/profile/${author.username}`}
-              className="font-medium text-sm hover:text-minecraft-habbo-blue transition-colors"
+              className="font-medium text-sm hover:text-minecraft-habbo-blue transition-colors flex items-center"
             >
               {author.username}
+              {author.verified && (
+                <span className="ml-2 text-minecraft-habbo-blue" title="Verified">
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </span>
+              )}
             </Link>
             <span
               className="text-gray-400 text-xs ml-2 cursor-default"

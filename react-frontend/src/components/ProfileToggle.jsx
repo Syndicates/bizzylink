@@ -16,9 +16,11 @@
 import React from 'react';
 import { ArrowPathIcon, CodeBracketIcon } from '@heroicons/react/24/outline';
 import { useProfileToggle } from '../hooks/useProfileToggle';
+import { useAuth } from '../contexts/AuthContext';
 
 const ProfileToggle = ({ className = '', showLabel = false, size = 'md' }) => {
   const { useLegacyProfile, toggleProfile, profileType, isProfilePage } = useProfileToggle();
+  const { user, isAuthenticated } = useAuth();
 
   // Size variants
   const sizes = {
@@ -40,6 +42,20 @@ const ProfileToggle = ({ className = '', showLabel = false, size = 'md' }) => {
   };
 
   const sizeClasses = sizes[size] || sizes.md;
+
+  // If logged in, do not render the toggle button at all
+  if (isAuthenticated) {
+    return (
+      <div className={`flex items-center space-x-2 ${className}`}>
+        {/* Show BETA badge only if logged in */}
+        <div className={
+          `${sizeClasses.text} px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded border border-yellow-500/30`
+        }>
+          BETA
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex items-center space-x-2 ${className}`}>
@@ -77,8 +93,8 @@ const ProfileToggle = ({ className = '', showLabel = false, size = 'md' }) => {
         </div>
       )}
 
-      {/* Development indicator */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* DEV indicator for not-logged-in users only */}
+      {process.env.NODE_ENV === 'development' && !isAuthenticated && (
         <div className={`
           ${sizeClasses.text} 
           px-2 py-1 

@@ -34,6 +34,11 @@ const { protect } = require('./middleware/auth');
 const jwt = require('jsonwebtoken');
 const socialRoutes = require('./routes/social');
 const cookieParser = require('cookie-parser');
+const WallPost = require('./models/WallPost');
+const Notification = require('./models/Notification');
+const adminRoutes = require('./routes/admin');
+const newsRouter = require('./routes/news');
+const uploadRouter = require('./routes/upload');
 
 // Load environment variables
 dotenv.config();
@@ -127,6 +132,97 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/wall', wallpostRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/news', newsRouter);
+app.use('/api/upload', uploadRouter);
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+
+// Trending Topics: Extract hashtags from recent WallPosts
+app.get('/api/trending-topics', async (req, res) => {
+  try {
+    const posts = await WallPost.find({ content: { $exists: true } }, 'content createdAt').sort({ createdAt: -1 }).limit(200);
+    const hashtagCounts = {};
+    posts.forEach(post => {
+      const hashtags = (post.content.match(/#\w+/g) || []).map(tag => tag.slice(1).toLowerCase());
+      hashtags.forEach(tag => {
+        hashtagCounts[tag] = (hashtagCounts[tag] || 0) + 1;
+      });
+    });
+    const trending = Object.entries(hashtagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([tag]) => tag);
+    res.json(trending);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch trending topics' });
+  }
+});
+
+// Suggested Users: Return real users (not the current user, if logged in)
+app.get('/api/suggested-users', async (req, res) => {
+  try {
+    let excludeId = null;
+    if (req.user && req.user.id) excludeId = req.user.id;
+    const query = excludeId ? { _id: { $ne: excludeId }, isPrivate: false } : { isPrivate: false };
+    const users = await User.aggregate([
+      { $match: { ...query, $or: [ { mcUsername: { $exists: true, $ne: null } }, { minecraftUsername: { $exists: true, $ne: null } } ] } },
+      { $sample: { size: 8 } },
+      { $project: { _id: 1, username: 1, mcUsername: 1, minecraftUsername: 1 } }
+    ]);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch suggested users' });
+  }
+});
+
+// Recent Activity: Show recent wall post actions (likes, reposts, new users) with richer data
+app.get('/api/recent-activity', async (req, res) => {
+  try {
+    const [recentPosts, recentUsers] = await Promise.all([
+      WallPost.find({}).sort({ createdAt: -1 }).limit(10).populate('author', 'username mcUsername createdAt'),
+      User.find({}).sort({ createdAt: -1 }).limit(5)
+    ]);
+    const activity = [];
+    recentPosts.forEach(post => {
+      if (post.isRepost && post.repostMessage) {
+        activity.push({
+          type: 'repost',
+          username: post.author.username,
+          mcUsername: post.author.mcUsername,
+          createdAt: post.createdAt,
+          message: post.repostMessage
+        });
+      } else if (post.likes && post.likes.length > 0) {
+        activity.push({
+          type: 'like',
+          username: post.author.username,
+          mcUsername: post.author.mcUsername,
+          createdAt: post.createdAt
+        });
+      } else {
+        activity.push({
+          type: 'post',
+          username: post.author.username,
+          mcUsername: post.author.mcUsername,
+          createdAt: post.createdAt
+        });
+      }
+    });
+    recentUsers.forEach(user => {
+      activity.push({
+        type: 'join',
+        username: user.username,
+        mcUsername: user.mcUsername,
+        createdAt: user.createdAt
+      });
+    });
+    // Sort by recency
+    activity.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(activity.slice(0, 10));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch recent activity' });
+  }
+});
 
 // Internal endpoint to emit player_unlinked to plugin-mc (for use by other services)
 app.post('/api/internal/emit-unlink', (req, res) => {
@@ -536,10 +632,18 @@ if (eventEmitter && eventEmitter.on) {
   // --- Add wall_comment event handler for real-time wall post comment updates ---
   eventEmitter.on('wall_comment', (eventData) => {
     if (typeof sseUserClients !== 'undefined' && sseUserClients.size > 0) {
+      // Map the backend event type to frontend expected format
+      const mappedEventData = {
+        ...eventData,
+        type: eventData.type === 'comment_added' ? 'wall_comment_added' : 
+              eventData.type === 'comment_deleted' ? 'wall_comment_deleted' : 
+              eventData.type
+      };
+      
       for (const [clientId, client] of sseUserClients.entries()) {
-        console.log('[SSE] Broadcasting wall_comment event to client', clientId, ':', eventData);
+        console.log('[SSE] Broadcasting wall_comment event to client', clientId, ':', mappedEventData);
         try {
-          client.res.write(`data: ${JSON.stringify({ type: 'wall_comment', ...eventData })}\n\n`);
+          client.res.write(`data: ${JSON.stringify({ type: 'wall_comment', data: mappedEventData })}\n\n`);
         } catch (err) {
           sseUserClients.delete(clientId);
           console.error(`[SSE] Failed to write wall_comment event to clientId: ${clientId}`, err);
@@ -668,267 +772,14 @@ io.on('connection', (socket) => {
         ioserverWarn(`Socket ${socket.id} sent unknown auth payload`);
       }
     } catch (err) {
-      ioserverError(`Socket ${socket.id} failed authentication:`, err.message);
+      ioserverError('Socket ' + socket.id + ' failed authentication:', err.message);
       socket.emit('error', { message: 'Invalid token' });
     }
   });
-
-  // Listen for room join
-  socket.on('joinRoom', (room) => {
-    socket.join(room);
-    ioserverLog(`Socket ${socket.id} joined room: ${room}`);
-  });
-  
-  // Handle individual player stat updates from Minecraft plugin
-  socket.on('player_stat_update', async (data) => {
-    try {
-      const { mcUUID, mcUsername, statType, value, timestamp } = data;
-      
-      if (!mcUUID || !mcUsername || !statType) {
-        return ioserverWarn(`Invalid player_stat_update payload: missing required fields`);
-      }
-      
-      // Log the received stat for debugging
-      ioserverLog(`Received player_stat_update for ${mcUsername} (${mcUUID}): ${statType} = ${value}`);
-      
-      // Find the user linked to this Minecraft account
-      const user = await User.findOne({ mcUUID });
-      
-      if (!user) {
-        return ioserverWarn(`No user found for Minecraft UUID: ${mcUUID}`);
-      }
-      
-      // Update the stat in the database - this depends on your schema structure
-      // This is a simplistic approach; you might need to adapt it to your actual schema
-      if (!user.mcStats) {
-        user.mcStats = {};
-      }
-      
-      // Update the specific stat
-      user.mcStats[statType] = value;
-      user.mcStats.lastUpdated = new Date();
-      
-      // Save the updated user document
-      await user.save();
-      
-      // Broadcast the stat update to all clients that need to know about this user
-      // 1. To the user themselves if they're online
-      io.to(user._id.toString()).emit('player_stat_update', {
-        statType,
-        value,
-        timestamp
-      });
-      
-      // 2. To admin dashboards or other monitoring systems if needed
-      io.to('admins').emit('player_stat_update', {
-        mcUUID,
-        mcUsername,
-        userId: user._id.toString(),
-        statType,
-        value,
-        timestamp
-      });
-      
-    } catch (error) {
-      ioserverError(`Error handling player_stat_update:`, error.message);
-    }
-  });
-  
-  // Handle bulk player stats updates from Minecraft plugin
-  socket.on('player_stats_update', async (data) => {
-    try {
-      const { mcUUID, mcUsername, stats, timestamp } = data;
-      
-      if (!mcUUID || !mcUsername || !stats) {
-        return ioserverWarn(`Invalid player_stats_update payload: missing required fields`);
-      }
-      
-      // Log the received stats update
-      ioserverLog(`Received bulk player_stats_update for ${mcUsername} (${mcUUID})`);
-      
-      // Find the user linked to this Minecraft account
-      const user = await User.findOne({ mcUUID });
-      
-      if (!user) {
-        return ioserverWarn(`No user found for Minecraft UUID: ${mcUUID}`);
-      }
-      
-      // Update the stats in the database
-      if (!user.mcStats) {
-        user.mcStats = {};
-      }
-      
-      // Merge the incoming stats with existing stats
-      user.mcStats = { ...user.mcStats, ...stats, lastUpdated: new Date() };
-      
-      // Save the updated user document
-      await user.save();
-      
-      // Broadcast the stats update to the user if they're online
-      io.to(user._id.toString()).emit('player_stats_update', {
-        stats,
-        timestamp
-      });
-      
-      // Broadcast to admin dashboards or other monitoring systems if needed
-      io.to('admins').emit('player_stats_update', {
-        mcUUID,
-        mcUsername,
-        userId: user._id.toString(),
-        stats,
-        timestamp
-      });
-      
-    } catch (error) {
-      ioserverError(`Error handling player_stats_update:`, error.message);
-    }
-  });
-  
-  // Listen for request_player_stats event from frontend clients
-  socket.on('request_player_stats', async (data) => {
-    try {
-      // Ensure the client has authentication and permissions
-      if (!socket.userId) {
-        return socket.emit('error', { message: 'Authentication required' });
-      }
-      
-      const { mcUUID } = data;
-      if (!mcUUID) {
-        return socket.emit('error', { message: 'Missing mcUUID parameter' });
-      }
-      
-      // Find user to verify permissions
-      const requestingUser = await User.findById(socket.userId);
-      if (!requestingUser) {
-        return socket.emit('error', { message: 'User not found' });
-      }
-      
-      // Forward the request to the Minecraft plugin
-      io.to('plugin-mc').emit('request_player_stats', { mcUUID });
-      ioserverLog(`Forwarded request_player_stats for ${mcUUID} from user ${socket.userId}`);
-      
-    } catch (error) {
-      ioserverError(`Error handling request_player_stats:`, error.message);
-      socket.emit('error', { message: 'Server error processing request' });
-    }
-  });
-
-  // Listen for custom events (for debug)
-  socket.onAny((event, ...args) => {
-    ioserverLog(`Socket ${socket.id} event: ${event}`, ...args);
-  });
-
-  socket.on('disconnect', (reason) => {
-    ioserverLog(`Socket disconnected: ${socket.id} (${reason})`);
-  });
 });
-
-// --- SSE (Server-Sent Events) Support ---
-const sseClients = new Map();
-
-// SSE subscribe endpoint
-app.get('/api/sse/subscribe', (req, res) => {
-  // For authentication, you can add a token check here if needed
-  const userId = req.query.userId;
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
-  // Set headers for SSE
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
-  res.flushHeaders();
-
-  // Send initial event
-  res.write(`data: {"type":"sse_connected","timestamp":${Date.now()}}
-
-`);
-
-  // Store client
-  const clientId = `${userId}:${Date.now()}:${Math.random()}`;
-  sseClients.set(clientId, { userId, res });
-
-  // Remove client on close
-  req.on('close', () => {
-    sseClients.delete(clientId);
-  });
-});
-
-// --- EventEmitter Integration for User Events ---
-if (eventEmitter && eventEmitter.on) {
-  // Listen for generic user events
-  eventEmitter.on('userEvent', (payload) => {
-    if (payload && payload.userId) {
-      global.notifyUser(payload.userId, {
-        type: payload.event,
-        ...payload.data
-      });
-    }
-  });
-  // Listen for Minecraft account unlinked events
-  eventEmitter.on('minecraft_account_unlinked', (payload) => {
-    if (payload && payload.userId) {
-      global.notifyUser(payload.userId, {
-        type: 'account_unlinked',
-        ...payload
-      });
-    }
-  });
-}
-
-// --- Test SSE Endpoint for Debugging ---
-app.post('/api/test-sse', async (req, res) => {
-  let token;
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.token) {
-    token = req.cookies.token;
-  } else if (req.query.token) {
-    token = req.query.token;
-  }
-
-  if (!token) {
-    return res.status(401).json({ error: 'No token, authorization denied' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-    // Emit a test SSE event
-    global.sendSseToUser(user._id.toString(), {
-      type: 'test',
-      message: 'This is a test SSE event',
-      timestamp: Date.now()
-    });
-    return res.json({ success: true, message: 'Test SSE event sent' });
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// Start server
+  
+// Start the HTTP server
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  logger.info('🟢 Server running in ' + process.env.NODE_ENV + ' mode on port ' + PORT);
+  logger.info('🟢 Server running in ' + (process.env.NODE_ENV || 'development') + ' mode on port ' + PORT);
 });
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  logger.error(`Unhandled Rejection: ${err.message}`, { stack: err.stack });
-  // Close server & exit process
-  server.close(() => process.exit(1));
-});
-
-// Handle unhandled exceptions
-process.on('uncaughtException', err => {
-  logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
-  // Close server & exit process
-  server.close(() => process.exit(1));
-});
-
-module.exports = server;

@@ -21,6 +21,7 @@ import WallService from '../../services/wallService';
 
 const useWallPosts = (profileUser, isOwnProfile) => {
   const { user } = useAuth();
+  const { addEventListener, eventEmitter } = useEventSource();
   
   // Wall posts state
   const [wallPosts, setWallPosts] = useState([]);
@@ -54,8 +55,13 @@ const useWallPosts = (profileUser, isOwnProfile) => {
   const [postToDelete, setPostToDelete] = useState(null);
   
   // SSE Integration
-  const { addEventListener } = useEventSource();
   const profileUserRef = useRef(profileUser);
+  
+  // Like animation state map (postId => true/false)
+  const [likeAnimStates, setLikeAnimStates] = useState({});
+  
+  // Track which posts have been viewed in this session
+  const viewedRef = useRef({});
   
   // Update ref when profileUser changes
   useEffect(() => {
@@ -67,15 +73,31 @@ const useWallPosts = (profileUser, isOwnProfile) => {
     if (!posts || posts.length === 0 || !user) return;
 
     try {
-      // Since the bulk endpoint doesn't exist, fetch individual statuses
-      // For now, just set default values to avoid API errors
       const statusMap = {};
       posts.forEach(post => {
+        // For original posts, check if user ID is in the reposts array
+        const reposts = post.reposts || [];
+        const repostCount = post.repostCount || 0;
+        const hasReposted = reposts.includes(user._id) || reposts.includes(user.id);
+        
         statusMap[post._id] = {
-          hasReposted: false,
-          repostCount: 0,
-          reposts: []
+          hasReposted,
+          repostCount,
+          reposts
         };
+
+        // If this is a repost wrapper, also set status for the original post
+        if (post.isRepost && post.originalPost) {
+          const originalReposts = post.originalPost.reposts || [];
+          const originalRepostCount = post.originalPost.repostCount || 0;
+          const originalHasReposted = originalReposts.includes(user._id) || originalReposts.includes(user.id);
+          
+          statusMap[post.originalPost._id] = {
+            hasReposted: originalHasReposted,
+            repostCount: originalRepostCount,
+            reposts: originalReposts
+        };
+        }
       });
       setRepostStatuses(statusMap);
     } catch (error) {
@@ -101,145 +123,106 @@ const useWallPosts = (profileUser, isOwnProfile) => {
   // Fetch wall posts
   const fetchWallPosts = useCallback(async (page = 1, append = false) => {
     if (!profileUser?.username) {
-      console.log('[DEBUG] fetchWallPosts: No profileUser username, aborting');
+      setWallLoading(false);
       return;
     }
-
-    console.log('[DEBUG] fetchWallPosts: Starting fetch for', profileUser.username);
     setWallLoading(true);
     setWallError(null);
-
     try {
-      console.log('[DEBUG] Fetching wall posts from API for:', profileUser.username);
       const response = await WallService.getWallPosts(profileUser.username, page, 10);
-      console.log('[DEBUG] Wall posts API response:', response);
-      console.log('[DEBUG] Response type:', typeof response);
-      console.log('[DEBUG] Response structure keys:', Object.keys(response || {}));
-      
       if (response && response.posts) {
         const { posts } = response;
-        console.log('[DEBUG] Successfully got', posts.length, 'posts from API');
-        console.log('[DEBUG] First post sample:', posts[0]);
+        setWallPosts(prev => {
+          // Create a map of current posts for efficient lookup
+          const prevMap = new Map(prev.map(p => [p._id, p]));
+          
+          // Process new posts
+          const updated = posts.map(post => {
+            const existingPost = prevMap.get(post._id);
+            let newComments = (post.comments || []).filter(Boolean);
+            let prevComments = (existingPost?.comments || []).filter(Boolean);
+            const prevCommentIds = new Set(prevComments.map(c => c._id));
+            newComments = newComments.map(c => {
+              if (!c || !c._id) return c; // skip if undefined or missing _id
+              const prevC = prevComments.find(pc => pc._id === c._id);
+              if (!prevC) {
+                // Only set fadeIn: true if not already animating
+                return { ...c, fadeIn: true };
+              } else {
+                // Always preserve fadeIn/removing state for existing comments
+                return { ...c, fadeIn: prevC.fadeIn, removing: prevC.removing };
+              }
+            });
+            let likeAnimating = false;
+            let prevLikes = (existingPost?.likes || []).filter(like => like && like.user && like.user.username);
+            let newLikes = (post.likes || []).filter(like => like && like.user && like.user.username);
+            const prevLikeUsernames = new Set(prevLikes.map(like => like.user.username));
+            const newLikeUsernames = new Set(newLikes.map(like => like.user.username));
+            // If a new like was added or removed, trigger animation
+            if (
+              newLikes.length !== prevLikes.length ||
+              [...newLikeUsernames].some(u => !prevLikeUsernames.has(u)) ||
+              [...prevLikeUsernames].some(u => !newLikeUsernames.has(u))
+            ) {
+              likeAnimating = true;
+              // Set a timer to reset likeAnimating after 500ms
+              setTimeout(() => {
+                setWallPosts(current => current.map(p =>
+                  p._id === post._id ? { ...p, likeAnimating: false } : p
+                ));
+              }, 500);
+            } else if (existingPost) {
+              likeAnimating = existingPost.likeAnimating;
+            }
+            if (existingPost) {
+              // If post exists, preserve its fadeIn state and merge updates
+              return { ...existingPost, ...post, comments: newComments, likeAnimating };
+            } else {
+              // New post, add fadeIn flag
+              return { ...post, fadeIn: true, comments: newComments, likeAnimating };
+            }
+          });
 
-        if (append) {
-          setWallPosts(prev => [...prev, ...posts]);
-        } else {
-          setWallPosts(posts);
-        }
-        
+          // --- PATCH: Sync original post's repostCount/reposts if repost wrapper present ---
+          let synced = [...updated];
+          updated.forEach(post => {
+            if (post.isRepost && post.originalPost) {
+              synced = synced.map(p => {
+                if (p._id === post.originalPost._id) {
+                  return {
+                    ...p,
+                    repostCount: post.originalPost.repostCount,
+                    reposts: post.originalPost.reposts
+                  };
+                }
+                return p;
+              });
+            }
+          });
+          // --- END PATCH ---
+
+          // If appending, add any posts from prev that aren't in the new page
+          if (append) {
+            const existingIds = new Set(synced.map(p => p._id));
+            return [...synced, ...prev.filter(p => !existingIds.has(p._id))];
+          } else {
+            return synced;
+          }
+        });
         setWallPage(page);
         setWallTotalPages(response.pagination?.totalPages || 1);
-        
-        // Fetch repost statuses and track views for fetched posts
         if (posts.length > 0) {
           await fetchRepostStatuses(posts);
-          
-          // Track views for posts (with debouncing)
-          posts.forEach(post => {
-            setTimeout(() => trackPostView(post._id), Math.random() * 1000);
-          });
         }
-        
-        console.log('[DEBUG] Successfully processed real API data');
-        return; // Successfully processed real data
+        return;
       }
-      
-      // If we get here, the API didn't return expected data structure
-      console.warn('[DEBUG] API response missing posts array:', response);
       throw new Error('API response missing posts data');
-      
     } catch (error) {
-      console.error('[DEBUG] Failed to fetch wall posts from API:', error);
-      console.error('[DEBUG] Error details:', error.message, error.response?.data);
-      console.error('[DEBUG] Error stack:', error.stack);
-      
-      // Provide sample data when API fails (matching original design)
-      const samplePosts = [
-        {
-          _id: 'repost-1',
-          author: { 
-            username: 'bizzy',
-            mcUsername: 'heyimbusy',
-            displayName: 'bizzy'
-          },
-          content: '', // Repost message (empty in this case)
-          repostMessage: '',
-          createdAt: new Date(Date.now() - 60000 * 10), // 10 minutes ago
-          likes: [],
-          isLiked: false,
-          comments: [],
-          isRepost: true,
-          originalPost: {
-            _id: 'original-post-1',
-            author: {
-              username: 'Dextor',
-              mcUsername: 'Dextor',
-              displayName: 'Dextor'
-            },
-            content: 'yo repost this',
-            createdAt: new Date(Date.now() - 60000 * 60), // 1 hour ago
-            likes: [],
-            comments: []
-          }
-        },
-        {
-          _id: 'post-bob',
-          author: { 
-            username: 'bob',
-            mcUsername: 'bob',
-            displayName: 'bob'
-          },
-          content: 'ITS BOB!',
-          createdAt: new Date(Date.now() - 60000 * 480), // 8 hours ago
-          likes: ['user1'],
-          isLiked: false,
-          comments: [],
-          views: 1
-        },
-        {
-          _id: 'post-dextor-1',
-          author: { 
-            username: 'Dextor',
-            mcUsername: 'Dextor',
-            displayName: 'Dextor'
-          },
-          content: 'I see u',
-          createdAt: new Date(Date.now() - 60000 * 600), // 10 hours ago
-          likes: [],
-          isLiked: false,
-          comments: [],
-          views: 1
-        },
-        {
-          _id: 'post-dextor-2',
-          author: { 
-            username: 'Dextor',
-            mcUsername: 'Dextor',
-            displayName: 'Dextor'
-          },
-          content: 'hey',
-          createdAt: new Date(Date.now() - 60000 * 600), // 10 hours ago
-          likes: [],
-          isLiked: false,
-          comments: [],
-          views: 1
-        }
-      ];
-
-      console.log('[DEBUG] Using sample data instead of API data');
-      if (append) {
-        setWallPosts(prev => [...prev, ...samplePosts]);
-      } else {
-        setWallPosts(samplePosts);
-      }
-      
-      setWallPage(page);
-      setWallTotalPages(1);
+      setWallError(error.message || 'Failed to fetch wall posts');
     } finally {
       setWallLoading(false);
-      console.log('[DEBUG] fetchWallPosts: Finished');
     }
-  }, [profileUser?.username, fetchRepostStatuses, trackPostView]);
+  }, [profileUser?.username, fetchRepostStatuses]);
 
   // Refresh wall posts (for real-time updates)
   const refreshWallPosts = useCallback(() => {
@@ -255,11 +238,32 @@ const useWallPosts = (profileUser, isOwnProfile) => {
     try {
       setRepostLoading(prev => ({ ...prev, [postId]: true }));
 
+      // Optimistically update repost count and reposts array
+      setWallPosts(prev => prev.map(post => {
+        if (post._id === postId) {
+          return {
+            ...post,
+            repostCount: (post.repostCount || 0) + 1,
+            reposts: [...(post.reposts || []), user._id]
+          };
+        } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+          return {
+            ...post,
+            originalPost: {
+              ...post.originalPost,
+              repostCount: (post.originalPost.repostCount || 0) + 1,
+              reposts: [...(post.originalPost.reposts || []), user._id]
+            }
+          };
+        }
+        return post;
+      }));
+
       const response = await SocialService.repostWallPost(postId);
       console.log('[DEBUG] Repost response:', response);
 
       if (response.success) {
-        // Update repost status
+        // Update repost status and count
         setRepostStatuses(prev => ({
           ...prev,
           [postId]: {
@@ -273,8 +277,49 @@ const useWallPosts = (profileUser, isOwnProfile) => {
         await refreshWallPosts();
 
         return { success: true, message: 'Post reposted!' };
+      } else {
+        // Revert optimistic update on failure
+        setWallPosts(prev => prev.map(post => {
+          if (post._id === postId) {
+            return {
+              ...post,
+              repostCount: Math.max((post.repostCount || 1) - 1, 0),
+              reposts: (post.reposts || []).filter(id => id !== user._id)
+            };
+          } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+            return {
+              ...post,
+              originalPost: {
+                ...post.originalPost,
+                repostCount: Math.max((post.originalPost.repostCount || 1) - 1, 0),
+                reposts: (post.originalPost.reposts || []).filter(id => id !== user._id)
+              }
+            };
+          }
+          return post;
+        }));
       }
     } catch (error) {
+      // Revert optimistic update on error
+      setWallPosts(prev => prev.map(post => {
+        if (post._id === postId) {
+          return {
+            ...post,
+            repostCount: Math.max((post.repostCount || 1) - 1, 0),
+            reposts: (post.reposts || []).filter(id => id !== user._id)
+          };
+        } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+          return {
+            ...post,
+            originalPost: {
+              ...post.originalPost,
+              repostCount: Math.max((post.originalPost.repostCount || 1) - 1, 0),
+              reposts: (post.originalPost.reposts || []).filter(id => id !== user._id)
+            }
+          };
+        }
+        return post;
+      }));
       console.error('[DEBUG] Repost error:', error);
       console.error('[DEBUG] Error response:', error.response?.data);
       return { success: false, error: error.response?.data?.error || error.message || 'Failed to repost' };
@@ -286,13 +331,34 @@ const useWallPosts = (profileUser, isOwnProfile) => {
   const handleUnrepost = useCallback(async (postId) => {
     if (!user || !postId) return;
 
+    // Optimistically update repost count and reposts array
+    setWallPosts(prev => prev.map(post => {
+      if (post._id === postId) {
+        return {
+          ...post,
+          repostCount: Math.max((post.repostCount || 1) - 1, 0),
+          reposts: (post.reposts || []).filter(id => id !== user._id)
+        };
+      } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+        return {
+          ...post,
+          originalPost: {
+            ...post.originalPost,
+            repostCount: Math.max((post.originalPost.repostCount || 1) - 1, 0),
+            reposts: (post.originalPost.reposts || []).filter(id => id !== user._id)
+          }
+        };
+      }
+      return post;
+    }));
+
     try {
       setRepostLoading(prev => ({ ...prev, [postId]: true }));
 
       const response = await SocialService.unrepostWallPost(postId);
 
       if (response.success) {
-        // Update repost status
+        // Update repost status and count
         setRepostStatuses(prev => ({
           ...prev,
           [postId]: {
@@ -306,8 +372,49 @@ const useWallPosts = (profileUser, isOwnProfile) => {
         await refreshWallPosts();
 
         return { success: true, message: 'Repost removed!' };
+      } else {
+        // Revert optimistic update on failure
+        setWallPosts(prev => prev.map(post => {
+          if (post._id === postId) {
+            return {
+              ...post,
+              repostCount: (post.repostCount || 0) + 1,
+              reposts: [...(post.reposts || []), user._id]
+            };
+          } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+            return {
+              ...post,
+              originalPost: {
+                ...post.originalPost,
+                repostCount: (post.originalPost.repostCount || 0) + 1,
+                reposts: [...(post.originalPost.reposts || []), user._id]
+              }
+            };
+          }
+          return post;
+        }));
       }
     } catch (error) {
+      // Revert optimistic update on error
+      setWallPosts(prev => prev.map(post => {
+        if (post._id === postId) {
+          return {
+            ...post,
+            repostCount: (post.repostCount || 0) + 1,
+            reposts: [...(post.reposts || []), user._id]
+          };
+        } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+          return {
+            ...post,
+            originalPost: {
+              ...post.originalPost,
+              repostCount: (post.originalPost.repostCount || 0) + 1,
+              reposts: [...(post.originalPost.reposts || []), user._id]
+            }
+          };
+        }
+        return post;
+      }));
       console.error('Failed to unrepost:', error);
       return { success: false, error: error.message || 'Failed to unrepost' };
     } finally {
@@ -355,7 +462,7 @@ const useWallPosts = (profileUser, isOwnProfile) => {
       isLiked: false,
       comments: [],
       isRepost: false,
-      fadeIn: true, // for animation
+      fadeIn: true // for animation
     };
     setWallPosts(prev => [optimisticPost, ...prev]);
     setNewWallPost('');
@@ -364,7 +471,7 @@ const useWallPosts = (profileUser, isOwnProfile) => {
       const response = await WallService.createWallPost(profileUser.username, newWallPost.trim());
       // Replace optimistic post with real post
       setWallPosts(prev => [
-        response.post,
+        { ...response.post, fadeIn: true },
         ...prev.filter(post => post._id !== tempId)
       ]);
     } catch (error) {
@@ -376,51 +483,103 @@ const useWallPosts = (profileUser, isOwnProfile) => {
     }
   }, [newWallPost, postLoading, profileUser?.username, user]);
 
-  // Delete wall post
+  // Helper to trigger post removal animation
+  const animateRemovePost = useCallback((postId) => {
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId ? { ...post, removing: true } : post
+    ));
+    setTimeout(() => {
+      setWallPosts(prev => prev.filter(post => post._id !== postId));
+    }, 1200); // Match fade-out duration
+  }, []);
+
+  // Helper to trigger like animation
+  const animateLikePulse = useCallback((postId) => {
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId ? { ...post, likeAnimating: true } : post
+    ));
+    setTimeout(() => {
+      setWallPosts(prev => prev.map(post =>
+        post._id === postId ? { ...post, likeAnimating: false } : post
+      ));
+    }, 500); // Match like pulse duration
+  }, []);
+
+  // Helper to trigger like animation for any post
+  const triggerLikeAnimation = useCallback((postId) => {
+    setLikeAnimStates(prev => ({ ...prev, [postId]: true }));
+    setTimeout(() => {
+      setLikeAnimStates(prev => ({ ...prev, [postId]: false }));
+    }, 500);
+  }, []);
+
+  // Delete wall post (with animation)
   const handleDeleteWallPost = useCallback(async (postId) => {
     try {
       await WallService.deleteWallPost(postId);
-      setWallPosts(prev => prev.filter(post => post._id !== postId));
+      animateRemovePost(postId);
       setShowDeletePostModal(false);
       setPostToDelete(null);
     } catch (error) {
       console.error('Failed to delete wall post:', error);
     }
-  }, []);
+  }, [animateRemovePost]);
 
-  // Like wall post
+  // Like wall post (with animation)
   const handleLikeWallPost = useCallback(async (postId) => {
+    setWallPosts(prev => prev.map(post => {
+      if (!post) return post;
+      if (post._id === postId) {
+        return {
+          ...post,
+          likes: [...(post.likes || []), { user: { username: user.username } }],
+          isLiked: true
+        };
+      } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+        return {
+          ...post,
+          originalPost: {
+            ...post.originalPost,
+            likes: [...(post.originalPost.likes || []), { user: { username: user.username } }],
+            isLiked: true
+          }
+        };
+      }
+      return post;
+    }));
     try {
       await WallService.likeWallPost(postId);
-      setWallPosts(prev => prev.map(post => 
-        post._id === postId 
-          ? { 
-              ...post, 
-              likes: [...(post.likes || []), { user: { username: user.username } }],
-              isLiked: true 
-            }
-          : post
-      ));
     } catch (error) {
-      console.error('Failed to like wall post:', error);
+      // Optionally revert optimistic update on error
     }
   }, [user?.username]);
 
-  // Unlike wall post
+  // Unlike wall post (with animation)
   const handleUnlikeWallPost = useCallback(async (postId) => {
+    setWallPosts(prev => prev.map(post => {
+      if (!post) return post;
+      if (post._id === postId) {
+        return {
+          ...post,
+          likes: (post.likes || []).filter(like => like && like.user && like.user.username !== user.username),
+          isLiked: false
+        };
+      } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+        return {
+          ...post,
+          originalPost: {
+            ...post.originalPost,
+            likes: (post.originalPost.likes || []).filter(like => like && like.user && like.user.username !== user.username),
+            isLiked: false
+          }
+        };
+      }
+      return post;
+    }));
     try {
       await WallService.unlikeWallPost(postId);
-      setWallPosts(prev => prev.map(post => 
-        post._id === postId 
-          ? { 
-              ...post, 
-              likes: (post.likes || []).filter(like => like.user.username !== user.username),
-              isLiked: false 
-            }
-          : post
-      ));
     } catch (error) {
-      console.error('Failed to unlike wall post:', error);
+      // Optionally revert optimistic update on error
     }
   }, [user?.username]);
 
@@ -441,63 +600,96 @@ const useWallPosts = (profileUser, isOwnProfile) => {
       createdAt: new Date().toISOString(),
       fadeIn: true, // for animation
     };
-    setWallPosts(prev => prev.map(post =>
-      post._id === postId
-        ? {
-            ...post,
-            comments: [...(post.comments || []), optimisticComment]
-          }
-        : post
-    ));
+    setWallPosts(prev => prev.map(post => {
+      if (!post) return post;
+      if (post._id === postId) {
+        return { ...post, comments: [...(post.comments || []), optimisticComment] };
+      } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+        return { ...post, originalComments: [...(post.originalComments || []), optimisticComment] };
+      }
+      return post;
+    }));
     setCommentInputs(prev => ({ ...prev, [postId]: '' }));
 
     try {
       const response = await WallService.addComment(postId, content.trim());
       const newComment = response.data;
-      // Replace optimistic comment with real comment
-      setWallPosts(prev => prev.map(post =>
-        post._id === postId
-          ? {
-              ...post,
-              comments: [
-                ...(post.comments || []).filter(c => c._id !== tempId),
-                newComment
-              ]
-            }
-          : post
-      ));
+      setWallPosts(prev => prev.map(post => {
+        if (!post) return post;
+        if (post._id === postId) {
+          return {
+            ...post,
+            comments: [
+              ...(post.comments || []).filter(c => c && c._id !== tempId),
+              newComment
+            ]
+          };
+        } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+          return {
+            ...post,
+            originalComments: [
+              ...(post.originalComments || []).filter(c => c && c._id !== tempId),
+              newComment
+            ]
+          };
+        }
+        return post;
+      }));
     } catch (error) {
-      // Remove optimistic comment on error
-      setWallPosts(prev => prev.map(post =>
-        post._id === postId
-          ? {
-              ...post,
-              comments: (post.comments || []).filter(c => c._id !== tempId)
-            }
-          : post
-      ));
+      setWallPosts(prev => prev.map(post => {
+        if (!post) return post;
+        if (post._id === postId) {
+          return {
+            ...post,
+            comments: (post.comments || []).filter(c => c && c._id !== tempId)
+          };
+        } else if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+          return {
+            ...post,
+            originalComments: (post.originalComments || []).filter(c => c && c._id !== tempId)
+          };
+        }
+        return post;
+      }));
       setCommentError(prev => ({ ...prev, [postId]: 'Failed to add comment' }));
     } finally {
       setCommentLoading(prev => ({ ...prev, [postId]: false }));
     }
   }, [commentInputs, user]);
 
-  // Delete comment
-  const handleDeleteComment = useCallback(async (postId, commentId) => {
-    try {
-      await WallService.deleteComment(postId, commentId);
-      setWallPosts(prev => prev.map(post => 
-        post._id === postId 
-          ? { 
-              ...post, 
-              comments: (post.comments || []).filter(comment => comment._id !== commentId) 
+  // Helper to trigger comment removal animation
+  const animateRemoveComment = useCallback((postId, commentId) => {
+    setWallPosts(prev => prev.map(post =>
+      post._id === postId
+        ? {
+            ...post,
+            comments: (post.comments || []).map(comment =>
+              comment._id === commentId ? { ...comment, removing: true } : comment
+            )
+          }
+        : post
+    ));
+    setTimeout(() => {
+      setWallPosts(prev => prev.map(post =>
+        post._id === postId
+          ? {
+              ...post,
+              comments: (post.comments || []).filter(comment => comment._id !== commentId)
             }
           : post
       ));
+    }, 1200); // Match fade-out duration
+  }, []);
+
+  // Delete comment (with animation)
+  const handleDeleteComment = useCallback(async (postId, commentId) => {
+    try {
+      await WallService.deleteComment(postId, commentId);
+      animateRemoveComment(postId, commentId);
     } catch (error) {
       console.error('Failed to delete comment:', error);
     }
-  }, []);
+  }, [animateRemoveComment]);
 
   // Handle comment input change
   const handleCommentInputChange = useCallback((postId, value) => {
@@ -524,85 +716,197 @@ const useWallPosts = (profileUser, isOwnProfile) => {
     
     if (!currentUser) return;
 
-    // Only process events for the current profile
-    if (data.targetUser !== currentUser.username) return;
-
     switch (type) {
-      case 'wall_post_created':
-        setWallPosts(prev => [data.post, ...prev]);
-        break;
-      case 'wall_post_deleted':
+      case 'wall_post':
+        if (data.type === 'new_post' && data.wallOwnerUsername === currentUser.username) {
+          refreshWallPosts();
+        } else if (data.type === 'delete_post') {
+          setWallPosts(prev => prev.filter(post => post._id !== data.postId));
+        } else if (data.type === 'repost' && data.wallOwnerUsername === currentUser.username) {
+          // Update repost count for the original post
+          setWallPosts(prev => prev.map(post => {
+            if (post._id === data.originalPostId) {
+              return {
+                ...post,
+                repostCount: (post.repostCount || 0) + 1,
+                reposts: [...(post.reposts || []), data.repost.author._id]
+              };
+            }
+            return post;
+          }));
+          refreshWallPosts();
+        } else if (data.type === 'unrepost') {
+          // Update repost count for the original post
+          setWallPosts(prev => prev.map(post => {
+            if (post._id === data.originalPostId) {
+              return {
+                ...post,
+                repostCount: Math.max((post.repostCount || 1) - 1, 0),
+                reposts: (post.reposts || []).filter(id => id !== data.authorId)
+              };
+            }
+            return post;
+          }));
         setWallPosts(prev => prev.filter(post => post._id !== data.postId));
+        }
         break;
-      case 'wall_post_updated':
-        setWallPosts(prev => prev.map(post => 
-          post._id === data.post._id ? data.post : post
-        ));
+      default:
         break;
     }
-  }, []);
+  }, [refreshWallPosts]);
 
   const handleWallCommentEvent = useCallback((event) => {
-    const { type, data } = event.detail;
-    const currentUser = profileUserRef.current;
-    
-    if (!currentUser) return;
+    try {
+      // Safely extract event data with fallbacks
+      const eventData = event.detail?.data || event.detail || event;
+      if (!eventData) {
+        console.warn('[SSE][WALL_COMMENT] Received event with no data');
+        return;
+      }
 
-    switch (type) {
+      // Extract the nested data structure
+      const { type, data: nestedData } = eventData;
+      if (!nestedData) {
+        console.warn('[SSE][WALL_COMMENT] Received event with no nested data');
+        return;
+      }
+
+      // Extract the actual comment data
+      const { type: commentType, postId, comment, commentId, wallOwnerUsername } = nestedData;
+    const currentUser = profileUserRef.current;
+    if (!currentUser) return;
+      
+      console.log('[SSE][WALL_COMMENT] Processing event:', { 
+        type, 
+        commentType, 
+        postId, 
+        commentId,
+        wallOwnerUsername 
+      });
+      
+      // Handle the comment event based on the nested type
+      switch (commentType) {
       case 'wall_comment_added':
-        setWallPosts(prev => prev.map(post => 
-          post._id === data.postId 
-            ? { 
-                ...post, 
-                comments: [...(post.comments || []), data.comment] 
+        case 'comment_added':
+        setWallPosts(prev => prev.map(post => {
+          if (!post) return post;
+            
+            // Only update the original post if it matches postId and is not a repost wrapper
+            if (post._id === postId && !post.isRepost) {
+              const existingComments = post.comments || [];
+              // Check if comment already exists (deduplication)
+              const commentExists = existingComments.some(c => c && c._id === comment._id);
+              if (commentExists) {
+                console.log('[SSE][WALL_COMMENT] Comment already exists, skipping duplicate:', comment._id);
+                return post;
               }
-            : post
-        ));
+              return { 
+                ...post, 
+                comments: [...existingComments, comment], 
+                fadeIn: true 
+              };
+            }
+            
+            // Only update the repost wrapper's originalComments if its originalPost._id matches postId
+            if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+              const existingComments = post.originalComments || [];
+              // Check if comment already exists (deduplication)
+              const commentExists = existingComments.some(c => c && c._id === comment._id);
+              if (commentExists) {
+                console.log('[SSE][WALL_COMMENT] Comment already exists in repost, skipping duplicate:', comment._id);
+                return post;
+              }
+              return { 
+                ...post, 
+                originalComments: [...existingComments, comment] 
+              };
+          }
+            
+          return post;
+        }));
         break;
       case 'wall_comment_deleted':
-        setWallPosts(prev => prev.map(post => 
-          post._id === data.postId 
-            ? { 
-                ...post, 
-                comments: (post.comments || []).filter(comment => comment._id !== data.commentId) 
-              }
-            : post
-        ));
+        case 'comment_deleted':
+        setWallPosts(prev => prev.map(post => {
+          if (!post) return post;
+            if (post._id === postId && !post.isRepost) {
+              return { ...post, comments: (post.comments || []).filter(comment => comment && comment._id !== commentId) };
+            }
+            if (post.isRepost && post.originalPost && post.originalPost._id === postId) {
+              return { ...post, originalComments: (post.originalComments || []).filter(comment => comment && comment._id !== commentId) };
+          }
+          return post;
+        }));
         break;
+      default:
+          console.log('[SSE][WALL_COMMENT] Unhandled comment type:', commentType);
+        break;
+      }
+    } catch (error) {
+      console.error('[SSE][WALL_COMMENT] Error handling wall comment event:', error);
     }
   }, []);
 
   const handleWallLikeEvent = useCallback((event) => {
     const { type, data } = event.detail;
     const currentUser = profileUserRef.current;
-    
     if (!currentUser) return;
-
     switch (type) {
       case 'wall_post_liked':
-        setWallPosts(prev => prev.map(post => 
-          post._id === data.postId 
-            ? { 
-                ...post, 
-                likes: [...(post.likes || []), data.like],
-                isLiked: data.like.user.username === currentUser.username 
+        setWallPosts(prev => prev.map(post => {
+          if (!post) return post;
+          if (post._id === data.postId) {
+            console.log('[SSE] Updating original post likes', post._id);
+            return {
+              ...post,
+              likes: [...(post.likes || []).filter(like => like && like.user && like.user.username), data.like].filter(like => like && like.user && like.user.username),
+              isLiked: data.like.user && data.like.user.username === currentUser.username,
+              fadeIn: true
+            };
+          } else if (post.isRepost && post.originalPost && post.originalPost._id === data.postId) {
+            console.log('[SSE] Updating repost originalPost.likes for original', post.originalPost._id, 'in post', post._id);
+            return {
+              ...post,
+              originalPost: {
+                ...post.originalPost,
+                likes: [...(post.originalPost.likes || []).filter(like => like && like.user && like.user.username), data.like].filter(like => like && like.user && like.user.username),
+                isLiked: data.like.user && data.like.user.username === currentUser.username
               }
-            : post
-        ));
+            };
+          }
+          return post;
+        }));
+        triggerLikeAnimation(data.postId);
         break;
       case 'wall_post_unliked':
-        setWallPosts(prev => prev.map(post => 
-          post._id === data.postId 
-            ? { 
-                ...post, 
-                likes: (post.likes || []).filter(like => like.user.username !== data.username),
-                isLiked: data.username === currentUser.username ? false : post.isLiked 
+        setWallPosts(prev => prev.map(post => {
+          if (!post) return post;
+          if (post._id === data.postId) {
+            console.log('[SSE] Removing like from original post', post._id);
+            return {
+              ...post,
+              likes: (post.likes || []).filter(like => like && like.user && like.user.username !== data.username),
+              isLiked: data.username === currentUser.username ? false : post.isLiked
+            };
+          } else if (post.isRepost && post.originalPost && post.originalPost._id === data.postId) {
+            console.log('[SSE] Removing like from repost originalPost.likes for original', post.originalPost._id, 'in post', post._id);
+            return {
+              ...post,
+              originalPost: {
+                ...post.originalPost,
+                likes: (post.originalPost.likes || []).filter(like => like && like.user && like.user.username !== data.username),
+                isLiked: data.username === currentUser.username ? false : post.originalPost.isLiked
               }
-            : post
-        ));
+            };
+          }
+          return post;
+        }));
+        triggerLikeAnimation(data.postId);
+        break;
+      default:
         break;
     }
-  }, []);
+  }, [triggerLikeAnimation]);
 
   // Set up SSE event listeners
   useEffect(() => {
@@ -623,6 +927,56 @@ const useWallPosts = (profileUser, isOwnProfile) => {
       fetchWallPosts(1, false);
     }
   }, [profileUser?.username, fetchWallPosts]);
+
+  // Add the fetchOriginalComments function before the SSE handler for reposts
+  const fetchOriginalComments = async (originalPostId) => {
+    try {
+      const response = await API.get(`/api/wall/post/${originalPostId}/comments`);
+      return response.data.comments || [];
+    } catch (error) {
+      console.error("Failed to fetch original comments:", error);
+      return [];
+    }
+  };
+
+  // SSE handler for reposts
+  useEffect(() => {
+    if (!eventEmitter) return;
+    const handleRepost = (data) => {
+      if (data.type === 'repost' && data.repost) {
+        const repost = data.repost;
+        if (repost.isRepost && (!repost.originalComments || repost.originalComments.length === 0)) {
+          // If originalComments is missing, fetch it
+          fetchOriginalComments(repost.originalPost._id).then(comments => {
+            repost.originalComments = comments;
+            setWallPosts(prev => {
+              const index = prev.findIndex(p => p._id === repost._id);
+              if (index !== -1) {
+                const updated = [...prev];
+                updated[index] = repost;
+                return updated;
+              }
+              return prev;
+            });
+          });
+        } else {
+          setWallPosts(prev => {
+            const index = prev.findIndex(p => p._id === repost._id);
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = repost;
+              return updated;
+            }
+            return prev;
+          });
+        }
+      }
+    };
+    eventEmitter.on('wall_post', handleRepost);
+    return () => {
+      eventEmitter.off('wall_post', handleRepost);
+    };
+  }, [eventEmitter]);
 
   return {
     // Wall posts state
@@ -678,13 +1032,18 @@ const useWallPosts = (profileUser, isOwnProfile) => {
     handleOpenRepostModal,
     handleConfirmRepost,
     handleCancelRepost,
-    trackPostView,
     fetchRepostStatuses,
 
     // SSE event handlers
     handleWallPostEvent,
     handleWallCommentEvent,
     handleWallLikeEvent,
+
+    // Like animation state map
+    likeAnimStates,
+
+    // Track which posts have been viewed in this session
+    viewedRef,
   };
 };
 

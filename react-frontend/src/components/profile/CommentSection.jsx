@@ -21,10 +21,8 @@ import CommentItem from './CommentItem';
 // Enhanced CommentSection with animations and improved styling
 const CommentSection = ({
   post,
-  commentInput,
   commentLoading,
   commentError,
-  onCommentChange,
   onAddComment,
   onDeleteComment,
   currentUser,
@@ -48,6 +46,9 @@ const CommentSection = ({
   const [showDeleteCommentModal, setShowDeleteCommentModal] = useState(false);
   const [commentToDelete, setCommentToDelete] = useState(null);
 
+  // State for comment input
+  const [commentInput, setCommentInput] = useState('');
+
   // Focus input when expanded
   useEffect(() => {
     if (isExpanded && showCommentInput && inputRef.current) {
@@ -59,14 +60,13 @@ const CommentSection = ({
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && commentInput.trim()) {
       e.preventDefault();
-      onAddComment(postId);
-      setShowCommentInput(false); // Hide input after posting
+      handleSubmit();
     }
   };
 
   // Handle emoji insertion
   const handleEmojiSelect = (emoji) => {
-    onCommentChange(postId, commentInput + emoji);
+    setCommentInput(commentInput + emoji);
     setShowEmojiPicker(false);
     inputRef.current?.focus();
   };
@@ -93,6 +93,13 @@ const CommentSection = ({
   const cancelDeleteComment = () => {
     setShowDeleteCommentModal(false);
     setCommentToDelete(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!commentInput.trim()) return;
+    await onAddComment(post._id, commentInput.trim());
+    setCommentInput('');
+    setShowCommentInput(false);
   };
 
   return (
@@ -176,7 +183,7 @@ const CommentSection = ({
                 ref={inputRef}
                 type="text"
                 value={commentInput}
-                onChange={(e) => onCommentChange(postId, e.target.value)}
+                onChange={(e) => setCommentInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Write a comment..."
                 className="w-full px-3 py-2 pr-20 bg-white/10 rounded-md text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-minecraft-habbo-blue transition-all"

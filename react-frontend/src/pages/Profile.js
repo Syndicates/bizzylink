@@ -706,8 +706,13 @@ const Profile = () => {
   const { username } = useParams();
   const navigate = useNavigate();
 
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
+
   // Context hooks
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const socialContext = useSocial() || {};
 
   // Get context with fallbacks
@@ -759,7 +764,7 @@ const Profile = () => {
   const [commentInputs, setCommentInputs] = useState({}); // { [postId]: "" }
   const [commentLoading, setCommentLoading] = useState({}); // { [postId]: false }
   const [commentError, setCommentError] = useState({}); // { [postId]: "" }
-  const [expandedComments, setExpandedComments] = useState({});
+  const [expandedComments, setExpandedComments] = useState({}); // { [postId]: false } by default
   const [wallPostsRefreshKey, setWallPostsRefreshKey] = useState(0);
   const { addEventListener, isConnected } = useEventSource();
   // --- Moved up to fix React Hook order ---
@@ -2830,6 +2835,23 @@ const Profile = () => {
     };
   }, [addEventListener, isConnected]);
 
+  // When wallPosts are loaded/refreshed, ensure no comment section is auto-expanded
+  useEffect(() => {
+    if (wallPosts && wallPosts.length > 0) {
+      // Set all expandedComments to false on new wallPosts load
+      const initialExpanded = {};
+      wallPosts.forEach(post => {
+        initialExpanded[post._id] = false;
+      });
+      setExpandedComments(initialExpanded);
+    }
+  }, [wallPostsRefreshKey]);
+
+  // If not authenticated, show modal and do not fetch profile
+  if (!isAuthenticated) {
+    return <LoginRequiredModal />;
+  }
+
   if (!shouldDisplayProfile) {
     return (
       <div className="min-h-screen pt-24 py-20 minecraft-grid-bg bg-habbo-pattern text-center">
@@ -4008,6 +4030,28 @@ const Profile = () => {
       }
     );
   };
+
+  // Modal component for login required
+  const LoginRequiredModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+      <div className="bg-minecraft-navy-dark p-8 rounded-lg shadow-lg max-w-sm w-full text-center">
+        <h2 className="text-xl font-bold mb-4 text-white">Login Required</h2>
+        <p className="text-gray-300 mb-6">You need to be logged in to view player profiles.</p>
+        <Link
+          to="/login"
+          className="bg-minecraft-green text-white px-4 py-2 rounded hover:bg-minecraft-green/80 transition-colors mb-2 w-full block"
+        >
+          Go to Login
+        </Link>
+        <Link
+          to="/"
+          className="text-gray-400 hover:text-white text-sm mt-2 block"
+        >
+          Cancel
+        </Link>
+      </div>
+    </div>
+  );
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-minecraft-navy-dark via-minecraft-navy to-minecraft-navy-dark">

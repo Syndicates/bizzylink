@@ -439,12 +439,12 @@ const Login = () => {
 
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-300">
-                Don't have an account?{' '}
+                <span>Don't have an account?</span>
+              </p>
                 <Link to="/register" className="font-medium text-minecraft-green hover:text-minecraft-green-light relative group">
                   Register
                   <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-minecraft-green group-hover:w-full transition-all duration-300"></div>
                 </Link>
-              </p>
             </div>
           </div>
           

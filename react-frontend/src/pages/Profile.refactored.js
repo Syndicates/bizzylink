@@ -417,6 +417,7 @@ const Profile = () => {
             isOwnProfile={isOwnProfile}
             profileUser={profileUser}
             wallPosts={wallPosts}
+            setWallPosts={setWallPosts}
             wallLoading={wallLoading}
             wallError={wallError}
             newWallPost={newWallPost}

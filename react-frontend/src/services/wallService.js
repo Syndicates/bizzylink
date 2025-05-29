@@ -256,6 +256,40 @@ class WallService {
     if (response && response.data && response.data.post) return response.data.post;
     return null;
   }
+
+  /**
+   * Repost a wall post
+   * @param {string} postId - ID of the post to repost
+   * @param {string} message - Optional repost message
+   * @returns {Promise} - The response data
+   */
+  static async repostWallPost(postId, message = null) {
+    if (!postId) {
+      throw new Error('Post ID is required');
+    }
+    
+    const data = {};
+    if (message) {
+      data.message = message;
+    }
+    
+    console.log(`[WallService] Reposting post ${postId}`, message ? 'with message' : '');
+    return this.#makeRequest('POST', `/api/wall/post/${postId}/repost`, data);
+  }
+
+  /**
+   * Unrepost a wall post
+   * @param {string} postId - ID of the post to unrepost
+   * @returns {Promise} - The response data
+   */
+  static async unrepostWallPost(postId) {
+    if (!postId) {
+      throw new Error('Post ID is required');
+    }
+    
+    console.log(`[WallService] Unreposting post ${postId}`);
+    return this.#makeRequest('DELETE', `/api/wall/post/${postId}/repost`);
+  }
 }
 
 export default WallService; 

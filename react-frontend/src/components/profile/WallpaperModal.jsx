@@ -79,7 +79,7 @@ const WallpaperModal = ({
     setSelectedWallpaper(wallpaperId);
     // Add a small delay to show the selection feedback
     setTimeout(() => {
-      onConfirm?.(wallpaperId);
+    onConfirm?.(wallpaperId);
     }, 200);
   };
 
@@ -134,9 +134,9 @@ const WallpaperModal = ({
               const isCurrent = currentWallpaper === wallpaper.id;
               
               return (
-                <div key={wallpaper.id} className="relative group">
-                  <button
-                    onClick={() => handleWallpaperSelect(wallpaper.id)}
+              <div key={wallpaper.id} className="relative group">
+                <button
+                  onClick={() => handleWallpaperSelect(wallpaper.id)}
                     className={`w-full aspect-video rounded-lg overflow-hidden border-2 transition-all duration-300 hover:scale-105 transform ${
                       isSelected 
                         ? 'border-green-500 scale-105 ring-4 ring-green-500/30' 
@@ -154,9 +154,9 @@ const WallpaperModal = ({
                     )}
                     
                     {/* Wallpaper image */}
-                    <img
-                      src={getWallpaperThumb(wallpaper.id)}
-                      alt={wallpaper.name}
+                  <img
+                    src={getWallpaperThumb(wallpaper.id)}
+                    alt={wallpaper.name}
                       className={`w-full h-full object-cover transition-opacity duration-500 ${
                         isLoaded ? 'opacity-100' : 'opacity-0'
                       }`}
@@ -174,16 +174,16 @@ const WallpaperModal = ({
                           : 'opacity-0 group-hover:opacity-100 group-hover:scale-110'
                       }`}>
                         {isSelected ? '✓ Applying...' : wallpaper.name}
-                      </span>
-                    </div>
-                  </button>
-                  
-                  {/* Current wallpaper indicator */}
+                    </span>
+                  </div>
+                </button>
+                
+                {/* Current wallpaper indicator */}
                   {isCurrent && !isSelected && (
                     <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded animate-in slide-in-from-top duration-300">
-                      Current
-                    </div>
-                  )}
+                    Current
+                  </div>
+                )}
 
                   {/* Selected wallpaper indicator */}
                   {isSelected && (
@@ -196,12 +196,12 @@ const WallpaperModal = ({
                   )}
 
                   {/* Loading overlay for saving */}
-                  {saving && (
+                {saving && (
                     <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center animate-in fade-in duration-200">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                    </div>
-                  )}
-                </div>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  </div>
+                )}
+              </div>
               );
             })}
           </div>

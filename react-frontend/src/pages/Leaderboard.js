@@ -22,6 +22,8 @@ import { ChartBarIcon, ArrowPathIcon, TrophyIcon, UserIcon } from '@heroicons/re
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye } from '@fortawesome/free-solid-svg-icons';
 import { getPlayerAvatar } from '../utils/minecraft-api';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // Helper function to format numbers with commas
 const numberWithCommas = (x) => {
@@ -122,6 +124,9 @@ const Leaderboard = () => {
   const [timeFrame, setTimeFrame] = useState('all');
   const [error, setError] = useState(null);
   const [leaderboardData, setLeaderboardData] = useState([]);
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const [showLoginModal, setShowLoginModal] = useState(false);
   
   // Simple debounce utility function 
   function debounce(func, wait) {
@@ -275,6 +280,28 @@ const Leaderboard = () => {
     );
   }
 
+  // Modal component
+  const LoginRequiredModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+      <div className="bg-minecraft-navy-dark p-8 rounded-lg shadow-lg max-w-sm w-full text-center">
+        <h2 className="text-xl font-bold mb-4 text-white">Login Required</h2>
+        <p className="text-gray-300 mb-6">You have to be logged in for the full experience.</p>
+        <button
+          className="bg-minecraft-green text-white px-4 py-2 rounded hover:bg-minecraft-green/80 transition-colors mb-2 w-full"
+          onClick={() => navigate('/login')}
+        >
+          Go to Login
+        </button>
+        <button
+          className="text-gray-400 hover:text-white text-sm mt-2"
+          onClick={() => setShowLoginModal(false)}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen pt-16 ...">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -390,6 +417,14 @@ const Leaderboard = () => {
                 player={player}
                 rank={index + 1}
                 category={activeCategory}
+                isAuthenticated={isAuthenticated}
+                onProfileClick={(username) => {
+                  if (isAuthenticated) {
+                    navigate(`/profile/${username}`);
+                  } else {
+                    setShowLoginModal(true);
+                  }
+                }}
               />
             ))}
           </div>
@@ -463,11 +498,22 @@ const Leaderboard = () => {
                         <td className="px-4 py-3">
                           <div className="flex items-center">
                             <div className="relative h-10 w-10 mr-3">
-                              <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`}>
+                              <button
+                                type="button"
+                                className={isAuthenticated ? "focus:outline-none" : "focus:outline-none cursor-pointer"}
+                                onClick={() => {
+                                  if (isAuthenticated) {
+                                    navigate(`/profile/${player.username || player.mcUsername}`);
+                                  } else {
+                                    setShowLoginModal(true);
+                                  }
+                                }}
+                                title={isAuthenticated ? `View ${player.username || player.mcUsername}'s profile` : "Login required to view profile"}
+                              >
                                 <img 
                                   src={`https://visage.surgeplay.com/face/128/${player.mcUsername || player.username}`}
                                   alt={player.username || player.mcUsername || 'Unknown'} 
-                                  className="h-10 w-10 rounded-md object-cover" 
+                                  className={isAuthenticated ? "h-10 w-10 rounded-md object-cover" : "h-10 w-10 rounded-md object-cover opacity-70"}
                                   onError={(e) => {
                                     e.target.onerror = (e2) => {
                                       e2.target.onerror = (e3) => {
@@ -479,12 +525,23 @@ const Leaderboard = () => {
                                     e.target.src = `https://mc-heads.net/avatar/${player.mcUsername || player.username}/128`;
                                   }}
                                 />
-                              </Link>
+                              </button>
                             </div>
                             <div>
-                              <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`} className="font-semibold text-white hover:underline">
+                              <button
+                                type="button"
+                                className={isAuthenticated ? "font-semibold text-white hover:underline focus:outline-none" : "font-semibold text-white hover:underline focus:outline-none opacity-70 cursor-pointer"}
+                                onClick={() => {
+                                  if (isAuthenticated) {
+                                    navigate(`/profile/${player.username || player.mcUsername}`);
+                                  } else {
+                                    setShowLoginModal(true);
+                                  }
+                                }}
+                                title={isAuthenticated ? `View ${player.username || player.mcUsername}'s profile` : "Login required to view profile"}
+                              >
                                 {player.username || player.mcUsername || 'Unknown'}
-                              </Link>
+                              </button>
                               <div className="text-xs text-gray-400">{player.mcUsername !== player.username ? player.mcUsername : ''}</div>
                             </div>
                           </div>
@@ -538,13 +595,20 @@ const Leaderboard = () => {
         
         {/* Additional Statistics */}
         {activeCategory === 'mcmmo' && (
-          <McMMOTopSkills players={players} />
+          <McMMOTopSkills players={players} isAuthenticated={isAuthenticated} onProfileClick={(username) => {
+            if (isAuthenticated) {
+              navigate(`/profile/${username}`);
+            } else {
+              setShowLoginModal(true);
+            }
+          }} />
         )}
         
         {activeCategory === 'economy' && (
           <EconomyStats players={players} />
         )}
       </div>
+      {showLoginModal && <LoginRequiredModal />}
     </div>
   );
 };
@@ -645,7 +709,7 @@ const formatLastSeen = (date) => {
 };
 
 // Player Podium Card Component
-const PlayerPodiumCard = ({ player, rank, category }) => {
+const PlayerPodiumCard = ({ player, rank, category, isAuthenticated, onProfileClick }) => {
   let statValue = '';
   let statLabel = '';
   let statColor = 'text-white';
@@ -744,20 +808,21 @@ const PlayerPodiumCard = ({ player, rank, category }) => {
       </div>
       
       <div className="mt-4 text-center">
-        <Link 
-          to={`/profile/${player.username || player.mcUsername}`} 
+        <button
+          type="button"
           className="minecraft-btn px-5 py-2 text-sm font-medium inline-flex items-center"
+          onClick={() => onProfileClick(player.username || player.mcUsername)}
         >
           <UserIcon className="h-4 w-4 mr-1" />
           <span>View Profile</span>
-        </Link>
+        </button>
       </div>
     </motion.div>
   );
 };
 
 // McMMO Top Skills Component
-const McMMOTopSkills = ({ players }) => {
+const McMMOTopSkills = ({ players, isAuthenticated, onProfileClick }) => {
   // Get the top 5 players for each mcMMO skill
   const getTopPlayersForSkill = (skill) => {
     return [...players]
@@ -785,7 +850,12 @@ const McMMOTopSkills = ({ players }) => {
               <div key={`${skill}-${player.uuid || index}`} className="flex items-center bg-white/5 p-3 rounded-md">
                 <div className="w-6 text-center font-bold mr-2">#{index + 1}</div>
                 <div className="h-7 w-7 mr-2">
-                  <Link to={`/profile/${player.username || player.mcUsername}`} title={`View ${player.username || player.mcUsername}'s profile`}>
+                  <button
+                    type="button"
+                    onClick={() => onProfileClick(player.username || player.mcUsername)}
+                    title={isAuthenticated ? `View ${player.username || player.mcUsername}'s profile` : 'Login required to view profile'}
+                    className={isAuthenticated ? '' : 'opacity-70'}
+                  >
                     <img 
                       src={`https://visage.surgeplay.com/face/64/${player.mcUsername || player.username}`}
                       alt={player.username || player.mcUsername}
@@ -801,7 +871,7 @@ const McMMOTopSkills = ({ players }) => {
                         e.target.src = `https://mc-heads.net/avatar/${player.mcUsername || player.username}/64`;
                       }}
                     />
-                  </Link>
+                  </button>
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{player.username || player.mcUsername}</div>

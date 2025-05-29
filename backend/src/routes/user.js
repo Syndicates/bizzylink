@@ -365,4 +365,14 @@ router.put('/profile/privacy', protect, async (req, res) => {
   }
 });
 
+// Public: Get total registered users
+router.get('/count', async (req, res) => {
+  try {
+    const count = await User.countDocuments({});
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user count' });
+  }
+});
+
 module.exports = router;

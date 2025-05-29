@@ -13,7 +13,7 @@
  * Unauthorized use, copying, or distribution is prohibited.
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, TokenStorage } from './contexts/AuthContext';
 import { SocialProvider } from './contexts/SocialContext.jsx';
@@ -47,6 +47,10 @@ import LinkPage from './pages/LinkPage';
 import { motion } from 'framer-motion';
 import { GuidedTourProvider } from './hooks/useGuidedTour';
 import DynamicProfile from './components/DynamicProfile';
+import FYPPage from './components/fyp/FYPPage';
+import AdminHoverPanel from './components/AdminHoverPanel';
+
+const NewsArticlePage = lazy(() => import('./pages/NewsArticlePage'));
 
 // Modified ProtectedRoute component with protections against infinite loops
 const ProtectedRoute = ({ children }) => {
@@ -99,6 +103,14 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route 
+        path="/fyp" 
+        element={
+          <ProtectedRoute>
+            <FYPPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/bizzylink" element={<BizzyLink />} />
@@ -210,6 +222,11 @@ const AppRoutes = () => {
           <TestRealTime />
         </ProtectedRoute>
       } />
+      <Route path="/news/:id" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <NewsArticlePage />
+        </Suspense>
+      } />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
@@ -289,8 +306,8 @@ function App() {
                         <AppRoutes />
                       </ErrorBoundary>
                     </GlobalLayout>
+                      <AdminHoverPanel />
                       <Footer />
-                      {isDevMode && <AuthDebugger />}
                     </div>
                   </GuidedTourProvider>
                 </SocialProvider>
